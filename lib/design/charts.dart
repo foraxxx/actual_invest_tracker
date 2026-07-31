@@ -1137,7 +1137,12 @@ class _BarsChartState extends State<BarsChart> with SingleTickerProviderStateMix
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const minBarSlot = 54.0;
+        // The selected value is rendered inside the same slot as its bar.  A
+        // 54 px slot was too narrow even for common values such as
+        // "12 345 ₽", so Flutter clipped the end of the amount.  Keep a
+        // slightly wider slot and let the label scale down for exceptionally
+        // large values instead of ever truncating them.
+        const minBarSlot = 72.0;
         final needed = widget.values.length * minBarSlot;
         final width = math.max(constraints.maxWidth, needed);
         final content = SizedBox(
@@ -1230,10 +1235,14 @@ class _Bar extends StatelessWidget {
                       color: color.withOpacity(0.16),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(
-                      valueText,
-                      maxLines: 1,
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        valueText,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color),
+                      ),
                     ),
                   ),
                 ),

@@ -9,6 +9,7 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
+import '../services/analytics_service.dart';
 import '../services/storage_service.dart';
 import '../services/moex_sync_service.dart';
 import '../widgets/security_picker_field.dart';
@@ -906,9 +907,18 @@ class _PlansScreenState extends State<PlansScreen> {
                   onSelected: (s) {
                     tickerCtrl.text = s.ticker;
                     nameCtrl.text = s.name;
+                    final quote =
+                        MoexSyncService.marketSnapshot.value[s.ticker.toUpperCase()];
+                    final currentPrice =
+                        quote?.price ?? AnalyticsService.priceFor(s.ticker);
+                    if (currentPrice != null && currentPrice > 0) {
+                      priceCtrl.text = currentPrice
+                          .toStringAsFixed(8)
+                          .replaceFirst(RegExp(r'\.?0+$'), '');
+                    }
                     setSheetState(() {
                       type = s.type;
-                      lotSize = MoexSyncService.marketSnapshot.value[s.ticker.toUpperCase()]?.lotSize ?? 1;
+                      lotSize = quote?.lotSize ?? 1;
                       if (qtyCtrl.text.isEmpty) qtyCtrl.text = '1';
                     });
                   },
