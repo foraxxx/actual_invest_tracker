@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../design/nav_bar.dart';
 import '../services/appearance_service.dart';
+import '../services/moex_sync_service.dart';
 import '../design/page_tour.dart';
 import 'dashboard_screen.dart';
 import 'purchases_screen.dart';
@@ -30,6 +31,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   int _index = AppearanceService.startTab;
 
+  @override
+  void initState() {
+    super.initState();
+    MoexSyncService.instance.setMarketVisible(_index == 1);
+  }
+
   /// Короткое проявление контента при смене вкладки: IndexedStack сам по
   /// себе переключается мгновенно, и без этой анимации переход выглядит
   /// «дёрганым» рядом с плавно едущей навигацией.
@@ -56,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    MoexSyncService.instance.setMarketVisible(false);
     _fade.dispose();
     super.dispose();
   }
@@ -63,6 +71,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void _select(int i) {
     if (i == _index) return;
     setState(() => _index = i);
+    MoexSyncService.instance.setMarketVisible(i == 1);
     _fade.forward(from: 0.35);
   }
 
@@ -77,7 +86,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             // Вкладки строятся все сразу, поэтому каждая должна знать, открыта
             // ли она: обучение запускается по факту захода, а не сборки.
             for (int i = 0; i < _screens.length; i++)
-              TourVisibility(visible: i == _index, child: _screens[i]),
+              TickerMode(
+                enabled: i == _index,
+                child: TourVisibility(visible: i == _index, child: _screens[i]),
+              ),
           ],
         ),
       ),

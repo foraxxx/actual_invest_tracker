@@ -42,7 +42,6 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
   List<MapEntry<DateTime, double>> _exchangeHistory = const [];
   bool _exchangeLoading = false;
   String? _exchangeError;
-  bool _showExchange = true;
   ChartRange _range = ChartRange.year;
 
   /// Дивиденды или купоны с биржи и состояние их разворачивания.
@@ -820,7 +819,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final currency = quote.faceUnit.toUpperCase() == 'SUR' ? 'RUB' : quote.faceUnit.toUpperCase();
     final faceRub = CurrencyService.toRub(face, currency);
     final matDate = quote.matDate;
-    final daysLeft = matDate == null ? null : matDate.difference(DateTime.now()).inDays;
+    final daysLeft = matDate?.difference(DateTime.now()).inDays;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),

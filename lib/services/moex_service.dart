@@ -185,11 +185,39 @@ class MoexService {
     final result = <String, MoexQuote>{};
     final errors = <String>[];
 
+    if (tickers != null) {
+      // A portfolio refresh asks MOEX only for the securities it actually
+      // needs. The full board payloads are reserved for the Market screen.
+      for (final ticker in tickers) {
+        final upper = ticker.toUpperCase();
+        final orderedBoards = upper.startsWith('SU') || upper.startsWith('RU')
+            ? [...boards.skip(2), ...boards.take(2)]
+            : boards;
+        for (final board in orderedBoards) {
+          try {
+            final quotes = await fetchBoard(
+              market: board.market,
+              board: board.board,
+              ticker: upper,
+            );
+            if (quotes.isEmpty) continue;
+            result[upper] = quotes.first;
+            break;
+          } catch (e) {
+            errors.add('${board.board}/$upper: $e');
+          }
+        }
+      }
+      if (result.isEmpty && errors.isNotEmpty) {
+        throw MoexException(errors.join('\n'));
+      }
+      return result;
+    }
+
     for (final b in boards) {
       try {
         final quotes = await fetchBoard(market: b.market, board: b.board);
         for (final q in quotes) {
-          if (tickers != null && !tickers.contains(q.ticker)) continue;
           // Первый режим, где бумага нашлась, и остаётся источником.
           result.putIfAbsent(q.ticker, () => q);
         }
@@ -207,8 +235,13 @@ class MoexService {
   }
 
   /// Загружает один режим торгов целиком.
-  static Future<List<MoexQuote>> fetchBoard({required String market, required String board}) async {
-    final uri = Uri.https(_host, '/iss/engines/stock/markets/$market/boards/$board/securities.json', {
+  static Future<List<MoexQuote>> fetchBoard({
+    required String market,
+    required String board,
+    String? ticker,
+  }) async {
+    final suffix = ticker == null ? 'securities.json' : 'securities/$ticker.json';
+    final uri = Uri.https(_host, '/iss/engines/stock/markets/$market/boards/$board/$suffix', {
       'iss.meta': 'off',
       'iss.only': 'securities,marketdata',
       'securities.columns': _securitiesColumns,
@@ -230,7 +263,7 @@ class MoexService {
     try {
       json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     } catch (e) {
-      throw MoexException('не удалось разобрать ответ биржи');
+      throw const MoexException('не удалось разобрать ответ биржи');
     }
 
     final securities = _table(json, 'securities');
@@ -899,7 +932,7 @@ class MoexService {
     try {
       return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     } catch (_) {
-      throw MoexException('не удалось разобрать ответ биржи');
+      throw const MoexException('не удалось разобрать ответ биржи');
     }
   }
 

@@ -88,7 +88,7 @@ class SecuritiesDatabase {
   /// Полный список = отобранные вручную бумаги (с секторами) + полный список
   /// Мосбиржи (акции, БПИФ и облигации) из выгрузки пользователя.
   /// При совпадении тикера приоритет у вручную отобранной записи (у неё есть сектор).
-  static late final List<SecurityInfo> all = _mergeAll();
+  static final List<SecurityInfo> all = _mergeAll();
 
   static List<SecurityInfo> _mergeAll() {
     final result = <SecurityInfo>[..._curated];

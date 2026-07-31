@@ -37,7 +37,7 @@ class TourScope extends InheritedWidget {
       context.dependOnInheritedWidgetOfExactType<TourScope>()?.active ?? true;
 
   @override
-  bool updateShouldNotify(TourScope old) => old.active != active;
+  bool updateShouldNotify(TourScope oldWidget) => oldWidget.active != active;
 }
 
 /// Обёртка вокруг любого виджета, который умеет подсвечивать обучение.

@@ -27,7 +27,7 @@ class TourVisibility extends InheritedWidget {
       context.dependOnInheritedWidgetOfExactType<TourVisibility>()?.visible ?? true;
 
   @override
-  bool updateShouldNotify(TourVisibility old) => old.visible != visible;
+  bool updateShouldNotify(TourVisibility oldWidget) => oldWidget.visible != visible;
 }
 
 /// Обучение по одной странице: запускается при первом заходе на неё и больше

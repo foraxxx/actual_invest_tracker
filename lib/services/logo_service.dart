@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'moex_service.dart';
@@ -233,7 +232,7 @@ class LogoService {
       // For a fund, prefer the management company when MOEX publishes it;
       // otherwise EMITENT_TITLE is normally the fund manager/issuer already.
       final officialName = issuer?.isFund == true && issuer!.managementCompany.isNotEmpty
-          ? issuer!.managementCompany
+          ? issuer.managementCompany
           : issuer?.title ?? issuerName ?? companyName;
       final aliases = <String>{
         if (issuer?.managementCompany.isNotEmpty == true) issuer!.managementCompany,

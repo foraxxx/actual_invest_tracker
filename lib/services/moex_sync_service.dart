@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../models/purchase.dart';
@@ -32,6 +31,8 @@ class MoexSyncService with WidgetsBindingObserver {
   bool _busy = false;
   bool _observing = false;
   bool _sectorsLoaded = false;
+  bool _marketVisible = false;
+  bool _fullRefreshPending = false;
 
   /// Полный список бумаг с биржи, обновляется тем же циклом. Нужен экрану
   /// «Биржа», чтобы не ходить в сеть отдельно.
@@ -75,6 +76,17 @@ class MoexSyncService with WidgetsBindingObserver {
     }
   }
 
+  /// Full market data is needed only while the Market tab is visible. Other
+  /// screens refresh the portfolio and favourites through lightweight
+  /// per-security requests.
+  void setMarketVisible(bool visible) {
+    if (_marketVisible == visible) return;
+    _marketVisible = visible;
+    if (visible && OnlineSettingsService.enabled) {
+      unawaited(refreshNow(fullMarket: true));
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -88,25 +100,36 @@ class MoexSyncService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> refreshNow() async {
-    if (_busy || !OnlineSettingsService.enabled) return;
+  Future<void> refreshNow({bool? fullMarket}) async {
+    if (!OnlineSettingsService.enabled) return;
+    if (_busy) {
+      if (fullMarket == true) _fullRefreshPending = true;
+      return;
+    }
     _busy = true;
     refreshing.value = true;
     try {
-      final quotes = await MoexService.fetchQuotes();
-      marketSnapshot.value = quotes;
+      final loadFullMarket = fullMarket ?? _marketVisible;
+      final trackedTickers = <String>{
+        ...AnalyticsService.allOwnedTickers().map((ticker) => ticker.toUpperCase()),
+        ...FavoritesService.all.map((ticker) => ticker.toUpperCase()),
+      };
+      final quotes = loadFullMarket
+          ? await MoexService.fetchQuotes()
+          : trackedTickers.isEmpty
+              ? <String, MoexQuote>{}
+              : await MoexService.fetchQuotes(tickers: trackedTickers);
+      marketSnapshot.value = loadFullMarket
+          ? quotes
+          : <String, MoexQuote>{...marketSnapshot.value, ...quotes};
 
       // На диск кладём только то, что реально нужно между запусками: бумаги
       // портфеля и избранное. Писать в Hive несколько тысяч строк каждые
       // десять секунд — лишняя нагрузка, а весь рынок и так живёт в памяти,
       // пока приложение открыто.
-      final keep = <String>{
-        ...AnalyticsService.allOwnedTickers(),
-        ...FavoritesService.all,
-      };
       final toSave = <String, MoexQuote>{
         for (final e in quotes.entries)
-          if (keep.contains(e.key)) e.key: e.value,
+          if (trackedTickers.contains(e.key)) e.key: e.value,
       };
       await OnlinePriceService.saveAll(toSave);
 
@@ -185,6 +208,12 @@ class MoexSyncService with WidgetsBindingObserver {
     } finally {
       _busy = false;
       refreshing.value = false;
+      if (_fullRefreshPending && _marketVisible) {
+        _fullRefreshPending = false;
+        unawaited(refreshNow(fullMarket: true));
+      } else {
+        _fullRefreshPending = false;
+      }
     }
   }
 }

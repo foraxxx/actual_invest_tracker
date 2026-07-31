@@ -167,7 +167,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                   ),
                   const SizedBox(height: 8),
                   PillTabs<AssetType?>(
-                    values: <AssetType?>[null, ...AssetType.values],
+                    values: const <AssetType?>[null, ...AssetType.values],
                     selected: _type,
                     labelOf: (t) => t == null ? 'Все типы' : Fmt.assetTypeShort(t),
                     onChanged: (t) => setState(() => _type = t),
@@ -599,7 +599,6 @@ class _PositionDraft {
   }
 
   double get total {
-    final q = securityQuantity;
     final p = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
     final f = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
     return isSell ? p - f : p + f;

@@ -21,10 +21,13 @@ class TiltShineCard extends StatefulWidget {
   State<TiltShineCard> createState() => _TiltShineCardState();
 }
 
-class _TiltShineCardState extends State<TiltShineCard> with SingleTickerProviderStateMixin {
+class _TiltShineCardState extends State<TiltShineCard>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   StreamSubscription<GyroscopeEvent>? _sub;
   late final Ticker _ticker;
   Duration _lastTick = Duration.zero;
+  bool _tabVisible = true;
+  bool _appActive = true;
 
   // Ограничение угла наклона: сырые данные гироскопа могут давать очень
   // большие углы, а нам нужен лёгкий, "премиальный" наклон, а не кувырок.
@@ -46,6 +49,7 @@ class _TiltShineCardState extends State<TiltShineCard> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ticker = createTicker(_onTick)..start();
     try {
       _sub = gyroscopeEventStream().listen(
@@ -68,6 +72,58 @@ class _TiltShineCardState extends State<TiltShineCard> with SingleTickerProvider
     } catch (_) {
       // пакет/платформа не поддерживает гироскоп — карточка остаётся плоской
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.of(context);
+    if (_tabVisible == visible) return;
+    _tabVisible = visible;
+    if (visible && _appActive) {
+      _startListening();
+    } else {
+      _stopListening();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appActive = state == AppLifecycleState.resumed;
+    if (_appActive && _tabVisible) {
+      _startListening();
+    } else {
+      _stopListening();
+    }
+  }
+
+  void _startListening() {
+    if (_sub != null) return;
+    try {
+      _sub = gyroscopeEventStream().listen(
+        (event) {
+          _targetX = (_targetX * 0.94 + event.y * 0.035)
+              .clamp(-_maxTilt, _maxTilt);
+          _targetY = (_targetY * 0.94 + event.x * 0.035)
+              .clamp(-_maxTilt, _maxTilt);
+        },
+        onError: (_) {
+          _sub = null;
+        },
+        cancelOnError: true,
+      );
+    } catch (_) {
+      _sub = null;
+    }
+  }
+
+  void _stopListening() {
+    _sub?.cancel();
+    _sub = null;
+    _targetX = 0;
+    _targetY = 0;
+    _tiltX = 0;
+    _tiltY = 0;
   }
 
   void _onTick(Duration elapsed) {
@@ -95,6 +151,7 @@ class _TiltShineCardState extends State<TiltShineCard> with SingleTickerProvider
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker.dispose();
     _sub?.cancel();
     super.dispose();

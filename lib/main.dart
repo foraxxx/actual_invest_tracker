@@ -1,4 +1,3 @@
-import 'dart:ui' show FontFeature;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -25,7 +24,7 @@ import 'design/app_theme.dart';
 
 // Держим ссылку на верхнем уровне, чтобы слушатель жизненного цикла не был
 // собран сборщиком мусора (AppLifecycleListener не привязан к дереву виджетов).
-late final AppLifecycleListener _lifecycleListener;
+late final AppLifecycleListener appLifecycleListener;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,7 +61,7 @@ void main() async {
   // поэтому одного запуска при старте недостаточно: без этого слушателя
   // автобэкап срабатывал только на настоящий холодный старт. resumed —
   // вернулись в приложение, paused/detached — свернули или закрыли.
-  _lifecycleListener = AppLifecycleListener(
+  appLifecycleListener = AppLifecycleListener(
     onStateChange: (state) {
       if (state == AppLifecycleState.resumed ||
           state == AppLifecycleState.paused ||

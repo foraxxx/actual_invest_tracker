@@ -324,7 +324,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                         ),
                         if (r.isClosed) ...[
                           const SizedBox(width: 6),
-                          TagChip(text: 'закрыта', color: AppColors.neutral, fontSize: 9),
+                          const TagChip(text: 'закрыта', color: AppColors.neutral, fontSize: 9),
                         ],
                       ],
                     ),

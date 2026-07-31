@@ -54,7 +54,7 @@ class ReportPdfService {
           margin: const pw.EdgeInsets.only(top: 10),
           child: pw.Text(
             'Invest Tracker · страница ${context.pageNumber} из ${context.pagesCount}',
-            style: pw.TextStyle(fontSize: 8, color: _muted),
+            style: const pw.TextStyle(fontSize: 8, color: _muted),
           ),
         ),
         build: (context) => [
@@ -97,7 +97,7 @@ class ReportPdfService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text('ИТОГИ ГОДА', style: pw.TextStyle(fontSize: 9, color: _muted, letterSpacing: 2)),
+        pw.Text('ИТОГИ ГОДА', style: const pw.TextStyle(fontSize: 9, color: _muted, letterSpacing: 2)),
         pw.SizedBox(height: 4),
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
@@ -107,7 +107,7 @@ class ReportPdfService {
             if (portfolioName != null)
               pw.Padding(
                 padding: const pw.EdgeInsets.only(bottom: 5),
-                child: pw.Text(portfolioName, style: pw.TextStyle(fontSize: 13, color: _muted)),
+                child: pw.Text(portfolioName, style: const pw.TextStyle(fontSize: 13, color: _muted)),
               ),
           ],
         ),
@@ -144,7 +144,7 @@ class ReportPdfService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text(c[0], style: pw.TextStyle(fontSize: 8, color: _muted)),
+                pw.Text(c[0], style: const pw.TextStyle(fontSize: 8, color: _muted)),
                 pw.SizedBox(height: 3),
                 pw.Text(
                   c[1],
@@ -187,7 +187,7 @@ class ReportPdfService {
                 children: [
                   pw.Text(
                     (byMonth[m] ?? 0) > 0 ? Fmt.compact(byMonth[m]!) : '',
-                    style: pw.TextStyle(fontSize: 6, color: _muted),
+                    style: const pw.TextStyle(fontSize: 6, color: _muted),
                   ),
                   pw.SizedBox(height: 2),
                   pw.Container(
@@ -199,7 +199,7 @@ class ReportPdfService {
                     ),
                   ),
                   pw.SizedBox(height: 3),
-                  pw.Text(labels[m - 1], style: pw.TextStyle(fontSize: 7, color: _muted)),
+                  pw.Text(labels[m - 1], style: const pw.TextStyle(fontSize: 7, color: _muted)),
                 ],
               ),
             ),
@@ -257,7 +257,7 @@ class ReportPdfService {
                   width: 74,
                   child: pw.Text(
                     '${(e.value / total * 100).toStringAsFixed(1)}%  ${Fmt.compact(e.value)}',
-                    style: pw.TextStyle(fontSize: 8, color: _muted),
+                    style: const pw.TextStyle(fontSize: 8, color: _muted),
                     textAlign: pw.TextAlign.right,
                   ),
                 ),
@@ -285,7 +285,10 @@ class ReportPdfService {
     }
 
     return pw.Table(
-      border: pw.TableBorder(horizontalInside: pw.BorderSide(color: _line), bottom: pw.BorderSide(color: _line)),
+      border: const pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: _line),
+        bottom: pw.BorderSide(color: _line),
+      ),
       columnWidths: const {
         0: pw.FlexColumnWidth(2.3),
         1: pw.FlexColumnWidth(1.2),
@@ -319,7 +322,7 @@ class ReportPdfService {
                     pw.Text(r.ticker, style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                     pw.Text(
                       r.isClosed ? '${r.sector} · позиция закрыта' : r.sector,
-                      style: pw.TextStyle(fontSize: 6.5, color: _muted),
+                      style: const pw.TextStyle(fontSize: 6.5, color: _muted),
                     ),
                   ],
                 ),

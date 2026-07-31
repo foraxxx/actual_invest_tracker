@@ -7,6 +7,7 @@ import 'currency_service.dart';
 import 'moex_service.dart';
 import 'moex_sync_service.dart';
 import 'online_settings_service.dart';
+import 'storage_service.dart';
 
 /// Прогноз выплат по портфелю на 12 месяцев вперёд — по объявленным биржей
 /// купонам и дивидендам, а не по прошлым выплатам.
@@ -229,6 +230,116 @@ class PayoutForecastService {
     }
     return (total: total, fromExchange: fromExchange, fromHistory: fromHistory);
   }
+
+  /// Тот же прогноз по портфелю, разложенный по следующим 12 календарным
+  /// месяцам. Итог всегда совпадает с [portfolioForecast]: меняется только
+  /// распределение суммы по месяцам.
+  ///
+  /// Сначала используем объявленные будущие даты выплат. Если их ещё нет —
+  /// сохраняем сезонность прошлых выплат бумаги с биржи, затем выплат самого
+  /// пользователя. Равномерное распределение остаётся последним запасным
+  /// вариантом, когда никаких дат нет.
+  static Map<String, double> portfolioForecastByMonth({DateTime? from}) {
+    final now = from ?? DateTime.now();
+    final months = List.generate(12, (i) => DateTime(now.year, now.month + i));
+    final result = <String, double>{
+      for (final month in months) _monthKey(month): 0,
+    };
+    final holdings = AnalyticsService.currentHoldings();
+
+    for (final entry in holdings.entries) {
+      final ticker = entry.key;
+      final annual = forecastForTicker(ticker).rub;
+      if (annual <= 0) continue;
+
+      final weights = List<double>.filled(months.length, 0);
+      final payouts = _payouts[ticker] ?? const <MoexPayout>[];
+      final horizon = DateTime(now.year, now.month + 12);
+
+      // Объявленные выплаты точнее любой экстраполяции.
+      for (final payout in payouts) {
+        if (!_isForecastPayout(payout) ||
+            payout.amount <= 0 ||
+            payout.date.isBefore(now) ||
+            !payout.date.isBefore(horizon)) {
+          continue;
+        }
+        final index = _monthIndex(months, payout.date);
+        if (index >= 0) weights[index] += payout.amount;
+      }
+
+      // Если будущих дат пока нет, переносим в прогноз привычные месяцы
+      // выплат эмитента. Берём до трёх последних лет, чтобы разовая старая
+      // выплата не определяла календарь навсегда.
+      if (_sum(weights) <= 0) {
+        final historyStart = now.subtract(const Duration(days: 365 * 3));
+        for (final payout in payouts) {
+          if (!_isForecastPayout(payout) ||
+              payout.amount <= 0 ||
+              !payout.date.isBefore(now) ||
+              payout.date.isBefore(historyStart)) {
+            continue;
+          }
+          final index = months.indexWhere((month) => month.month == payout.date.month);
+          if (index >= 0) weights[index] += payout.amount;
+        }
+      }
+
+      // Для бумаг без биржевой истории используем месяцы реальных выплат,
+      // записанных пользователем. Это тот же источник, что и запасной
+      // годовой прогноз в forecastForTicker.
+      if (_sum(weights) <= 0) {
+        final historyStart = now.subtract(const Duration(days: 365));
+        for (final income in StorageService.incomes) {
+          if (income.ticker.toUpperCase() != ticker.toUpperCase() ||
+              income.amountNet <= 0 ||
+              income.date.isBefore(historyStart) ||
+              income.date.isAfter(now)) {
+            continue;
+          }
+          final index = months.indexWhere((month) => month.month == income.date.month);
+          if (index >= 0) weights[index] += income.amountNet;
+        }
+      }
+
+      if (_sum(weights) <= 0) {
+        for (int i = 0; i < weights.length; i++) {
+          weights[i] = 1;
+        }
+      }
+
+      final weightTotal = _sum(weights);
+      for (int i = 0; i < months.length; i++) {
+        final key = _monthKey(months[i]);
+        result[key] = result[key]! + annual * weights[i] / weightTotal;
+      }
+    }
+
+    // Устраняем погрешность double, чтобы сумма столбцов и значение карточки
+    // были буквально одним и тем же числом.
+    final expected = portfolioForecast().total;
+    final actual = result.values.fold(0.0, (sum, value) => sum + value);
+    if (expected > 0 && result.isNotEmpty) {
+      final lastNonZero = result.keys.toList().lastWhere(
+            (key) => result[key]! > 0,
+            orElse: () => result.keys.last,
+          );
+      result[lastNonZero] = result[lastNonZero]! + expected - actual;
+    }
+    return result;
+  }
+
+  static int _monthIndex(List<DateTime> months, DateTime date) =>
+      months.indexWhere((month) => month.year == date.year && month.month == date.month);
+
+  static bool _isForecastPayout(MoexPayout payout) =>
+      payout.kind == 'Купон' || payout.kind == 'Дивиденд';
+
+  static String _monthKey(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}';
+
+  static double _sum(List<double> values) =>
+      values.fold(0.0, (sum, value) => sum + value);
 
   /// Прогнозная доходность портфеля: ожидаемые выплаты к текущей стоимости.
   static double yieldPct() {

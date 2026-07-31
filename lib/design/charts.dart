@@ -1142,7 +1142,7 @@ class _BarsChartState extends State<BarsChart> with SingleTickerProviderStateMix
         // "12 345 ₽", so Flutter clipped the end of the amount.  Keep a
         const minBarSlot = 54.0;
         final needed = widget.values.length * minBarSlot;
-        final width = math.max(constraints.maxWidth, needed);
+        final width = math.max(constraints.maxWidth, needed).toDouble();
         final selectedText =
             _selected >= 0 ? widget.valueFormatter(widget.values[_selected]) : '';
         final selectedStyle = TextStyle(
@@ -1153,15 +1153,16 @@ class _BarsChartState extends State<BarsChart> with SingleTickerProviderStateMix
         final textPainter = TextPainter(
           text: TextSpan(text: selectedText, style: selectedStyle),
           textDirection: Directionality.of(context),
-          textScaleFactor: MediaQuery.textScaleFactorOf(context),
+          textScaler: MediaQuery.textScalerOf(context),
           maxLines: 1,
         )..layout();
-        final tooltipWidth = math.min(width, textPainter.width + 20);
+        final tooltipWidth = math.min(width, textPainter.width + 20).toDouble();
         final slotWidth = width / widget.values.length;
-        final tooltipLeft = _selected < 0
+        final tooltipLeft = (_selected < 0
             ? 0.0
             : (_selected * slotWidth + slotWidth / 2 - tooltipWidth / 2)
-                .clamp(0.0, math.max(0.0, width - tooltipWidth));
+                .clamp(0.0, math.max(0.0, width - tooltipWidth)))
+            .toDouble();
         final content = SizedBox(
           height: widget.height,
           width: width,

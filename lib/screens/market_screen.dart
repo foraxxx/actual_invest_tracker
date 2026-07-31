@@ -1089,7 +1089,7 @@ class _MarketScreenState extends State<MarketScreen> {
                     ),
                     if (isOwned) ...[
                       const SizedBox(width: 6),
-                      TagChip(text: 'в портфеле', color: AppColors.positive, fontSize: 9),
+                      const TagChip(text: 'в портфеле', color: AppColors.positive, fontSize: 9),
                     ],
                   ],
                 ),
