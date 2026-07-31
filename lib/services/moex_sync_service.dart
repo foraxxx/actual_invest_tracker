@@ -7,6 +7,7 @@ import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'favorites_service.dart';
 import 'moex_service.dart';
+import 'moex_trading_schedule_service.dart';
 import 'network_service.dart';
 import 'online_price_service.dart';
 import 'online_settings_service.dart';
@@ -42,9 +43,6 @@ class MoexSyncService with WidgetsBindingObserver {
   static final ValueNotifier<Map<String, double>> currencyRates = ValueNotifier({});
 
   void start() {
-    // Проверяем VPN сразу, а не только когда запрос уже сорвался: иначе
-    // подсказка появлялась бы с задержкой или не появлялась вовсе.
-    unawaited(NetworkService.checkVpn());
     if (!_observing) {
       WidgetsBinding.instance.addObserver(this);
       _observing = true;
@@ -62,8 +60,12 @@ class MoexSyncService with WidgetsBindingObserver {
   void _restartTimer() {
     _timer?.cancel();
     if (!OnlineSettingsService.enabled) return;
-    final seconds = OnlineSettingsService.intervalSeconds;
-    _timer = Timer.periodic(Duration(seconds: seconds), (_) => unawaited(refreshNow()));
+    final delay = MoexTradingScheduleService.nextAutomaticDelay(
+      OnlineSettingsService.intervalSeconds,
+    );
+    // Вне торгов таймер спит до финального обновления либо следующего
+    // открытия, вместо пробуждения телефона каждые несколько секунд.
+    _timer = Timer(delay, () => unawaited(refreshNow()));
   }
 
   /// Вызывается после изменения настроек: включили/выключили или сменили
@@ -100,7 +102,7 @@ class MoexSyncService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> refreshNow({bool? fullMarket}) async {
+  Future<void> refreshNow({bool? fullMarket, bool force = false}) async {
     if (!OnlineSettingsService.enabled) return;
     if (_busy) {
       if (fullMarket == true) _fullRefreshPending = true;
@@ -109,6 +111,15 @@ class MoexSyncService with WidgetsBindingObserver {
     _busy = true;
     refreshing.value = true;
     try {
+      final tradingNow = MoexTradingScheduleService.isTradingSession();
+      final finalRefresh = MoexTradingScheduleService.needsFinalRefresh(
+        OnlineSettingsService.lastSyncAt,
+      );
+      if (!force && !tradingNow && !finalRefresh) {
+        await _refreshReferenceDataIfNeeded();
+        return;
+      }
+
       final loadFullMarket = fullMarket ?? _marketVisible;
       final trackedTickers = <String>{
         ...AnalyticsService.allOwnedTickers().map((ticker) => ticker.toUpperCase()),
@@ -213,7 +224,16 @@ class MoexSyncService with WidgetsBindingObserver {
         unawaited(refreshNow(fullMarket: true));
       } else {
         _fullRefreshPending = false;
+        _restartTimer();
       }
     }
+  }
+
+  /// Купоны и дивиденды не зависят от того, открыта ли торговая сессия, но
+  /// проверять их с частотой котировок тоже незачем.
+  Future<void> _refreshReferenceDataIfNeeded() async {
+    if (!OnlineSettingsService.referenceDataIsStale) return;
+    await PayoutForecastService.refresh(force: true);
+    await OnlineSettingsService.markReferenceSynced();
   }
 }

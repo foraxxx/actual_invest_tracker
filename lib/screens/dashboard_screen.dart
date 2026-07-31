@@ -71,6 +71,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _onDataChanged() {
     HomeWidgetService.update();
+    // Новая сделка могла добавить облигацию. Сразу загружаем её будущий
+    // купонный календарь, не дожидаясь следующего фонового обновления MOEX.
+    PayoutForecastService.refresh();
     if (mounted) setState(() {});
   }
 

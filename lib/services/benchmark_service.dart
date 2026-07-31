@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'moex_service.dart';
+import 'moex_trading_schedule_service.dart';
 import 'online_settings_service.dart';
 import 'storage_service.dart';
 
@@ -19,6 +20,10 @@ class BenchmarkService {
     }
     if (!OnlineSettingsService.enabled) {
       error.value = 'Сравнение с IMOEX выключено';
+      return;
+    }
+    if (!MoexTradingScheduleService.isTradingSession() &&
+        !MoexTradingScheduleService.needsFinalRefresh(OnlineSettingsService.lastSyncAt)) {
       return;
     }
     loading.value = true;

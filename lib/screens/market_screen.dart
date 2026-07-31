@@ -14,6 +14,7 @@ import '../services/market_filter_service.dart';
 import '../services/moex_service.dart';
 import '../services/network_service.dart';
 import '../services/moex_sync_service.dart';
+import '../services/moex_trading_schedule_service.dart';
 import '../services/online_price_service.dart';
 import '../services/online_settings_service.dart';
 import '../widgets/ticker_avatar.dart';
@@ -60,7 +61,11 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   void initState() {
     super.initState();
-    if (OnlineSettingsService.enabled) _loadChart();
+    if (OnlineSettingsService.enabled && MoexTradingScheduleService.isTradingSession()) {
+      _loadChart();
+    } else if (OnlineSettingsService.enabled) {
+      _chartError = 'Биржа закрыта. Выбери инструмент или период, чтобы обновить график вручную.';
+    }
     // Загрузку могли включить уже после открытия экрана — тогда график должен
     // подтянуться сам, без нажатия обновления.
     OnlineSettingsService.version.addListener(_onOnlineChanged);
@@ -68,7 +73,10 @@ class _MarketScreenState extends State<MarketScreen> {
 
   void _onOnlineChanged() {
     if (!mounted) return;
-    if (OnlineSettingsService.enabled && _chartPoints.isEmpty && !_chartLoading) {
+    if (OnlineSettingsService.enabled &&
+        MoexTradingScheduleService.isTradingSession() &&
+        _chartPoints.isEmpty &&
+        !_chartLoading) {
       _loadChart();
     }
   }
@@ -342,6 +350,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       valueListenable: MoexSyncService.refreshing,
                       builder: (context, refreshing, _) {
                         final last = OnlineSettingsService.lastSyncAt;
+                        final marketOpen = MoexTradingScheduleService.isTradingSession();
                         return Row(
                           children: [
                             if (refreshing) ...[
@@ -356,11 +365,13 @@ class _MarketScreenState extends State<MarketScreen> {
                               refreshing
                                   ? 'Обновляю…'
                                   : last == null
-                                      ? '${quotes.length} бумаг'
+                                      ? '${quotes.length} бумаг · '
+                                          '${marketOpen ? "торги идут" : "биржа закрыта"}'
                                       : '${quotes.length} бумаг · '
                                           '${last.hour.toString().padLeft(2, '0')}:'
                                           '${last.minute.toString().padLeft(2, '0')}:'
-                                          '${last.second.toString().padLeft(2, '0')}',
+                                          '${last.second.toString().padLeft(2, '0')} · '
+                                          '${marketOpen ? "торги идут" : "биржа закрыта"}',
                               style: TextStyle(fontSize: 12, color: context.dim),
                             ),
                           ],
@@ -373,7 +384,7 @@ class _MarketScreenState extends State<MarketScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh_rounded),
                 tooltip: 'Обновить сейчас',
-                onPressed: () => MoexSyncService.instance.refreshNow(),
+                onPressed: () => MoexSyncService.instance.refreshNow(force: true),
               ),
             ],
           ),

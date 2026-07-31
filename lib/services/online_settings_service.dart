@@ -11,6 +11,7 @@ class OnlineSettingsService {
   static const _lastErrorKey = 'lastError';
   static const _lastCountKey = 'lastCount';
   static const _intervalKey = 'intervalSeconds';
+  static const _lastReferenceSyncKey = 'lastReferenceSyncAt';
 
   static late Box<String> _box;
 
@@ -27,7 +28,7 @@ class OnlineSettingsService {
   /// Как часто обновлять котировки, в секундах. Биржа отдаёт данные с
   /// задержкой около 15 минут, поэтому чаще минуты смысла почти нет — но
   /// выбор оставлен за пользователем.
-  static int get intervalSeconds => int.tryParse(_box.get(_intervalKey) ?? '') ?? 10;
+  static int get intervalSeconds => int.tryParse(_box.get(_intervalKey) ?? '') ?? 60;
 
   static Future<void> setIntervalSeconds(int v) async {
     await _box.put(_intervalKey, '$v');
@@ -37,6 +38,16 @@ class OnlineSettingsService {
   static DateTime? get lastSyncAt {
     final v = _box.get(_lastSyncKey);
     return v == null ? null : DateTime.tryParse(v);
+  }
+
+  static DateTime? get lastReferenceSyncAt {
+    final v = _box.get(_lastReferenceSyncKey);
+    return v == null ? null : DateTime.tryParse(v);
+  }
+
+  static bool get referenceDataIsStale {
+    final last = lastReferenceSyncAt;
+    return last == null || DateTime.now().difference(last) >= const Duration(hours: 24);
   }
 
   /// Сколько бумаг обновилось при последней успешной загрузке.
@@ -60,5 +71,9 @@ class OnlineSettingsService {
   static Future<void> markError(String message) async {
     await _box.put(_lastErrorKey, message);
     version.value++;
+  }
+
+  static Future<void> markReferenceSynced() async {
+    await _box.put(_lastReferenceSyncKey, DateTime.now().toIso8601String());
   }
 }

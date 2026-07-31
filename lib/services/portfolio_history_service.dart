@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'moex_service.dart';
+import 'moex_trading_schedule_service.dart';
 import 'online_settings_service.dart';
 import 'storage_service.dart';
 import '../models/purchase.dart';
@@ -24,6 +25,10 @@ class PortfolioHistoryService {
     }
     if (!OnlineSettingsService.enabled) {
       error.value = 'Онлайн-история выключена — показаны локальные данные';
+      return;
+    }
+    if (!MoexTradingScheduleService.isTradingSession() &&
+        !MoexTradingScheduleService.needsFinalRefresh(OnlineSettingsService.lastSyncAt)) {
       return;
     }
     loading.value = true;

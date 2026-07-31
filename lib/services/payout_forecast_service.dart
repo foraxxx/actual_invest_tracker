@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import '../models/purchase.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'moex_service.dart';
@@ -25,27 +26,50 @@ class PayoutForecastService {
   /// Тикер -> выплаты с биржи. Живёт в памяти: график купонов меняется редко,
   /// но и хранить его между запусками смысла нет.
   static final Map<String, List<MoexPayout>> _payouts = {};
+  static final Map<String, bool> _loadedAsBond = {};
+  static final Map<String, DateTime> _loadedAt = {};
 
   static bool get hasData => _payouts.isNotEmpty;
 
   static List<MoexPayout> payoutsFor(String ticker) => _payouts[ticker] ?? const [];
 
   /// Загружает графики выплат для бумаг портфеля.
-  static Future<void> refresh() async {
+  static Future<void> refresh({bool force = false}) async {
     if (!OnlineSettingsService.enabled || loading.value) return;
     loading.value = true;
     try {
       final holdings = AnalyticsService.currentHoldings();
       final snapshot = MoexSyncService.marketSnapshot.value;
+      final portfolioBonds = <String>{
+        for (final trade in StorageService.purchases)
+          if (trade.type == AssetType.bond) trade.ticker.toUpperCase(),
+      };
       for (final ticker in holdings.keys) {
-        if (_payouts.containsKey(ticker)) continue;
+        final upper = ticker.toUpperCase();
+        // Тип бумаги известен из сделки ещё до первой загрузки котировок.
+        // Снимок MOEX остаётся дополнительным источником для старых данных,
+        // где тип мог быть указан неверно.
+        final isBond = portfolioBonds.contains(upper) || snapshot[upper]?.isBond == true;
+        final loadedAsBond = _loadedAsBond[ticker];
+        final loadedAt = _loadedAt[ticker];
+        final fresh = loadedAt != null &&
+            DateTime.now().difference(loadedAt) < const Duration(hours: 24);
+        if (!force && _payouts.containsKey(ticker) && loadedAsBond == isBond && fresh) {
+          continue;
+        }
         try {
           _payouts[ticker] = await MoexService.fetchPayouts(
             ticker,
-            isBond: snapshot[ticker.toUpperCase()]?.isBond ?? false,
+            isBond: isBond,
           );
+          _loadedAsBond[ticker] = isBond;
+          _loadedAt[ticker] = DateTime.now();
         } catch (_) {
-          _payouts[ticker] = const [];
+          // Ошибку сети не кэшируем как «выплат нет»: следующий цикл
+          // синхронизации должен снова попробовать получить весь календарь.
+          _payouts.remove(ticker);
+          _loadedAsBond.remove(ticker);
+          _loadedAt.remove(ticker);
         }
       }
       version.value++;
@@ -56,6 +80,8 @@ class PayoutForecastService {
 
   static void clear() {
     _payouts.clear();
+    _loadedAsBond.clear();
+    _loadedAt.clear();
     version.value++;
   }
 
