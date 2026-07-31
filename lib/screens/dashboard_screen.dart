@@ -18,7 +18,6 @@ import '../services/favorites_service.dart';
 import '../services/home_widget_service.dart';
 import '../services/manual_price_service.dart';
 import '../services/portfolio_service.dart';
-import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../services/benchmark_service.dart';
 import '../services/portfolio_history_service.dart';
@@ -143,7 +142,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final payoutSummary = PayoutForecastService.portfolioForecast();
     final payoutForecast = payoutSummary.total;
     final payoutYield = PayoutForecastService.yieldPct();
-    final invested = AnalyticsService.totalInvested(f: _period);
     final periodIncome = AnalyticsService.totalIncome(f: _period);
     final totalIncome = AnalyticsService.totalIncome(f: PeriodFilter.all);
     final totalProfit = unrealizedPnl + realizedPnl + totalIncome;

@@ -24,6 +24,16 @@ class TourService {
     version.value++;
   }
 
+  /// Совместимость с полноэкранным вводным туром.
+  static Future<void> setCompleted(bool value) async {
+    if (value) {
+      await _box.put('intro', '1');
+    } else {
+      await _box.delete('intro');
+    }
+    version.value++;
+  }
+
   /// Список пройденных страниц — для бэкапа.
   static List<String> get donePages =>
       _box.keys.map((k) => '$k').where((k) => _box.get(k) == '1').toList();
