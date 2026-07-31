@@ -1137,35 +1137,82 @@ class _BarsChartState extends State<BarsChart> with SingleTickerProviderStateMix
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // The selected value is rendered inside the same slot as its bar.  A
-        // 54 px slot was too narrow even for common values such as
+        // The selected value is measured and rendered above the whole chart.
+        // Its width therefore follows the amount, not the selected bar.
         // "12 345 ₽", so Flutter clipped the end of the amount.  Keep a
-        // slightly wider slot and let the label scale down for exceptionally
-        // large values instead of ever truncating them.
-        const minBarSlot = 72.0;
+        const minBarSlot = 54.0;
         final needed = widget.values.length * minBarSlot;
         final width = math.max(constraints.maxWidth, needed);
+        final selectedText =
+            _selected >= 0 ? widget.valueFormatter(widget.values[_selected]) : '';
+        final selectedStyle = TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: widget.color,
+        );
+        final textPainter = TextPainter(
+          text: TextSpan(text: selectedText, style: selectedStyle),
+          textDirection: Directionality.of(context),
+          textScaleFactor: MediaQuery.textScaleFactorOf(context),
+          maxLines: 1,
+        )..layout();
+        final tooltipWidth = math.min(width, textPainter.width + 20);
+        final slotWidth = width / widget.values.length;
+        final tooltipLeft = _selected < 0
+            ? 0.0
+            : (_selected * slotWidth + slotWidth / 2 - tooltipWidth / 2)
+                .clamp(0.0, math.max(0.0, width - tooltipWidth));
         final content = SizedBox(
           height: widget.height,
           width: width,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              for (int i = 0; i < widget.values.length; i++)
-                Expanded(
-                  child: _Bar(
-                    value: widget.values[i],
-                    maxValue: maxV <= 0 ? 1 : maxV,
-                    label: i < widget.labels.length ? widget.labels[i] : '',
-                    color: widget.color,
-                    animation: _c,
-                    delay: i / (widget.values.length * 1.6),
-                    selected: _selected == i,
-                    valueText: widget.valueFormatter(widget.values[i]),
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      setState(() => _selected = _selected == i ? -1 : i);
-                    },
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 27,
+                bottom: 0,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (int i = 0; i < widget.values.length; i++)
+                      Expanded(
+                        child: _Bar(
+                          value: widget.values[i],
+                          maxValue: maxV <= 0 ? 1 : maxV,
+                          label: i < widget.labels.length ? widget.labels[i] : '',
+                          color: widget.color,
+                          animation: _c,
+                          delay: i / (widget.values.length * 1.6),
+                          selected: _selected == i,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _selected = _selected == i ? -1 : i);
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (_selected >= 0)
+                Positioned(
+                  left: tooltipLeft,
+                  top: 0,
+                  width: tooltipWidth,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: widget.color.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(
+                      selectedText,
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.center,
+                      style: selectedStyle,
+                    ),
                   ),
                 ),
             ],
@@ -1188,7 +1235,6 @@ class _Bar extends StatelessWidget {
   final double value;
   final double maxValue;
   final String label;
-  final String valueText;
   final Color color;
   final Animation<double> animation;
   final double delay;
@@ -1199,7 +1245,6 @@ class _Bar extends StatelessWidget {
     required this.value,
     required this.maxValue,
     required this.label,
-    required this.valueText,
     required this.color,
     required this.animation,
     required this.delay,
@@ -1226,27 +1271,6 @@ class _Bar extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                AnimatedOpacity(
-                  duration: AppDuration.fast,
-                  opacity: selected ? 1 : 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.16),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        valueText,
-                        maxLines: 1,
-                        softWrap: false,
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 5),
                 Expanded(
                   child: FractionallySizedBox(
                     heightFactor: ratio < 0.02 ? 0.02 : ratio,

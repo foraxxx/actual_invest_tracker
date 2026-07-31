@@ -201,7 +201,7 @@ class _IncomesScreenState extends State<IncomesScreen> {
                               values: byMonth.values.toList(),
                               labels: byMonth.keys.map(Fmt.monthKeyLabel).toList(),
                               color: AppColors.positive,
-                              valueFormatter: (v) => Fmt.compact(v),
+                              valueFormatter: (v) => Fmt.money(v),
                               height: 170,
                             ),
                           ],
