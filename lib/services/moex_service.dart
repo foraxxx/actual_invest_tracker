@@ -89,6 +89,35 @@ class MoexQuote {
   bool get isBond => faceValue != null;
 }
 
+/// Stable issuer identity returned by MOEX for a security.  Unlike a ticker,
+/// [id] is shared by an issuer's shares and bond issues, so it is suitable as
+/// a cache key for company logos.
+class MoexIssuerInfo {
+  final String id;
+  final String title;
+  final String shortName;
+  final String securityName;
+  final String securityType;
+  final String managementCompany;
+
+  const MoexIssuerInfo({
+    required this.id,
+    required this.title,
+    required this.shortName,
+    required this.securityName,
+    required this.securityType,
+    this.managementCompany = '',
+  });
+
+  bool get isFund {
+    final value = '$securityType $securityName'.toLowerCase();
+    return value.contains('fund') ||
+        value.contains('etf') ||
+        value.contains('пай') ||
+        value.contains('бпиф');
+  }
+}
+
 /// Выплата по бумаге с биржи: дивиденд, купон или погашение номинала.
 class MoexPayout {
   /// У дивидендов это дата закрытия реестра, у купонов — дата выплаты.
@@ -493,6 +522,56 @@ class MoexService {
 
   /// Кэш «бумага → бумага эмитента, у которой стоит искать логотип».
   static final Map<String, String?> _issuerProxy = {};
+  static final Map<String, String?> _issuerShareById = {};
+
+  static final Map<String, MoexIssuerInfo?> _issuerInfoCache = {};
+
+  /// Returns the issuer itself, including issuers that have no listed shares.
+  /// This is the primary identity for logos; [issuerShareFor] remains only as
+  /// an additional source of a ticker/ISIN understood by broker CDNs.
+  static Future<MoexIssuerInfo?> issuerInfoFor(String secid) async {
+    final key = secid.trim().toUpperCase();
+    if (key.isEmpty) return null;
+    if (_issuerInfoCache.containsKey(key)) return _issuerInfoCache[key];
+
+    try {
+      final uri = Uri.https(_host, '/iss/securities/$key.json', {
+        'iss.meta': 'off',
+        'iss.only': 'description',
+        'description.columns': 'name,value',
+      });
+      final values = <String, String>{};
+      for (final row in _table(await _getJson(uri), 'description')) {
+        final name = '${row['name']}'.trim().toUpperCase();
+        final value = '${row['value']}'.trim();
+        if (name.isNotEmpty && value.isNotEmpty && value != 'null') {
+          values[name] = value;
+        }
+      }
+
+      final id = values['EMITENT_ID'] ?? '';
+      final title = values['EMITENT_TITLE'] ?? '';
+      if (id.isEmpty || title.isEmpty) {
+        _issuerInfoCache[key] = null;
+        return null;
+      }
+      final info = MoexIssuerInfo(
+        id: id,
+        title: title,
+        shortName: values['EMITENT_SHORTNAME'] ?? values['SHORTNAME'] ?? '',
+        securityName: values['NAME'] ?? values['SHORTNAME'] ?? key,
+        securityType: values['TYPE'] ?? values['GROUP'] ?? '',
+        managementCompany: values['MANAGEMENT_COMPANY'] ??
+            values['MANAGEMENTCOMPANY'] ??
+            values['ASSET_MANAGER'] ??
+            '',
+      );
+      _issuerInfoCache[key] = info;
+      return info;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Находит у того же эмитента акцию — её логотип и берём для облигации.
   ///
@@ -503,6 +582,13 @@ class MoexService {
     final key = secid.trim().toUpperCase();
     if (key.isEmpty) return null;
     if (_issuerProxy.containsKey(key)) return _issuerProxy[key];
+
+    final identity = await issuerInfoFor(key);
+    if (identity != null && _issuerShareById.containsKey(identity.id)) {
+      final cached = _issuerShareById[identity.id];
+      _issuerProxy[key] = cached;
+      return cached;
+    }
 
     try {
       // Описание бумаги: оттуда берём идентификатор и название эмитента.
@@ -553,6 +639,9 @@ class MoexService {
       }
 
       _issuerProxy[key] = best;
+      if (emitentId != null && emitentId.isNotEmpty) {
+        _issuerShareById[emitentId] = best;
+      }
       return best;
     } catch (_) {
       return null;

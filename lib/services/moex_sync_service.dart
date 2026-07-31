@@ -148,6 +148,10 @@ class MoexSyncService with WidgetsBindingObserver {
             final isBond = quote?.isBond == true || portfolioBonds.contains(upper);
             if (!isBond || enriched.containsKey(upper)) continue;
 
+            // Resolve the issuer by MOEX emitent_id. issuerShareFor only
+            // returns a share whose emitent_id exactly matches the bond's,
+            // so similarly named unrelated companies cannot leak a sector.
+            await MoexService.issuerInfoFor(upper);
             final issuerShare = await MoexService.issuerShareFor(upper);
             if (issuerShare != null) {
               final issuerSector = SectorService.sectorFor(issuerShare);

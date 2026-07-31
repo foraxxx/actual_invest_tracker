@@ -17,6 +17,10 @@ import 'package:path_provider/path_provider.dart';
 /// загрузке с биржи; офлайн-режим работает ровно как раньше.
 class LogoService {
   static const boxName = 'ticker_logos';
+  // Underscore (rather than a colon) keeps the synthetic cache filename valid
+  // on Windows as well as Android.
+  static const _issuerPrefix = '#issuer_';
+  static const _aliasPrefix = '@issuer:';
   static late Box<String> _box;
 
   static final ValueNotifier<int> version = ValueNotifier(0);
@@ -26,8 +30,14 @@ class LogoService {
   }
 
   static String? getPath(String ticker) {
-    final path = _box.get(ticker.toUpperCase());
+    var path = _box.get(ticker.toUpperCase());
     if (path == null) return null;
+    if (path.startsWith(_aliasPrefix)) {
+      path = _box.get(
+        '$_issuerPrefix${path.substring(_aliasPrefix.length)}'.toUpperCase(),
+      );
+      if (path == null) return null;
+    }
     if (!File(path).existsSync()) return null;
     return path;
   }
@@ -68,14 +78,39 @@ class LogoService {
   }
 
   static Future<void> removeLogo(String ticker) async {
-    final path = _box.get(ticker.toUpperCase());
+    final key = ticker.toUpperCase();
+    final raw = _box.get(key);
+    // Removing one bond must not delete the shared issuer file used by the
+    // issuer's other issues.
+    if (raw != null && raw.startsWith(_aliasPrefix)) {
+      await _box.delete(key);
+      version.value++;
+      return;
+    }
+    final path = raw;
     if (path != null) {
       await FileImage(File(path)).evict();
       if (File(path).existsSync()) {
         await File(path).delete();
       }
     }
-    await _box.delete(ticker.toUpperCase());
+    await _box.delete(key);
+    version.value++;
+  }
+
+  static Future<void> _setFetchedLogo(
+    String ticker,
+    List<int> bytes,
+    String ext, {
+    String? issuerId,
+  }) async {
+    if (issuerId == null || issuerId.isEmpty) {
+      await setLogoBytes(ticker, bytes, ext);
+      return;
+    }
+    final ownerKey = '$_issuerPrefix$issuerId';
+    await setLogoBytes(ownerKey, bytes, ext);
+    await _box.put(ticker.toUpperCase(), '$_aliasPrefix$issuerId');
     version.value++;
   }
 
@@ -134,17 +169,34 @@ class LogoService {
   }) async {
     final key = ticker.toUpperCase();
     if (getPath(key) != null) return false;
-    if (_inFlight.contains(key) || _recentlyTried(key)) return false;
-    _inFlight.add(key);
+    // OFZ uses the explicit government icon and never needs a company logo.
+    if (key.startsWith('SU')) return false;
+
+    final issuer = await MoexService.issuerInfoFor(key);
+    final issuerId = issuer?.id;
+    if (issuerId != null && issuerId.isNotEmpty) {
+      final sharedPath = getPath('$_issuerPrefix$issuerId');
+      if (sharedPath != null) {
+        await _box.put(key, '$_aliasPrefix$issuerId');
+        version.value++;
+        return true;
+      }
+    }
+    final attemptKey = issuerId == null || issuerId.isEmpty ? key : 'issuer_$issuerId';
+    if (_inFlight.contains(attemptKey) || _recentlyTried(key)) return false;
+    _inFlight.add(attemptKey);
 
     final tried = <String>[];
 
     try {
       // Пробуем сначала свои идентификаторы, потом эмитента.
+      final resolvedIssuerTicker = issuerTicker ?? await MoexService.issuerShareFor(key);
+      final resolvedIssuerIsin = issuerIsin ??
+          (resolvedIssuerTicker == null ? null : await MoexService.isinOf(resolvedIssuerTicker));
       final variants = <({String? isin, String ticker})>[
         (isin: isin, ticker: key),
-        if (issuerTicker != null && issuerTicker.toUpperCase() != key)
-          (isin: issuerIsin, ticker: issuerTicker.toUpperCase()),
+        if (resolvedIssuerTicker != null && resolvedIssuerTicker.toUpperCase() != key)
+          (isin: resolvedIssuerIsin, ticker: resolvedIssuerTicker.toUpperCase()),
       ];
 
       for (final variant in variants) {
@@ -167,7 +219,7 @@ class LogoService {
           if (response.statusCode == 200 && type.startsWith('image/') && response.bodyBytes.length > 200) {
             final ext = type.contains('png') ? 'png' : (type.contains('svg') ? 'svg' : 'jpg');
             if (ext == 'svg') continue; // SVG Image.file не покажет
-            await setLogoBytes(key, response.bodyBytes, ext);
+            await _setFetchedLogo(key, response.bodyBytes, ext, issuerId: issuerId);
             await _box.delete('$_triedPrefix$key');
             lastFailures.remove(key);
             return true;
@@ -178,8 +230,20 @@ class LogoService {
       }
       }
       // CDN брокеров нас не знают — пробуем Викиданные по названию компании.
-      for (final name in {if (companyName != null) companyName, if (issuerName != null) issuerName}) {
-        final url = await WikiLogoService.logoUrl(name);
+      // For a fund, prefer the management company when MOEX publishes it;
+      // otherwise EMITENT_TITLE is normally the fund manager/issuer already.
+      final officialName = issuer?.isFund == true && issuer!.managementCompany.isNotEmpty
+          ? issuer!.managementCompany
+          : issuer?.title ?? issuerName ?? companyName;
+      final aliases = <String>{
+        if (issuer?.managementCompany.isNotEmpty == true) issuer!.managementCompany,
+        if (issuer?.shortName.isNotEmpty == true) issuer!.shortName,
+        if (issuer?.securityName.isNotEmpty == true) issuer!.securityName,
+        if (companyName != null) companyName,
+        if (issuerName != null) issuerName,
+      };
+      for (final name in {if (officialName != null) officialName, ...aliases}) {
+        final url = await WikiLogoService.logoUrl(name, aliases: aliases);
         if (url == null) {
           tried.add('в Викиданных нет логотипа · $name');
           continue;
@@ -192,7 +256,12 @@ class LogoService {
               type.startsWith('image/') &&
               !type.contains('svg') &&
               response.bodyBytes.length > 200) {
-            await setLogoBytes(key, response.bodyBytes, type.contains('png') ? 'png' : 'jpg');
+            await _setFetchedLogo(
+              key,
+              response.bodyBytes,
+              type.contains('png') ? 'png' : 'jpg',
+              issuerId: issuerId,
+            );
             await _box.delete('$_triedPrefix$key');
             lastFailures.remove(key);
             return true;
@@ -206,7 +275,7 @@ class LogoService {
       lastFailures[key] = tried;
       return false;
     } finally {
-      _inFlight.remove(key);
+      _inFlight.remove(attemptKey);
     }
   }
 
@@ -261,7 +330,8 @@ class LogoService {
     final map = <String, String>{};
     for (final key in _box.keys) {
       final ticker = key as String;
-      if (ticker.startsWith(_triedPrefix)) continue;
+      final normalized = ticker.toLowerCase();
+      if (normalized.startsWith(_triedPrefix) || normalized.startsWith(_issuerPrefix)) continue;
       final path = getPath(ticker);
       if (path != null) map[ticker] = path;
     }

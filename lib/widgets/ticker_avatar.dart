@@ -49,6 +49,8 @@ class TickerAvatar extends StatelessWidget {
     return null;
   }
 
+  bool get _isGovernmentBond => ticker.toUpperCase().startsWith('SU');
+
   String get _initials {
     if (ticker.isEmpty) return '?';
     final clean = ticker.replaceAll(RegExp(r'[^A-Za-zА-Яа-я0-9]'), '');
@@ -64,7 +66,7 @@ class TickerAvatar extends StatelessWidget {
       valueListenable: LogoService.version,
       builder: (context, _, __) {
         final logoPath = LogoService.getPath(ticker);
-        if (logoPath == null && OnlineSettingsService.enabled) {
+        if (logoPath == null && OnlineSettingsService.enabled && !_isGovernmentBond) {
           // Тянем логотип только для бумаг, которые реально попали на экран:
           // на вкладке «Биржа» строк тысячи, и грузить всё подряд нельзя.
           // Повторные попытки отсекает сам LogoService.
@@ -82,7 +84,6 @@ class TickerAvatar extends StatelessWidget {
             // получают картинку компании, которая их выпустила.
             final issuer = await MoexService.issuerShareFor(ticker);
             if (issuer == null) return;
-            await LogoService.forgetFailedAttempt(ticker);
             await LogoService.fetchIfMissing(
               ticker,
               isin: isin,
