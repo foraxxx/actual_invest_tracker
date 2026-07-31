@@ -153,9 +153,15 @@ class AnnualReportService {
     final incomes = StorageService.incomes;
     final now = DateTime.now();
     final isCurrentYear = year == now.year;
+    final periodEnd = isCurrentYear ? now : to;
     final valuationDate =
         isCurrentYear ? now : DateTime(year, 12, 31, 23, 59, 59, 999);
-    final holdings = AnalyticsService.holdingsAt(date: valuationDate);
+    // Для текущего года отчёт должен сходиться с главным экраном и потому
+    // использует те же актуальные онлайн/ручные котировки. Исторические годы
+    // по-прежнему оцениваются строго на 31 декабря.
+    final holdings = isCurrentYear
+        ? AnalyticsService.currentHoldings()
+        : AnalyticsService.holdingsAt(date: valuationDate);
     final startHoldings = AnalyticsService.holdingsAt(
       date: from.subtract(const Duration(microseconds: 1)),
     );
@@ -172,7 +178,7 @@ class AnnualReportService {
     // текущего — сегодняшнее.
     final qtyEnd = <String, double>{};
     for (final p in purchases) {
-      if (!p.date.isBefore(to)) continue;
+      if (p.date.isAfter(periodEnd)) continue;
       final q = qtyEnd[p.ticker] ?? 0;
       qtyEnd[p.ticker] = p.isSell ? (q - p.quantity).clamp(0, double.infinity) : q + p.quantity;
     }
@@ -186,7 +192,7 @@ class AnnualReportService {
 
     for (final p in purchases) {
       names[p.ticker] = p.name.isNotEmpty ? p.name : p.ticker;
-      if (p.date.isBefore(from) || !p.date.isBefore(to)) continue;
+      if (p.date.isBefore(from) || p.date.isAfter(periodEnd)) continue;
 
       final sumRub = CurrencyService.toRub(
         p.quantity * p.pricePerUnit + (p.isSell ? -p.fee : p.fee),
@@ -207,7 +213,7 @@ class AnnualReportService {
     final payoutsByMonth = <int, double>{};
     double taxPaid = 0;
     for (final i in incomes) {
-      if (i.date.isBefore(from) || !i.date.isBefore(to)) continue;
+      if (i.date.isBefore(from) || i.date.isAfter(periodEnd)) continue;
       final rub = CurrencyService.toRub(i.amountNet, i.currency, date: i.date);
       payouts[i.ticker] = (payouts[i.ticker] ?? 0) + rub;
       payoutsByMonth[i.date.month] = (payoutsByMonth[i.date.month] ?? 0) + rub;
@@ -217,7 +223,7 @@ class AnnualReportService {
 
     // Реализованная прибыль по продажам этого года — методом ФИФО, тем же,
     // что и в остальном приложении.
-    final realized = _realizedByTicker(purchases, from, to);
+    final realized = _realizedByTicker(purchases, from, periodEnd);
 
     final tickers = <String>{
       ...bought.keys,
@@ -261,7 +267,7 @@ class AnnualReportService {
         .where((m) =>
             (m.kind == CashMoveKind.autoDeposit || m.kind == CashMoveKind.deposit) &&
             !m.date.isBefore(from) &&
-            m.date.isBefore(to))
+            !m.date.isAfter(periodEnd))
         .fold(0.0, (sum, m) => sum + m.amountRub);
 
     return AnnualReport(

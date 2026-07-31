@@ -113,16 +113,18 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       if (!mounted) return;
       setState(() {
         _exchangeHistory = scaled;
+        _exchangeError =
+            scaled.isEmpty ? 'Нет данных за выбранный период' : null;
         _viewSize = scaled.isEmpty
             ? 0
             : (scaled.length / _range.bufferFactor).round().clamp(2, scaled.length);
         _viewStart = math.max(0, scaled.length - _viewSize).toDouble();
         _exchangeLoading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _exchangeError = '$e';
+        _exchangeError = 'Нет связи с MOEX. Попробуйте позже';
         _exchangeLoading = false;
       });
     }
@@ -990,7 +992,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           'и здесь появится история цены.';
     }
     if (_exchangeError != null) {
-      return 'Не загрузилось: $_exchangeError\nНажми обновление в углу карточки.';
+      return '$_exchangeError\nНажмите обновление в углу карточки.';
     }
     return 'Биржа не отдала историю за «${_range.label}». Попробуй другой период — '
         'по редким бумагам данных за короткий срок может не быть.';

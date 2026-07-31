@@ -53,7 +53,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     StorageService.dataVersion.addListener(_onDataChanged);
     ManualPriceService.version.addListener(_onDataChanged);
     BenchmarkService.returnPercent.addListener(_onDataChanged);
+    BenchmarkService.error.addListener(_onDataChanged);
     PortfolioHistoryService.timeline.addListener(_onDataChanged);
+    PortfolioHistoryService.error.addListener(_onDataChanged);
   }
 
   @override
@@ -61,7 +63,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     StorageService.dataVersion.removeListener(_onDataChanged);
     ManualPriceService.version.removeListener(_onDataChanged);
     BenchmarkService.returnPercent.removeListener(_onDataChanged);
+    BenchmarkService.error.removeListener(_onDataChanged);
     PortfolioHistoryService.timeline.removeListener(_onDataChanged);
+    PortfolioHistoryService.error.removeListener(_onDataChanged);
     super.dispose();
   }
 
@@ -132,6 +136,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final timeline = onlineTimeline.length > 1
         ? onlineTimeline
         : AnalyticsService.portfolioValueTimeline();
+    final chartError = PortfolioHistoryService.error.value;
     final currentValue = AnalyticsService.currentPortfolioValueRub();
     final unrealizedPnl = AnalyticsService.totalUnrealizedPnlRub();
     final realizedPnl = AnalyticsService.totalRealizedPnlRub();
@@ -153,6 +158,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final xirr = AnalyticsService.xirrPercent();
     final twr = AnalyticsService.twrPercent();
     final benchmark = BenchmarkService.returnPercent.value;
+    final benchmarkError = BenchmarkService.error.value;
     final taxDue = TaxService.enabled ? TaxService.totalTaxDue() : 0.0;
     final periodChange = AnalyticsService.portfolioChangeForPeriod(_period);
 
@@ -258,6 +264,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       style: TextStyle(fontSize: 12, color: context.dim),
                     ),
                   ),
+                if (chartError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    chartError,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.dim,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -352,37 +369,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 10),
         FadeSlideIn(
           delay: Duration(milliseconds: 40 * step++),
-          child: IntrinsicHeight(
-              child: Row(
-            children: [
-              if (xirr != null)
-                Expanded(
-                  child: StatTile(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = (constraints.maxWidth - 10) / 2;
+              return Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  if (xirr != null)
+                    SizedBox(
+                      width: width,
+                      child: StatTile(
                     label: 'Доходность (XIRR)',
                     icon: Icons.percent_rounded,
                     text: '${Fmt.pct(xirr)} год.',
                     hint: 'с учётом дат вложений',
                     color: AppColors.pnl(xirr),
                   ),
-                ),
-              if (xirr != null && twr != null) const SizedBox(width: 10),
-              if (twr != null)
-                Expanded(
-                  child: StatTile(
+                    ),
+                  if (twr != null)
+                    SizedBox(
+                      width: width,
+                      child: StatTile(
                     label: 'Доходность (TWR)',
                     icon: Icons.query_stats_rounded,
                     text: Fmt.pct(twr),
                     hint: benchmark == null
-                        ? 'без влияния пополнений'
+                        ? (benchmarkError ?? 'без влияния пополнений')
                         : 'IMOEX ${Fmt.pct(benchmark)}',
                     color: AppColors.pnl(twr),
                   ),
-                ),
-              if ((xirr != null || twr != null) && payoutForecast > 0)
-                const SizedBox(width: 10),
-              if (payoutForecast > 0)
-                Expanded(
-                  child: StatTile(
+                    ),
+                  if (payoutForecast > 0)
+                    SizedBox(
+                      width: width,
+                      child: StatTile(
                     label: 'Прогноз выплат',
                     icon: Icons.auto_graph_rounded,
                     value: payoutForecast,
@@ -392,10 +413,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         : 'по прошлым выплатам',
                     color: AppColors.violet,
                   ),
-                ),
-            ],
+                    ),
+                ],
+              );
+            },
           ),
-            ),
         ),
       ],
 

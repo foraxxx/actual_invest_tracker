@@ -16,14 +16,18 @@ class PortfolioHistoryService {
   static final ValueNotifier<List<MapEntry<DateTime, double>>> timeline =
       ValueNotifier(const []);
   static final ValueNotifier<bool> loading = ValueNotifier(false);
+  static final ValueNotifier<String?> error = ValueNotifier(null);
 
   static Future<void> refresh() async {
-    if (loading.value ||
-        !OnlineSettingsService.enabled ||
-        StorageService.purchases.isEmpty) {
+    if (loading.value || StorageService.purchases.isEmpty) {
+      return;
+    }
+    if (!OnlineSettingsService.enabled) {
+      error.value = 'Онлайн-история выключена — показаны локальные данные';
       return;
     }
     loading.value = true;
+    error.value = null;
     try {
       final trades = [...StorageService.purchases]
         ..sort(AnalyticsService.compareTrades);
@@ -51,7 +55,10 @@ class PortfolioHistoryService {
       final histories = Map<String, List<MapEntry<DateTime, double>>>.fromEntries(
         entries.where((entry) => entry.value.isNotEmpty),
       );
-      if (histories.isEmpty) return;
+      if (histories.isEmpty) {
+        error.value = 'История MOEX недоступна — показаны локальные данные';
+        return;
+      }
 
       final dates = histories.values
           .expand((points) => points.map((point) => point.key))
@@ -102,7 +109,11 @@ class PortfolioHistoryService {
           AnalyticsService.currentPortfolioValueRub(),
         ));
         timeline.value = result;
+      } else {
+        error.value = 'Не удалось построить онлайн-график';
       }
+    } catch (_) {
+      error.value = 'Нет связи с MOEX — показаны локальные данные';
     } finally {
       loading.value = false;
     }

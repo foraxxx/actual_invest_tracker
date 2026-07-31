@@ -153,6 +153,8 @@ class _MarketScreenState extends State<MarketScreen> {
       if (!mounted) return;
       setState(() {
         _chartPoints = result;
+        _chartError =
+            result.isEmpty ? 'Нет данных за выбранный период' : null;
         // Показываем правый край — свежий период, а слева остаётся запас для
         // листания.
         _viewSize = result.isEmpty
@@ -161,10 +163,10 @@ class _MarketScreenState extends State<MarketScreen> {
         _viewStart = math.max(0, result.length - _viewSize).toDouble();
         _chartLoading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _chartError = '$e';
+        _chartError = 'Нет связи с MOEX. Попробуйте позже';
         _chartLoading = false;
       });
     }
@@ -539,7 +541,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   : _chartError != null
                       ? Center(
                           child: Text(
-                            'График не загрузился: $_chartError',
+                            _chartError!,
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 11.5, color: context.dim),
                           ),
