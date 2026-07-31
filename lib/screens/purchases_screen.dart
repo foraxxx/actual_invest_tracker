@@ -536,8 +536,9 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     int added = 0;
     for (final pos in positions) {
       final qty = pos.securityQuantity;
-      final price = double.tryParse(pos.priceCtrl.text.replaceAll(',', '.'));
-      if (pos.tickerCtrl.text.isEmpty || qty <= 0 || price == null) continue;
+      final totalPrice = double.tryParse(pos.priceCtrl.text.replaceAll(',', '.'));
+      if (pos.tickerCtrl.text.isEmpty || qty <= 0 || totalPrice == null || totalPrice <= 0) continue;
+      final price = totalPrice / qty;
       final fee = double.tryParse(pos.feeCtrl.text.replaceAll(',', '.')) ?? 0;
       final ticker = pos.tickerCtrl.text.toUpperCase();
       await StorageService.addPurchase(Purchase(
@@ -588,15 +589,20 @@ class _PositionDraft {
   double get securityQuantity => lots * lotSize.toDouble();
 
   void changeLots(int delta) {
+    final oldQuantity = securityQuantity;
+    final oldTotal = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
     final next = (lots + delta).clamp(1, 1000000);
     qtyCtrl.text = '$next';
+    if (oldTotal != null && oldQuantity > 0) {
+      priceCtrl.text = (oldTotal / oldQuantity * securityQuantity).toStringAsFixed(2);
+    }
   }
 
   double get total {
     final q = securityQuantity;
     final p = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
     final f = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
-    return q * p + f;
+    return isSell ? p - f : p + f;
   }
 }
 
@@ -683,10 +689,13 @@ class _PositionCard extends StatelessWidget {
                 draft.nameCtrl.text = s.name;
                 draft.type = s.type;
                 draft.sector = s.sector;
-                draft.lotSize = MoexSyncService
-                        .marketSnapshot.value[s.ticker.toUpperCase()]?.lotSize ??
-                    1;
+                final quote = MoexSyncService.marketSnapshot.value[s.ticker.toUpperCase()];
+                draft.lotSize = quote?.lotSize ?? 1;
                 if (draft.qtyCtrl.text.isEmpty) draft.qtyCtrl.text = '1';
+                final currentPrice = quote?.price ?? AnalyticsService.priceFor(s.ticker);
+                if (currentPrice != null && currentPrice > 0) {
+                  draft.priceCtrl.text = (currentPrice * draft.securityQuantity).toStringAsFixed(2);
+                }
                 onChanged();
               },
             ),
@@ -778,7 +787,7 @@ class _PositionCard extends StatelessWidget {
             const SizedBox(height: 10),
             AppTextField(
               controller: draft.priceCtrl,
-              label: 'Цена за одну бумагу',
+              label: 'Стоимость всех выбранных бумаг',
               number: true,
               onChanged: (_) => onChanged(),
             ),

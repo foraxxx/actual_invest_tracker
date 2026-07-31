@@ -410,13 +410,6 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                if (holding == null && purchases.isNotEmpty)
-                  const InfoBanner(
-                    icon: Icons.inventory_2_outlined,
-                    color: AppColors.neutral,
-                    text: 'Позиция закрыта — бумаги в портфеле нет. История сделок ниже сохранена.',
-                  ),
-
                 if (holding != null) ...[
                   FadeSlideIn(
                     child: IntrinsicHeight(
@@ -1086,11 +1079,13 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final currency = prior.isNotEmpty ? prior.first.currency : 'RUB';
     final sector = prior.isNotEmpty ? prior.first.sector : '';
 
-    final qtyCtrl = TextEditingController();
+    final quote = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()];
+    final lotSize = quote?.lotSize ?? 1;
+    final qtyCtrl = TextEditingController(text: '1');
 
     // Подставляем актуальную цену: сначала биржевая, потом ручная, потом цена
     // последней сделки. Поле остаётся обычным — своё значение можно вписать.
-    final onlinePrice = AnalyticsService.priceFor(ticker);
+    final onlinePrice = quote?.price ?? AnalyticsService.priceFor(ticker);
     final knownPrice = onlinePrice ??
         ManualPriceService.get(ticker) ??
         (prior.isNotEmpty ? prior.first.pricePerUnit : null);
@@ -1104,7 +1099,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final priceCtrl = TextEditingController(
       // Без разрядных пробелов и с точкой — значение должно оставаться
       // редактируемым числом, а не подписью.
-      text: knownPrice != null ? Fmt.price(knownPrice).replaceAll(' ', '').replaceAll(',', '.') : '',
+      text: knownPrice != null ? (knownPrice * lotSize).toStringAsFixed(2) : '',
     );
     final feeCtrl = TextEditingController(text: '0');
     final noteCtrl = TextEditingController();
@@ -1118,10 +1113,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           final keyboard = MediaQuery.of(ctx).viewInsets.bottom;
-          final qty = double.tryParse(qtyCtrl.text.replaceAll(',', '.')) ?? 0;
-          final price = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
+          final lots = int.tryParse(qtyCtrl.text) ?? 0;
+          final qty = lots * lotSize.toDouble();
+          final totalPrice = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
           final fee = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
-          final sum = qty * price + (isSell ? -fee : fee);
+          final sum = totalPrice + (isSell ? -fee : fee);
 
           return SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(20, 14, 20, keyboard + 24),
@@ -1139,25 +1135,57 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 const SizedBox(height: 18),
                 Row(
                   children: [
+                    IconButton.filledTonal(
+                      tooltip: 'Уменьшить на один лот',
+                      icon: const Icon(Icons.remove_rounded),
+                      onPressed: () => setSheetState(() {
+                        final oldLots = int.tryParse(qtyCtrl.text) ?? 1;
+                        final next = (oldLots - 1).clamp(1, 1000000);
+                        if (totalPrice > 0 && oldLots > 0) {
+                          priceCtrl.text = (totalPrice / oldLots * next).toStringAsFixed(2);
+                        }
+                        qtyCtrl.text = '$next';
+                      }),
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: AppTextField(
                         controller: qtyCtrl,
-                        label: 'Количество',
+                        label: 'Количество лотов',
                         number: true,
+                        integerOnly: true,
+                        suffixText: '× $lotSize шт.',
                         autofocus: true,
                         onChanged: (_) => setSheetState(() {}),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: AppTextField(
-                        controller: priceCtrl,
-                        label: 'Цена ($currency)',
-                        number: true,
-                        onChanged: (_) => setSheetState(() {}),
-                      ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: 'Добавить один лот',
+                      icon: const Icon(Icons.add_rounded),
+                      onPressed: () => setSheetState(() {
+                        final oldLots = int.tryParse(qtyCtrl.text) ?? 1;
+                        final next = (oldLots + 1).clamp(1, 1000000);
+                        if (totalPrice > 0 && oldLots > 0) {
+                          priceCtrl.text = (totalPrice / oldLots * next).toStringAsFixed(2);
+                        }
+                        qtyCtrl.text = '$next';
+                      }),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                InfoBanner(
+                  icon: Icons.inventory_2_outlined,
+                  color: AppColors.info,
+                  text: '$lots лот. × $lotSize шт. = ${Fmt.qty(qty)} шт.',
+                ),
+                const SizedBox(height: 12),
+                AppTextField(
+                  controller: priceCtrl,
+                  label: 'Стоимость всех выбранных бумаг ($currency)',
+                  number: true,
+                  onChanged: (_) => setSheetState(() {}),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -1217,9 +1245,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       ? const [Color(0xFFE23A5B), Color(0xFFFF6B85)]
                       : const [Color(0xFF0FA97E), Color(0xFF16D796)],
                   onPressed: () async {
-                    final q = double.tryParse(qtyCtrl.text.replaceAll(',', '.'));
-                    final pr = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
-                    if (q == null || pr == null || q <= 0 || pr <= 0) return;
+                    final enteredLots = int.tryParse(qtyCtrl.text);
+                    final enteredTotal = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
+                    if (enteredLots == null || enteredTotal == null || enteredLots <= 0 || enteredTotal <= 0) return;
+                    final q = enteredLots * lotSize.toDouble();
+                    final pr = enteredTotal / q;
                     final f = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
                     await StorageService.addPurchase(Purchase(
                       id: const Uuid().v4(),

@@ -1,5 +1,6 @@
 import 'package:home_widget/home_widget.dart';
 import 'analytics_service.dart';
+import 'appearance_service.dart';
 
 /// Обновляет виджет на главном экране телефона (стоимость портфеля + P&L).
 /// Виджет офлайн — просто показывает последние данные, которые приложение
@@ -17,6 +18,49 @@ class HomeWidgetService {
       final holdings = AnalyticsService.currentHoldings();
       final costBasisTotal = holdings.values.fold(0.0, (s, h) => s + h.costBasisRub);
       final pnlPct = costBasisTotal == 0 ? 0.0 : (pnl / costBasisTotal) * 100;
+      final totalProfit = pnl + AnalyticsService.totalRealizedPnlRub() + AnalyticsService.totalIncome();
+      final income = AnalyticsService.totalIncome();
+      final forecast = AnalyticsService.totalDividendForecastRub();
+      String money(double amount) => AppearanceService.hideAmounts ? '•••••• ₽' : _formatMoney(amount);
+
+      final content = <HomeWidgetPage, ({String title, String value, String subtitle, bool positive})>{
+        HomeWidgetPage.portfolio: (
+          title: 'Стоимость портфеля',
+          value: money(value),
+          subtitle: holdings.isEmpty ? 'Нет открытых позиций' : '${holdings.length} позиций',
+          positive: true,
+        ),
+        HomeWidgetPage.profit: (
+          title: 'Общий результат',
+          value: AppearanceService.hideAmounts
+              ? money(totalProfit)
+              : '${totalProfit >= 0 ? "+" : ""}${money(totalProfit)}',
+          subtitle: 'Продажи, выплаты и открытые позиции',
+          positive: totalProfit >= 0,
+        ),
+        HomeWidgetPage.income: (
+          title: 'Полученные выплаты',
+          value: money(income),
+          subtitle: 'Дивиденды и купоны',
+          positive: income >= 0,
+        ),
+        HomeWidgetPage.forecast: (
+          title: 'Ожидаемые выплаты',
+          value: money(forecast),
+          subtitle: 'Прогноз на ближайшие 12 месяцев',
+          positive: forecast >= 0,
+        ),
+      };
+      final pages = AppearanceService.homeWidgetPages;
+      await HomeWidget.saveWidgetData<int>('widget_page_count', pages.length);
+      await HomeWidget.saveWidgetData<String>('widget_style', AppearanceService.homeWidgetStyle.name);
+      for (var i = 0; i < pages.length; i++) {
+        final page = content[pages[i]]!;
+        await HomeWidget.saveWidgetData<String>('widget_${i}_title', page.title);
+        await HomeWidget.saveWidgetData<String>('widget_${i}_value', page.value);
+        await HomeWidget.saveWidgetData<String>('widget_${i}_subtitle', page.subtitle);
+        await HomeWidget.saveWidgetData<bool>('widget_${i}_positive', page.positive);
+      }
 
       await HomeWidget.saveWidgetData<String>('portfolio_value', _formatMoney(value));
       await HomeWidget.saveWidgetData<String>(

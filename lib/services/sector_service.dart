@@ -103,11 +103,19 @@ class SectorService {
     final manual = _box.get(upper);
     if (manual != null && manual.isNotEmpty) return manual;
     final fromDb = SecuritiesDatabase.byTicker(ticker)?.sector;
-    if (fromDb != null && fromDb.isNotEmpty) return fromDb;
-    // Биржа знает отрасль далеко не всех бумаг, поэтому это последний
-    // источник перед «Без сектора», а не первый.
     final fromExchange = _fromExchange[upper];
+    // Общая подпись «корпоративные облигации» менее информативна, чем
+    // отрасль, унаследованная от найденного на бирже эмитента.
+    const genericBondSectors = {
+      'Облигации',
+      'Корп. облигации',
+      'Корпоративные облигации',
+    };
+    if (fromDb != null && fromDb.isNotEmpty && !genericBondSectors.contains(fromDb)) {
+      return fromDb;
+    }
     if (fromExchange != null && fromExchange.isNotEmpty) return fromExchange;
+    if (fromDb != null && fromDb.isNotEmpty) return fromDb;
     return 'Без сектора';
   }
 

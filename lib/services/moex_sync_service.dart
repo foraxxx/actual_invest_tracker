@@ -130,7 +130,33 @@ class MoexSyncService with WidgetsBindingObserver {
       if (!_sectorsLoaded) {
         _sectorsLoaded = true;
         try {
-          SectorService.setExchangeSectors(await MoexService.fetchSectorMap());
+          final sectors = await MoexService.fetchSectorMap();
+          // Сначала публикуем отрасли акций. Затем для облигаций портфеля
+          // находим акцию того же эмитента и наследуем её отрасль.
+          SectorService.setExchangeSectors(sectors);
+          final enriched = Map<String, String>.from(sectors);
+          final owned = AnalyticsService.allOwnedTickers();
+          for (final ticker in owned) {
+            final upper = ticker.toUpperCase();
+            final quote = quotes[upper];
+            if (quote?.isBond != true || enriched.containsKey(upper)) continue;
+
+            final issuerShare = await MoexService.issuerShareFor(upper);
+            if (issuerShare != null) {
+              final issuerSector = SectorService.sectorFor(issuerShare);
+              if (issuerSector != 'Без сектора') {
+                enriched[upper] = issuerSector;
+                continue;
+              }
+            }
+
+            // Для выпусков без публичной акции оставляем полезную категорию,
+            // а не безликое «Без сектора».
+            enriched[upper] = upper.startsWith('SU')
+                ? 'Государственные облигации'
+                : 'Корпоративные облигации';
+          }
+          SectorService.setExchangeSectors(enriched);
         } catch (_) {
           _sectorsLoaded = false;
         }

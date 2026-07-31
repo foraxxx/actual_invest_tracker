@@ -201,10 +201,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                RollingNumber(
-                  value: currentValue,
-                  formatter: (v) => Fmt.money(v),
-                  style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1.5),
+                HiddenAmount.forText(
+                  Fmt.money(currentValue),
+                  fontSize: 36,
+                  child: RollingNumber(
+                    value: currentValue,
+                    formatter: (v) => Fmt.money(v),
+                    style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1.5),
+                  ),
                 ),
                 if (!isEmpty) ...[
                   const SizedBox(height: 10),

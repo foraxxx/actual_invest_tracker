@@ -793,18 +793,20 @@ class HiddenAmount extends StatelessWidget {
       builder: (context, _, __) => ValueListenableBuilder<bool>(
         valueListenable: AppearanceService.revealed,
         builder: (context, revealed, __) {
-          if (!AppearanceService.hideAmounts || revealed) return child;
+          if (!AppearanceService.hideAmounts) return child;
 
           return GestureDetector(
             onTap: AppearanceService.toggleReveal,
             behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: CustomPaint(
-                painter: _MaskPainter(color: context.dim.withOpacity(0.55)),
-              ),
-            ),
+            child: revealed
+                ? child
+                : SizedBox(
+                    width: width,
+                    height: height,
+                    child: CustomPaint(
+                      painter: _MaskPainter(color: context.dim.withOpacity(0.55)),
+                    ),
+                  ),
           );
         },
       ),

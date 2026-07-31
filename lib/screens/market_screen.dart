@@ -439,6 +439,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _ratesCard() {
+    const visibleCurrencies = ['USD', 'CNY'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
       child: ValueListenableBuilder<int>(
@@ -449,7 +450,7 @@ class _MarketScreenState extends State<MarketScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Row(
               children: [
-                for (final c in CurrencyService.trackedCurrencies) ...[
+                for (final c in visibleCurrencies) ...[
                   Expanded(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -466,7 +467,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       ],
                     ),
                   ),
-                  if (c != CurrencyService.trackedCurrencies.last)
+                  if (c != visibleCurrencies.last)
                     Container(width: 1, height: 18, color: context.hairline),
                 ],
               ],
@@ -513,7 +514,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   : null,
             ),
             PillTabs<String>(
-              values: const ['IMOEX', 'USD', 'EUR', 'CNY'],
+              values: const ['IMOEX', 'USD', 'CNY'],
               selected: _chartKey,
               labelOf: (k) => k == 'IMOEX' ? 'Индекс' : k,
               onChanged: (k) {

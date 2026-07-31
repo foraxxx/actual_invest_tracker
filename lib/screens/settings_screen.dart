@@ -9,6 +9,7 @@ import '../design/tokens.dart';
 import '../data/securities.dart';
 import '../services/analytics_service.dart';
 import '../services/appearance_service.dart';
+import '../services/home_widget_service.dart';
 import '../services/auto_backup_service.dart';
 import '../services/backup_crypto_service.dart';
 import '../services/backup_service.dart';
@@ -81,6 +82,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _group(
               index: 1,
+              icon: Icons.widgets_outlined,
+              title: 'Виджет',
+              subtitle: 'Содержимое и оформление',
+              builder: () => [_homeWidgetSection()],
+            ),
+            _group(
+              index: 2,
               icon: Icons.cloud_download_outlined,
               title: 'Биржа и котировки',
               subtitle: 'Загрузка с Мосбиржи, курсы валют, логотипы',
@@ -329,83 +337,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _switchRow(
                       title: 'Скрывать суммы',
                       subtitle: 'Стоимость портфелей и позиций закрывается точками. '
-                          'Нажатие по любой сумме открывает все сразу.',
+                          'Нажатие по сумме показывает её, повторное нажатие снова скрывает.',
                       value: AppearanceService.hideAmounts,
-                      onChanged: (v) => AppearanceService.setHideAmounts(v),
-                    ),
-                    const SizedBox(height: 14),
-                    _switchRow(
-                      title: 'Моноширинные цифры',
-                      subtitle: 'Суммы выстраиваются в колонку и не дёргаются при обновлении',
-                      value: AppearanceService.monoDigits,
-                      onChanged: (v) => AppearanceService.setMonoDigits(v),
-                    ),
-                    const SizedBox(height: 14),
-                    _switchRow(
-                      title: 'Подписи под значками',
-                      subtitle: 'Названия вкладок в нижней навигации',
-                      value: AppearanceService.showNavLabels,
-                      onChanged: (v) => AppearanceService.setShowNavLabels(v),
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      'Карточки',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim),
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<CardStyle>(
-                      values: CardStyle.values,
-                      selected: AppearanceService.cardStyle,
-                      labelOf: (v) => v.title,
-                      onChanged: (v) => AppearanceService.setCardStyle(v),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Плотность списков',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim),
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<ListDensity>(
-                      values: ListDensity.values,
-                      selected: AppearanceService.density,
-                      labelOf: (v) => v.title,
-                      onChanged: (v) => AppearanceService.setDensity(v),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'В строке бумаги',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim),
-                    ),
-                    const SizedBox(height: 8),
-                    AppDropdown<HoldingSubtitle>(
-                      value: AppearanceService.holdingSubtitle,
-                      label: 'Что показывать',
-                      items: [
-                        for (final v in HoldingSubtitle.values)
-                          DropdownMenuItem(value: v, child: Text(v.title)),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) AppearanceService.setHoldingSubtitle(v);
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Стартовая вкладка',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim),
-                    ),
-                    const SizedBox(height: 8),
-                    AppDropdown<int>(
-                      value: AppearanceService.startTab,
-                      label: 'Открывать при входе в портфель',
-                      items: const [
-                        DropdownMenuItem(value: 0, child: Text('Портфель')),
-                        DropdownMenuItem(value: 1, child: Text('Биржа')),
-                        DropdownMenuItem(value: 2, child: Text('Сделки')),
-                        DropdownMenuItem(value: 3, child: Text('Выплаты')),
-                        DropdownMenuItem(value: 4, child: Text('Планы')),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) AppearanceService.setStartTab(v);
+                      onChanged: (v) async {
+                        await AppearanceService.setHideAmounts(v);
+                        await HomeWidgetService.update();
                       },
                     ),
                   ],
@@ -415,6 +351,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               );
+  }
+
+  Widget _homeWidgetSection() {
+    return FadeSlideIn(
+      child: _section(
+        title: 'Виджет на главном экране',
+        subtitle: 'Нажатие переключает выбранные страницы',
+        icon: Icons.widgets_rounded,
+        child: ValueListenableBuilder<int>(
+          valueListenable: AppearanceService.version,
+          builder: (context, _, __) {
+            final selected = AppearanceService.homeWidgetPages;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppDropdown<HomeWidgetStyle>(
+                  value: AppearanceService.homeWidgetStyle,
+                  label: 'Цвет виджета',
+                  items: [
+                    for (final style in HomeWidgetStyle.values)
+                      DropdownMenuItem(value: style, child: Text(style.title)),
+                  ],
+                  onChanged: (style) async {
+                    if (style == null) return;
+                    await AppearanceService.setHomeWidgetStyle(style);
+                    await HomeWidgetService.update();
+                  },
+                ),
+                const SizedBox(height: 12),
+                Text('Страницы по нажатию', style: TextStyle(fontSize: 12, color: context.dim)),
+                for (final page in HomeWidgetPage.values)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(page.title),
+                    value: selected.contains(page),
+                    onChanged: (enabled) async {
+                      final next = [...selected];
+                      if (enabled == true) {
+                        if (!next.contains(page)) next.add(page);
+                      } else if (next.length > 1) {
+                        next.remove(page);
+                      }
+                      await AppearanceService.setHomeWidgetPages(next);
+                      await HomeWidgetService.update();
+                    },
+                  ),
+                Text(
+                  'Должна быть выбрана хотя бы одна страница.',
+                  style: TextStyle(fontSize: 11, color: context.dim),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Widget _ratesSection() {

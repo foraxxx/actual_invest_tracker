@@ -29,6 +29,28 @@ extension ListDensityX on ListDensity {
 /// Оформление карточек.
 enum CardStyle { glass, flat }
 
+enum HomeWidgetPage { portfolio, profit, income, forecast }
+
+extension HomeWidgetPageX on HomeWidgetPage {
+  String get title => switch (this) {
+        HomeWidgetPage.portfolio => 'Стоимость портфеля',
+        HomeWidgetPage.profit => 'Общий результат',
+        HomeWidgetPage.income => 'Полученные выплаты',
+        HomeWidgetPage.forecast => 'Ожидаемые выплаты',
+      };
+}
+
+enum HomeWidgetStyle { emerald, midnight, violet, graphite }
+
+extension HomeWidgetStyleX on HomeWidgetStyle {
+  String get title => switch (this) {
+        HomeWidgetStyle.emerald => 'Изумрудный',
+        HomeWidgetStyle.midnight => 'Ночной',
+        HomeWidgetStyle.violet => 'Фиолетовый',
+        HomeWidgetStyle.graphite => 'Графитовый',
+      };
+}
+
 extension CardStyleX on CardStyle {
   String get title => switch (this) {
         CardStyle.glass => 'Со свечением',
@@ -127,6 +149,37 @@ class AppearanceService {
 
   static Future<void> setCardStyle(CardStyle value) async {
     await _box.put('cardStyle', value.name);
+    version.value++;
+  }
+
+  static List<HomeWidgetPage> get homeWidgetPages {
+    final raw = _box.get('homeWidgetPages') ?? 'portfolio,profit';
+    final selected = raw
+        .split(',')
+        .map((name) {
+          for (final value in HomeWidgetPage.values) {
+            if (value.name == name) return value;
+          }
+          return null;
+        })
+        .whereType<HomeWidgetPage>()
+        .toList();
+    return selected.isEmpty ? [HomeWidgetPage.portfolio] : selected;
+  }
+
+  static Future<void> setHomeWidgetPages(List<HomeWidgetPage> pages) async {
+    final safe = pages.isEmpty ? [HomeWidgetPage.portfolio] : pages;
+    await _box.put('homeWidgetPages', safe.map((p) => p.name).join(','));
+    version.value++;
+  }
+
+  static HomeWidgetStyle get homeWidgetStyle => HomeWidgetStyle.values.firstWhere(
+        (style) => style.name == _box.get('homeWidgetStyle'),
+        orElse: () => HomeWidgetStyle.emerald,
+      );
+
+  static Future<void> setHomeWidgetStyle(HomeWidgetStyle style) async {
+    await _box.put('homeWidgetStyle', style.name);
     version.value++;
   }
 }
