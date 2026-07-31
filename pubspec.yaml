@@ -1,0 +1,70 @@
+name: invest_tracker
+description: "Локальный трекер инвестиций: пополнения, покупки, дивиденды, купоны, планы, статистика"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Локальное хранилище (файловое, без БД-сервера)
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Графики
+  fl_chart: ^0.68.0
+
+  # UI утилиты
+  intl: ^0.19.0
+  uuid: ^4.4.0
+  fluttertoast: ^8.2.5
+
+  # Экспорт/бэкап (JSON файл)
+  path_provider: ^2.1.3
+  share_plus: ^9.0.0
+  file_picker: ^8.0.3
+
+  # Логотип бумаги (выбор фото из галереи)
+  image_picker: ^1.1.2
+
+  # Виджет на главный экран (стоимость портфеля + P&L)
+  home_widget: ^0.7.0
+
+  # Гироскоп для голографического наклона карточек (редизайн)
+  sensors_plus: ^4.0.2
+
+  # Загрузка котировок с Московской биржи (ISS API, без ключа)
+  http: ^1.2.0
+
+  # Годовой отчёт в PDF
+  pdf: ^3.11.0
+
+  # Разбор брокерских отчётов в XLSX: сами распаковываем ZIP и читаем XML,
+  # готовые библиотеки падали на нестандартном оформлении отчёта ВТБ.
+  archive: ^3.6.1
+  xml: ^6.5.0
+
+  # Шифрование резервных копий паролем
+  encrypt: ^5.0.3
+  pointycastle: ^3.9.1
+  flutter_secure_storage: ^9.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.9
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Шрифт для PDF: встроенные шрифты библиотеки pdf не знают кириллицу, и
+  # русский текст в отчёте выходил бы пустыми квадратами.
+  assets:
+    - assets/fonts/DejaVuSansCondensed.ttf
+    - assets/fonts/DejaVuSansCondensed-Bold.ttf
