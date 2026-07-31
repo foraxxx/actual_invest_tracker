@@ -21,20 +21,24 @@ class HomeWidgetService {
       final totalProfit = pnl + AnalyticsService.totalRealizedPnlRub() + AnalyticsService.totalIncome();
       final income = AnalyticsService.totalIncome();
       final forecast = AnalyticsService.totalDividendForecastRub();
-      String money(double amount) => AppearanceService.hideAmounts ? '•••••• ₽' : _formatMoney(amount);
+      final invested = AnalyticsService.totalInvested();
+      final allTimePct = invested == 0 ? 0.0 : totalProfit / invested * 100;
+      final timeline = AnalyticsService.portfolioValueTimeline();
+      final sparkValues = timeline.length > 48 ? timeline.sublist(timeline.length - 48) : timeline;
+      String money(double amount) => _formatMoney(amount);
 
       final content = <HomeWidgetPage, ({String title, String value, String subtitle, bool positive})>{
         HomeWidgetPage.portfolio: (
           title: 'Стоимость портфеля',
           value: money(value),
-          subtitle: holdings.isEmpty ? 'Нет открытых позиций' : '${holdings.length} позиций',
-          positive: true,
+          subtitle: holdings.isEmpty
+              ? 'Нет открытых позиций'
+              : 'За всё время ${allTimePct >= 0 ? "+" : ""}${allTimePct.toStringAsFixed(1)}%',
+          positive: allTimePct >= 0,
         ),
         HomeWidgetPage.profit: (
           title: 'Общий результат',
-          value: AppearanceService.hideAmounts
-              ? money(totalProfit)
-              : '${totalProfit >= 0 ? "+" : ""}${money(totalProfit)}',
+          value: '${totalProfit >= 0 ? "+" : ""}${money(totalProfit)}',
           subtitle: 'Продажи, выплаты и открытые позиции',
           positive: totalProfit >= 0,
         ),
@@ -54,12 +58,18 @@ class HomeWidgetService {
       final pages = AppearanceService.homeWidgetPages;
       await HomeWidget.saveWidgetData<int>('widget_page_count', pages.length);
       await HomeWidget.saveWidgetData<String>('widget_style', AppearanceService.homeWidgetStyle.name);
+      await HomeWidget.saveWidgetData<bool>('widget_hide_amounts', AppearanceService.hideAmounts);
+      await HomeWidget.saveWidgetData<String>(
+        'widget_sparkline',
+        sparkValues.map((point) => point.value.toStringAsFixed(2)).join(','),
+      );
       for (var i = 0; i < pages.length; i++) {
         final page = content[pages[i]]!;
         await HomeWidget.saveWidgetData<String>('widget_${i}_title', page.title);
         await HomeWidget.saveWidgetData<String>('widget_${i}_value', page.value);
         await HomeWidget.saveWidgetData<String>('widget_${i}_subtitle', page.subtitle);
         await HomeWidget.saveWidgetData<bool>('widget_${i}_positive', page.positive);
+        await HomeWidget.saveWidgetData<bool>('widget_${i}_show_chart', pages[i] == HomeWidgetPage.portfolio);
       }
 
       await HomeWidget.saveWidgetData<String>('portfolio_value', _formatMoney(value));

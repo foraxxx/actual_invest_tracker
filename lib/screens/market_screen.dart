@@ -439,7 +439,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _ratesCard() {
-    const visibleCurrencies = ['USD', 'CNY'];
+    const visibleCurrencies = ['USD', 'EUR', 'CNY'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
       child: ValueListenableBuilder<int>(

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
+import '../models/purchase.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'favorites_service.dart';
@@ -12,6 +13,7 @@ import 'online_price_service.dart';
 import 'online_settings_service.dart';
 import 'payout_forecast_service.dart';
 import 'sector_service.dart';
+import 'storage_service.dart';
 
 /// Автообновление котировок по таймеру.
 ///
@@ -136,10 +138,15 @@ class MoexSyncService with WidgetsBindingObserver {
           SectorService.setExchangeSectors(sectors);
           final enriched = Map<String, String>.from(sectors);
           final owned = AnalyticsService.allOwnedTickers();
+          final portfolioBonds = <String>{
+            for (final trade in StorageService.purchases)
+              if (trade.type == AssetType.bond) trade.ticker.toUpperCase(),
+          };
           for (final ticker in owned) {
             final upper = ticker.toUpperCase();
             final quote = quotes[upper];
-            if (quote?.isBond != true || enriched.containsKey(upper)) continue;
+            final isBond = quote?.isBond == true || portfolioBonds.contains(upper);
+            if (!isBond || enriched.containsKey(upper)) continue;
 
             final issuerShare = await MoexService.issuerShareFor(upper);
             if (issuerShare != null) {

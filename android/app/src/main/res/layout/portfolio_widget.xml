@@ -29,6 +29,15 @@
             android:text="1/1"
             android:textSize="10sp"
             android:textColor="#99FFFFFF" />
+        <ImageView
+            android:id="@+id/widget_open"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Открыть приложение"
+            android:padding="3dp"
+            android:src="@mipmap/ic_launcher" />
     </LinearLayout>
 
     <TextView
@@ -40,6 +49,14 @@
         android:textSize="22sp"
         android:textStyle="bold"
         android:textColor="#FFFFFFFF" />
+
+    <ImageView
+        android:id="@+id/widget_chart"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:layout_marginTop="5dp"
+        android:contentDescription="График стоимости портфеля"
+        android:scaleType="fitXY" />
 
     <TextView
         android:id="@+id/widget_pnl"
