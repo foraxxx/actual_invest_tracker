@@ -61,11 +61,10 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   void initState() {
     super.initState();
-    if (OnlineSettingsService.enabled && MoexTradingScheduleService.isTradingSession()) {
-      _loadChart();
-    } else if (OnlineSettingsService.enabled) {
-      _chartError = 'Биржа закрыта. Выбери инструмент или период, чтобы обновить график вручную.';
-    }
+    // Исторический график полезен и после закрытия торгов: автоматически
+    // показываем последний доступный IMOEX, не заставляя пользователя
+    // запускать обновление вручную. Частый таймер котировок при этом спит.
+    if (OnlineSettingsService.enabled) _loadChart();
     // Загрузку могли включить уже после открытия экрана — тогда график должен
     // подтянуться сам, без нажатия обновления.
     OnlineSettingsService.version.addListener(_onOnlineChanged);
@@ -73,10 +72,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
   void _onOnlineChanged() {
     if (!mounted) return;
-    if (OnlineSettingsService.enabled &&
-        MoexTradingScheduleService.isTradingSession() &&
-        _chartPoints.isEmpty &&
-        !_chartLoading) {
+    if (OnlineSettingsService.enabled && _chartPoints.isEmpty && !_chartLoading) {
       _loadChart();
     }
   }
