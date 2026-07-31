@@ -947,6 +947,7 @@ class _PlansScreenState extends State<PlansScreen> {
                   children: [
                     IconButton.filledTonal(
                       tooltip: 'Уменьшить на один лот',
+                      icon: const Icon(Icons.remove_rounded),
                       onPressed: () => setSheetState(() {
                         qtyCtrl.text = '${((int.tryParse(qtyCtrl.text) ?? 0) - 1).clamp(1, 1000000)}';
                       }),
@@ -965,6 +966,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     const SizedBox(width: 8),
                     IconButton.filledTonal(
                       tooltip: 'Добавить один лот',
+                      icon: const Icon(Icons.add_rounded),
                       onPressed: () => setSheetState(() {
                         qtyCtrl.text = '${((int.tryParse(qtyCtrl.text) ?? 0) + 1).clamp(1, 1000000)}';
                       }),

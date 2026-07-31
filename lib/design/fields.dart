@@ -77,7 +77,7 @@ class _AppTextFieldState extends State<AppTextField> {
             ? TextInputType.numberWithOptions(decimal: !widget.integerOnly)
             : null,
         inputFormatters: widget.integerOnly
-            ? const [FilteringTextInputFormatter.digitsOnly]
+            ? [FilteringTextInputFormatter.digitsOnly]
             : null,
         decoration: InputDecoration(
           labelText: widget.label,

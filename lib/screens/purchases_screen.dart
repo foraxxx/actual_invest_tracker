@@ -695,7 +695,7 @@ class _PositionCard extends StatelessWidget {
                 icon: (holding?.qty ?? 0) > 0 ? Icons.inventory_2_outlined : Icons.error_outline_rounded,
                 color: (holding?.qty ?? 0) > 0 ? AppColors.info : AppColors.negative,
                 text: (holding?.qty ?? 0) > 0
-                    ? 'На счету: ${Fmt.qty(holding!.qty)} шт по средней ${Fmt.price(holding!.avgCost)}'
+                    ? 'На счету: ${Fmt.qty(holding.qty)} шт по средней ${Fmt.price(holding.avgCost)}'
                     : 'Этой бумаги нет на счету',
               ),
             ],
