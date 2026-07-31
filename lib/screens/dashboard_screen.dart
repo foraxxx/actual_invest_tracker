@@ -389,6 +389,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     text: '${Fmt.pct(xirr)} год.',
                     hint: 'с учётом дат вложений',
                     color: AppColors.pnl(xirr),
+                    onTap: () => _showReturnInfo(context, xirr: true),
                   ),
                     ),
                   if (twr != null)
@@ -402,6 +403,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ? (benchmarkError ?? 'без влияния пополнений')
                         : 'IMOEX ${Fmt.pct(benchmark)}',
                     color: AppColors.pnl(twr),
+                    onTap: () => _showReturnInfo(context, xirr: false),
                   ),
                     ),
                   if (payoutForecast > 0)
@@ -725,6 +727,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return tooltip == null ? button : Tooltip(message: tooltip, child: button);
   }
 
+
+  Future<void> _showReturnInfo(BuildContext context, {required bool xirr}) {
+    final title = xirr ? 'Доходность XIRR' : 'Доходность TWR';
+    final intro = xirr
+        ? 'XIRR показывает личную среднегодовую доходность ваших денег. '
+            'Он учитывает, сколько вы вложили и в какие именно даты.'
+        : 'TWR показывает, как работал сам портфель, если убрать влияние '
+            'размера и времени пополнений и выводов.';
+    final calculation = xirr
+        ? 'Покупки считаются расходами, продажи и полученные выплаты — доходами, '
+            'а текущая стоимость бумаг — итоговой суммой на сегодня. Затем приложение '
+            'находит такую годовую ставку, которая связывает все эти движения денег.'
+        : 'История делится на отрезки между пополнениями и выводами. Для каждого отрезка '
+            'считается изменение общей стоимости счёта, после чего результаты соединяются. '
+            'Покупки, продажи и выплаты внутри портфеля не считаются внешними вложениями.';
+    final example = xirr
+        ? 'Например, крупная сумма, внесённая недавно, влияет на XIRR сильнее, чем небольшая. '
+            'Поэтому XIRR лучше отвечает на вопрос: «Какую доходность получили именно мои деньги?»'
+        : 'Поэтому TWR удобно сравнивать с индексом МосБиржи или другим портфелем: '
+            'момент пополнения не улучшает и не ухудшает показатель.';
+    final caveat = xirr
+        ? 'Показатель является годовым. Для короткой истории он может заметно меняться '
+            'и не рассчитывается, если данных недостаточно.'
+        : 'Точность зависит от истории стоимости и денежных движений. Если старых котировок '
+            'нет, приложение использует ближайшие известные цены сделок или ручные цены.';
+
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(xirr ? Icons.percent_rounded : Icons.query_stats_rounded, color: context.accent),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(intro, style: const TextStyle(height: 1.4)),
+              const SizedBox(height: 14),
+              const Text('Как считается', style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 5),
+              Text(calculation, style: const TextStyle(height: 1.4)),
+              const SizedBox(height: 14),
+              Text(example, style: const TextStyle(height: 1.4)),
+              const SizedBox(height: 14),
+              InfoBanner(
+                icon: Icons.info_outline_rounded,
+                color: AppColors.info,
+                text: caveat,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Понятно')),
+        ],
+      ),
+    );
+  }
 
   /// Счёт: сколько своих денег вложено, что лежит свободными и откуда это
   /// взялось. Пополнения приложение считает само по сделкам, вывод — то
