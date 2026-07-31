@@ -254,6 +254,7 @@ class MarqueeText extends StatefulWidget {
   final String text;
   final TextStyle? style;
   final TextAlign? align;
+  final bool alwaysScroll;
 
   /// Расстояние между концом текста и началом его повтора.
   final double gap;
@@ -266,6 +267,7 @@ class MarqueeText extends StatefulWidget {
     super.key,
     this.style,
     this.align,
+    this.alwaysScroll = false,
     this.gap = 42,
     this.speed = 26,
   });
@@ -331,7 +333,7 @@ class _MarqueeTextState extends State<MarqueeText> with SingleTickerProviderStat
 
         final textWidth = painter.width;
         // Небольшой запас: если текст впритык, ехать незачем.
-        if (!box.hasBoundedWidth || textWidth <= box.maxWidth + 0.5) {
+        if (!widget.alwaysScroll && (!box.hasBoundedWidth || textWidth <= box.maxWidth - 4)) {
           if (_c.isAnimating) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) _c.stop();

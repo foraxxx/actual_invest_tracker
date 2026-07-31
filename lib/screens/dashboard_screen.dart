@@ -147,7 +147,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final payoutSummary = PayoutForecastService.portfolioForecast();
     final payoutForecast = payoutSummary.total;
     final payoutYield = PayoutForecastService.yieldPct();
-    final periodIncome = AnalyticsService.totalIncome(f: _period);
+    final periodProfit = AnalyticsService.profitForPeriod(_period);
     final totalIncome = AnalyticsService.totalIncome(f: PeriodFilter.all);
     final totalProfit = unrealizedPnl + realizedPnl + totalIncome;
     final bySector = AnalyticsService.currentValueBySector();
@@ -324,11 +324,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: StatTile(
-                label: 'Доход за период',
+                label: 'Прибыль за период',
                 icon: Icons.payments_outlined,
-                value: periodIncome,
+                value: periodProfit,
                 formatter: (v) => Fmt.money(v),
-                color: AppColors.positive,
+                color: AppColors.pnl(periodProfit),
               ),
             ),
           ],
@@ -760,6 +760,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       value: cash.invested,
                       formatter: (v) => Fmt.money(v),
                       color: AppColors.info,
+                      marqueeLabel: true,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -817,7 +818,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 18),
             const SectionTitle(title: 'История', padding: EdgeInsets.only(bottom: 10)),
-            ...cash.moves.take(120).map((m) => _cashRow(ctx, m)),
+            ...cash.moves.map((m) => _cashRow(ctx, m)),
           ],
         ),
       ),

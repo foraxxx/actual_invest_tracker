@@ -259,7 +259,7 @@ class SegmentedToggle<T> extends StatelessWidget {
           return Stack(
             children: [
               AnimatedPositioned(
-                duration: AppDuration.normal,
+                duration: const Duration(milliseconds: 120),
                 curve: Curves.easeOutCubic,
                 left: index < 0 ? 0 : slot * index,
                 top: 0,
@@ -274,7 +274,7 @@ class SegmentedToggle<T> extends StatelessWidget {
                       end: Alignment.bottomRight,
                     ),
                     boxShadow: [
-                      BoxShadow(color: activeColor.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4)),
+                      BoxShadow(color: activeColor.withOpacity(0.30), blurRadius: 8, offset: const Offset(0, 2)),
                     ],
                   ),
                 ),
@@ -286,8 +286,9 @@ class SegmentedToggle<T> extends StatelessWidget {
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
-                          HapticFeedback.selectionClick();
+                          if (v == selected) return;
                           onChanged(v);
+                          HapticFeedback.selectionClick();
                         },
                         child: Center(
                           child: Row(
@@ -308,7 +309,7 @@ class SegmentedToggle<T> extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight: v == selected ? FontWeight.w800 : FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                     color: v == selected ? Colors.white : context.dim,
                                   ),
                                 ),

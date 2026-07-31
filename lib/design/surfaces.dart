@@ -268,6 +268,7 @@ class StatTile extends StatelessWidget {
   final String? text;
   final String? hint;
   final VoidCallback? onTap;
+  final bool marqueeLabel;
 
   const StatTile({
     super.key,
@@ -279,6 +280,7 @@ class StatTile extends StatelessWidget {
     this.text,
     this.hint,
     this.onTap,
+    this.marqueeLabel = false,
   });
 
   @override
@@ -313,6 +315,7 @@ class StatTile extends StatelessWidget {
                 // медленно едет и возвращается.
                 child: MarqueeText(
                   label,
+                  alwaysScroll: marqueeLabel,
                   style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -424,8 +427,9 @@ class PillTabs<T> extends StatelessWidget {
           icon: iconOf?.call(v),
           selected: v == selected,
           onTap: () {
-            HapticFeedback.selectionClick();
+            if (v == selected) return;
             onChanged(v);
+            HapticFeedback.selectionClick();
           },
         ),
       ));
@@ -441,8 +445,9 @@ class PillTabs<T> extends StatelessWidget {
               icon: iconOf?.call(values[i]),
               selected: values[i] == selected,
               onTap: () {
-                HapticFeedback.selectionClick();
+                if (values[i] == selected) return;
                 onChanged(values[i]);
+                HapticFeedback.selectionClick();
               },
             ),
         ]),
@@ -474,10 +479,11 @@ class _Pill extends StatelessWidget {
     final accent = context.accent;
     return Pressable(
       haptic: false,
+      scale: 1,
       onTap: onTap,
       child: AnimatedContainer(
-        duration: AppDuration.fast,
-        curve: Curves.easeOut,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(30),
@@ -487,7 +493,7 @@ class _Pill extends StatelessWidget {
             color: selected ? Colors.transparent : context.hairline,
           ),
           boxShadow: selected
-              ? [BoxShadow(color: accent.withOpacity(0.35), blurRadius: 14, offset: const Offset(0, 5))]
+              ? [BoxShadow(color: accent.withOpacity(0.30), blurRadius: 8, offset: const Offset(0, 2))]
               : null,
         ),
         child: Row(
@@ -501,7 +507,7 @@ class _Pill extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: selected ? Colors.white : context.dim,
               ),
             ),

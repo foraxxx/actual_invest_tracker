@@ -100,17 +100,17 @@ class AnalyticsService {
     return OnlinePriceService.get(ticker)?.price;
   }
 
-  static DateTime? _periodStart(PeriodFilter f) {
-    final now = DateTime.now();
+  static DateTime? _periodStart(PeriodFilter f, {DateTime? now}) {
+    final current = now ?? DateTime.now();
     switch (f) {
       case PeriodFilter.month1:
-        return DateTime(now.year, now.month - 1, now.day);
+        return DateTime(current.year, current.month - 1, current.day);
       case PeriodFilter.month3:
-        return DateTime(now.year, now.month - 3, now.day);
+        return DateTime(current.year, current.month - 3, current.day);
       case PeriodFilter.month6:
-        return DateTime(now.year, now.month - 6, now.day);
+        return DateTime(current.year, current.month - 6, current.day);
       case PeriodFilter.year1:
-        return DateTime(now.year - 1, now.month, now.day);
+        return DateTime(current.year - 1, current.month, current.day);
       case PeriodFilter.all:
         return null;
     }
@@ -153,6 +153,41 @@ class AnalyticsService {
       sum += CurrencyService.toRub(i.amountNet, i.currency, date: i.date);
     }
     return sum;
+  }
+
+  /// Полный финансовый результат за период: переоценка бумаг, результат
+  /// продаж, комиссии и фактически полученные выплаты. Покупки и продажи
+  /// учитываются как денежные потоки, поэтому новые вложения не становятся
+  /// прибылью сами по себе.
+  static double profitForPeriod(PeriodFilter f, {DateTime? now}) {
+    final end = now ?? DateTime.now();
+    final start = _periodStart(f, now: end);
+    final startValue = start == null
+        ? 0.0
+        : holdingsAt(date: start).values.fold(0.0, (sum, holding) => sum + holding.valueRub);
+    final endValue = now == null
+        ? currentPortfolioValueRub()
+        : holdingsAt(date: end).values.fold(0.0, (sum, holding) => sum + holding.valueRub);
+
+    double tradeFlows = 0;
+    for (final trade in StorageService.purchases) {
+      if (start != null && !trade.date.isAfter(start)) continue;
+      if (trade.date.isAfter(end)) continue;
+      final amount = CurrencyService.toRub(
+        trade.settlementAmount,
+        trade.currency,
+        date: trade.date,
+      );
+      tradeFlows += trade.isSell ? amount : -amount;
+    }
+
+    double payouts = 0;
+    for (final income in StorageService.incomes) {
+      if (start != null && !income.date.isAfter(start)) continue;
+      if (income.date.isAfter(end)) continue;
+      payouts += CurrencyService.toRub(income.amountNet, income.currency, date: income.date);
+    }
+    return endValue - startValue + tradeFlows + payouts;
   }
 
   static Map<AssetType, double> investedByType({PeriodFilter f = PeriodFilter.all}) {

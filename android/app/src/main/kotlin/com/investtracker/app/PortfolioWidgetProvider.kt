@@ -9,9 +9,13 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Shader
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetPlugin
@@ -75,19 +79,29 @@ class PortfolioWidgetProvider : HomeWidgetProvider() {
         val count = data.getInt("widget_page_count", 1).coerceAtLeast(1)
         val state = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
         val page = state.getInt("page_$widgetId", 0).coerceIn(0, count - 1)
-        val style = data.getString("widget_style", "emerald") ?: "emerald"
         if (!data.getBoolean("widget_hide_amounts", false)) {
             state.edit().putBoolean("revealed_$widgetId", false).apply()
         }
-        val background = when (style) {
-            "midnight" -> R.drawable.widget_background_midnight
-            "violet" -> R.drawable.widget_background_violet
-            "graphite" -> R.drawable.widget_background_graphite
-            else -> R.drawable.widget_background
-        }
+        val accentHex = data.getString("widget_accent", "ff2e7d5b") ?: "ff2e7d5b"
+        val accent = try { Color.parseColor("#${accentHex.takeLast(8)}") } catch (_: Exception) { Color.rgb(46, 125, 91) }
 
+        val density = context.resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
         val views = RemoteViews(context.packageName, R.layout.portfolio_widget).apply {
-            setInt(R.id.widget_root, "setBackgroundResource", background)
+            val options = manager.getAppWidgetOptions(widgetId)
+            val availableHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 120)
+            val availableWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 220)
+            val compact = availableHeight < 90
+            val showSubtitle = availableHeight >= 90
+
+            setImageViewBitmap(R.id.widget_background_view, gradientBackground(accent))
+            setViewPadding(
+                R.id.widget_content,
+                dp(if (compact) 8 else 16),
+                dp(if (compact) 4 else 12),
+                dp(if (compact) 8 else 16),
+                dp(if (compact) 4 else 12)
+            )
             setTextViewText(R.id.widget_title, data.getString("widget_${page}_title", "Портфель"))
             val hideAmounts = data.getBoolean("widget_hide_amounts", false)
             val revealed = state.getBoolean("revealed_$widgetId", false)
@@ -95,11 +109,13 @@ class PortfolioWidgetProvider : HomeWidgetProvider() {
             setTextViewText(R.id.widget_value, if (hideAmounts && !revealed) "•••••• ₽" else actualValue)
             setTextViewText(R.id.widget_pnl, data.getString("widget_${page}_subtitle", ""))
             setTextViewText(R.id.widget_page, "${page + 1}/$count")
+            setTextViewTextSize(R.id.widget_title, TypedValue.COMPLEX_UNIT_SP, if (compact) 10f else 12f)
+            setTextViewTextSize(R.id.widget_value, TypedValue.COMPLEX_UNIT_SP, if (compact) 18f else 22f)
+            setViewVisibility(R.id.widget_pnl, if (showSubtitle) View.VISIBLE else View.GONE)
+            setViewVisibility(R.id.widget_page, if (availableWidth >= 150) View.VISIBLE else View.GONE)
             val positive = data.getBoolean("widget_${page}_positive", true)
             setTextColor(R.id.widget_value, if (positive) 0xFFFFFFFF.toInt() else 0xFFFFCDD2.toInt())
-            val availableHeight = manager.getAppWidgetOptions(widgetId)
-                .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 120)
-            val showChart = data.getBoolean("widget_${page}_show_chart", false) && availableHeight >= 100
+            val showChart = data.getBoolean("widget_${page}_show_chart", false) && availableHeight >= 140
             setViewVisibility(R.id.widget_chart, if (showChart) View.VISIBLE else View.GONE)
             if (showChart) {
                 val points = data.getString("widget_sparkline", "")
@@ -143,8 +159,8 @@ class PortfolioWidgetProvider : HomeWidgetProvider() {
     }
 
     private fun sparkline(values: List<Float>, positive: Boolean): Bitmap {
-        val width = 600
-        val height = 90
+        val width = 300
+        val height = 60
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         if (values.size < 2) return bitmap
         val canvas = Canvas(bitmap)
@@ -170,11 +186,27 @@ class PortfolioWidgetProvider : HomeWidgetProvider() {
         })
         canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = lineColor
-            strokeWidth = 5f
+            strokeWidth = 4f
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
             style = Paint.Style.STROKE
         })
+        return bitmap
+    }
+
+    private fun gradientBackground(accent: Int): Bitmap {
+        val width = 300
+        val height = 200
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val hsv = FloatArray(3)
+        Color.colorToHSV(accent, hsv)
+        val dark = Color.HSVToColor(floatArrayOf(hsv[0], (hsv[1] * 0.92f).coerceAtMost(1f), (hsv[2] * 0.58f).coerceAtLeast(0.12f)))
+        val bright = Color.HSVToColor(floatArrayOf(hsv[0], (hsv[1] * 0.82f).coerceAtMost(1f), hsv[2].coerceAtLeast(0.42f)))
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(0f, height.toFloat(), width.toFloat(), 0f, dark, bright, Shader.TileMode.CLAMP)
+        }
+        canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), 24f, 24f, paint)
         return bitmap
     }
 }

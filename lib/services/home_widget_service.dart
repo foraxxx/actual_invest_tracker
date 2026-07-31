@@ -1,6 +1,7 @@
 import 'package:home_widget/home_widget.dart';
 import 'analytics_service.dart';
 import 'appearance_service.dart';
+import 'theme_service.dart';
 
 /// Обновляет виджет на главном экране телефона (стоимость портфеля + P&L).
 /// Виджет офлайн — просто показывает последние данные, которые приложение
@@ -57,7 +58,10 @@ class HomeWidgetService {
       };
       final pages = AppearanceService.homeWidgetPages;
       await HomeWidget.saveWidgetData<int>('widget_page_count', pages.length);
-      await HomeWidget.saveWidgetData<String>('widget_style', AppearanceService.homeWidgetStyle.name);
+      await HomeWidget.saveWidgetData<String>(
+        'widget_accent',
+        ThemeService.accentColor.value.value.toRadixString(16).padLeft(8, '0'),
+      );
       await HomeWidget.saveWidgetData<bool>('widget_hide_amounts', AppearanceService.hideAmounts);
       await HomeWidget.saveWidgetData<String>(
         'widget_sparkline',

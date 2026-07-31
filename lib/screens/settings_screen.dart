@@ -253,7 +253,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           children: kPalettes.map((p) {
                             final selected = p.color.value == current.value;
                             return Pressable(
-                              onTap: () => ThemeService.setAccentColor(p.color),
+                              onTap: () async {
+                                await ThemeService.setAccentColor(p.color);
+                                await HomeWidgetService.update();
+                              },
                               child: Column(
                                 children: [
                                   AnimatedContainer(
@@ -366,20 +369,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                AppDropdown<HomeWidgetStyle>(
-                  value: AppearanceService.homeWidgetStyle,
-                  label: 'Цвет виджета',
-                  items: [
-                    for (final style in HomeWidgetStyle.values)
-                      DropdownMenuItem(value: style, child: Text(style.title)),
-                  ],
-                  onChanged: (style) async {
-                    if (style == null) return;
-                    await AppearanceService.setHomeWidgetStyle(style);
-                    await HomeWidgetService.update();
-                  },
-                ),
-                const SizedBox(height: 12),
                 Text('Страницы по нажатию', style: TextStyle(fontSize: 12, color: context.dim)),
                 for (final page in HomeWidgetPage.values)
                   CheckboxListTile(

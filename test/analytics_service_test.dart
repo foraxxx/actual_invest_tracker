@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:invest_tracker/models/purchase.dart';
+import 'package:invest_tracker/models/income.dart';
 import 'package:invest_tracker/services/analytics_service.dart';
 import 'package:invest_tracker/services/annual_report_service.dart';
 import 'package:invest_tracker/services/currency_service.dart';
@@ -119,5 +120,66 @@ void main() {
     final report = AnnualReportService.build(2024);
     expect(report.valueEndRub, 1200);
     expect(report.totalResultRub, 200);
+  });
+
+  test('прибыль за период включает рост цены и чистые выплаты', () async {
+    final end = DateTime(2025, 1, 31);
+    await StorageService.addPurchase(Purchase(
+      id: 'period-buy',
+      date: DateTime(2025, 1, 5),
+      ticker: 'TEST',
+      name: 'Test',
+      type: AssetType.stock,
+      quantity: 10,
+      pricePerUnit: 100,
+      fee: 10,
+    ));
+    await ManualPriceService.setAt('TEST', end, 120);
+    await StorageService.addIncome(Income(
+      id: 'period-income',
+      date: DateTime(2025, 1, 20),
+      ticker: 'TEST',
+      name: 'Test',
+      type: IncomeType.dividend,
+      amountGross: 60,
+      taxPaid: 10,
+    ));
+
+    // 1200 текущая стоимость - 1010 покупка с комиссией + 50 выплата.
+    expect(
+      AnalyticsService.profitForPeriod(PeriodFilter.month1, now: end),
+      closeTo(240, 1e-9),
+    );
+  });
+
+  test('прибыль за период учитывает результат полностью закрытой позиции', () async {
+    final end = DateTime(2025, 1, 31);
+    await StorageService.addPurchase(Purchase(
+      id: 'closed-buy',
+      date: DateTime(2025, 1, 5),
+      ticker: 'TEST',
+      name: 'Test',
+      type: AssetType.stock,
+      quantity: 10,
+      pricePerUnit: 100,
+      fee: 10,
+    ));
+    await StorageService.addPurchase(Purchase(
+      id: 'closed-sell',
+      date: DateTime(2025, 1, 25),
+      ticker: 'TEST',
+      name: 'Test',
+      type: AssetType.stock,
+      quantity: 10,
+      pricePerUnit: 120,
+      fee: 10,
+      isSell: true,
+    ));
+
+    // 1190 после комиссии продажи - 1010 покупка с комиссией.
+    expect(
+      AnalyticsService.profitForPeriod(PeriodFilter.month1, now: end),
+      closeTo(180, 1e-9),
+    );
   });
 }

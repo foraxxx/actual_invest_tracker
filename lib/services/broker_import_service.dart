@@ -408,7 +408,7 @@ class BrokerImportService {
   /// Полная очистка портфеля перед импортом. Нужна, когда отчёт брокера должен
   /// стать единственным источником правды: ручные записи и следы прошлых
   /// импортов иначе складываются с новыми.
-  static Future<void> clearPortfolio() async {
+  static Future<void> clearPortfolio({bool keepPlans = true}) async {
     for (final p in StorageService.purchases.toList()) {
       await StorageService.deletePurchase(p.id);
     }
@@ -417,6 +417,11 @@ class BrokerImportService {
     }
     for (final d in StorageService.deposits.toList()) {
       await StorageService.deleteDeposit(d.id);
+    }
+    if (!keepPlans) {
+      for (final plan in StorageService.plans.toList()) {
+        await StorageService.deletePlan(plan.id);
+      }
     }
   }
 

@@ -40,17 +40,6 @@ extension HomeWidgetPageX on HomeWidgetPage {
       };
 }
 
-enum HomeWidgetStyle { emerald, midnight, violet, graphite }
-
-extension HomeWidgetStyleX on HomeWidgetStyle {
-  String get title => switch (this) {
-        HomeWidgetStyle.emerald => 'Изумрудный',
-        HomeWidgetStyle.midnight => 'Ночной',
-        HomeWidgetStyle.violet => 'Фиолетовый',
-        HomeWidgetStyle.graphite => 'Графитовый',
-      };
-}
-
 extension CardStyleX on CardStyle {
   String get title => switch (this) {
         CardStyle.glass => 'Со свечением',
@@ -173,13 +162,4 @@ class AppearanceService {
     version.value++;
   }
 
-  static HomeWidgetStyle get homeWidgetStyle => HomeWidgetStyle.values.firstWhere(
-        (style) => style.name == _box.get('homeWidgetStyle'),
-        orElse: () => HomeWidgetStyle.emerald,
-      );
-
-  static Future<void> setHomeWidgetStyle(HomeWidgetStyle style) async {
-    await _box.put('homeWidgetStyle', style.name);
-    version.value++;
-  }
 }

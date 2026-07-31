@@ -9,6 +9,7 @@ import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/broker_import_service.dart';
+import '../services/storage_service.dart';
 
 /// Импорт сделок и выплат из отчёта брокера. Сначала выбирается брокер:
 /// формат выгрузки у каждого свой, и разбирать их одинаково нельзя.
@@ -29,6 +30,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
   bool _importPayouts = true;
   bool _importCash = true;
   bool _replaceAll = false;
+  bool _keepPlans = true;
   int _resolvedOnline = 0;
 
   /// Состояние портфеля на момент разбора файла. Замораживаем его, чтобы
@@ -83,7 +85,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
     if (result == null) return;
     setState(() => _busy = true);
     try {
-      if (_replaceAll) await BrokerImportService.clearPortfolio();
+      if (_replaceAll) await BrokerImportService.clearPortfolio(keepPlans: _keepPlans);
       final added = await BrokerImportService.apply(
         result,
         importTrades: _importTrades,
@@ -233,6 +235,14 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                     'тогда портфель станет точной копией отчёта',
                 onChanged: (v) => setState(() => _replaceAll = v),
               ),
+              if (_replaceAll && StorageService.plans.isNotEmpty)
+                AppCheckRow(
+                  value: _keepPlans,
+                  title: 'Сохранить мои планы',
+                  subtitle: '${StorageService.plans.length} ${Fmt.plural(StorageService.plans.length, "план", "плана", "планов")} '
+                      'останутся в приложении после замены портфеля',
+                  onChanged: (v) => setState(() => _keepPlans = v),
+                ),
               AppCheckRow(
                 value: _importCash,
                 title: 'Пополнения и выводы',
