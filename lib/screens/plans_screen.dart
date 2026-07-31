@@ -10,6 +10,7 @@ import '../design/tokens.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
 import '../services/storage_service.dart';
+import '../services/moex_sync_service.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import 'home_screen.dart';
@@ -548,7 +549,7 @@ class _PlansScreenState extends State<PlansScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${t.ticker} — ${t.name}',
+                  t.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
@@ -729,7 +730,7 @@ class _PlansScreenState extends State<PlansScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${p.ticker} — ${p.name}',
+                          p.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -739,13 +740,15 @@ class _PlansScreenState extends State<PlansScreen> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          'цель: ${Fmt.qty(p.targetQuantity)} шт'
-                          '${p.targetPrice != null ? ' × ${p.targetPrice}' : ''}'
-                          '${p.estimatedTotal != null ? ' ≈ ${Fmt.money(p.estimatedTotal!)}' : ''}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11.2, color: context.dim),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Text(
+                            'Цель: ${p.targetPrice != null ? Fmt.price(p.targetPrice!) : 'цена не указана'}'
+                            ' × ${Fmt.qty(p.targetQuantity)} шт.',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: TextStyle(fontSize: 11.2, color: context.dim),
+                          ),
                         ),
                       ],
                     ),
@@ -787,17 +790,26 @@ class _PlansScreenState extends State<PlansScreen> {
                   ],
                 ),
               ],
-              if (p.note != null && p.note!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      p.note!,
-                      style: TextStyle(fontSize: 11.2, fontStyle: FontStyle.italic, color: context.dim),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        p.note?.isNotEmpty == true ? p.note! : 'Без комментария',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11.2, fontStyle: FontStyle.italic, color: context.dim),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Text(
+                      p.estimatedTotal != null ? Fmt.money(p.estimatedTotal!) : '—',
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                    ),
+                  ],
                 ),
+              ),
             ],
           ),
         ),
@@ -863,6 +875,7 @@ class _PlansScreenState extends State<PlansScreen> {
     final priceCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     AssetType type = AssetType.stock;
+    int lotSize = 1;
     DateTime? targetDate;
 
     showAppSheet(
@@ -870,7 +883,8 @@ class _PlansScreenState extends State<PlansScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           final keyboard = MediaQuery.of(ctx).viewInsets.bottom;
-          final qty = double.tryParse(qtyCtrl.text.replaceAll(',', '.')) ?? 0;
+          final lots = int.tryParse(qtyCtrl.text) ?? 0;
+          final qty = lots * lotSize.toDouble();
           final price = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
           final estimated = qty * price;
 
@@ -892,13 +906,28 @@ class _PlansScreenState extends State<PlansScreen> {
                   onSelected: (s) {
                     tickerCtrl.text = s.ticker;
                     nameCtrl.text = s.name;
-                    setSheetState(() => type = s.type);
+                    setSheetState(() {
+                      type = s.type;
+                      lotSize = MoexSyncService.marketSnapshot.value[s.ticker.toUpperCase()]?.lotSize ?? 1;
+                      if (qtyCtrl.text.isEmpty) qtyCtrl.text = '1';
+                    });
                   },
                 ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(child: AppTextField(controller: tickerCtrl, label: 'Тикер', upperCase: true)),
+                    Expanded(
+                      child: AppTextField(
+                        controller: tickerCtrl,
+                        label: 'Тикер',
+                        upperCase: true,
+                        onChanged: (value) => setSheetState(() {
+                          lotSize = MoexSyncService
+                                  .marketSnapshot.value[value.trim().toUpperCase()]?.lotSize ??
+                              1;
+                        }),
+                      ),
+                    ),
                     const SizedBox(width: 10),
                     Expanded(flex: 2, child: AppTextField(controller: nameCtrl, label: 'Название')),
                   ],
@@ -916,24 +945,44 @@ class _PlansScreenState extends State<PlansScreen> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
+                    IconButton.filledTonal(
+                      tooltip: 'Уменьшить на один лот',
+                      onPressed: () => setSheetState(() {
+                        qtyCtrl.text = '${((int.tryParse(qtyCtrl.text) ?? 0) - 1).clamp(1, 1000000)}';
+                      }),
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: AppTextField(
                         controller: qtyCtrl,
-                        label: 'Кол-во (цель)',
+                        label: 'Количество лотов',
                         number: true,
+                        integerOnly: true,
+                        suffixText: '× $lotSize шт.',
                         onChanged: (_) => setSheetState(() {}),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: AppTextField(
-                        controller: priceCtrl,
-                        label: 'Желаемая цена',
-                        number: true,
-                        onChanged: (_) => setSheetState(() {}),
-                      ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: 'Добавить один лот',
+                      onPressed: () => setSheetState(() {
+                        qtyCtrl.text = '${((int.tryParse(qtyCtrl.text) ?? 0) + 1).clamp(1, 1000000)}';
+                      }),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                InfoBanner(
+                  icon: Icons.inventory_2_outlined,
+                  color: AppColors.info,
+                  text: '$lots лот. × $lotSize шт. = ${Fmt.qty(qty)} шт.',
+                ),
+                const SizedBox(height: 12),
+                AppTextField(
+                  controller: priceCtrl,
+                  label: 'Желаемая цена за одну бумагу',
+                  number: true,
+                  onChanged: (_) => setSheetState(() {}),
                 ),
                 if (estimated > 0) ...[
                   const SizedBox(height: 12),
@@ -959,15 +1008,15 @@ class _PlansScreenState extends State<PlansScreen> {
                   label: 'Добавить план',
                   icon: Icons.flag_rounded,
                   onPressed: () {
-                    final q = double.tryParse(qtyCtrl.text.replaceAll(',', '.'));
+                    final enteredLots = int.tryParse(qtyCtrl.text);
                     final p = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
-                    if (tickerCtrl.text.isEmpty || q == null) return;
+                    if (tickerCtrl.text.isEmpty || enteredLots == null || enteredLots <= 0) return;
                     StorageService.addPlan(Plan(
                       id: const Uuid().v4(),
                       ticker: tickerCtrl.text.toUpperCase(),
                       name: nameCtrl.text.isEmpty ? tickerCtrl.text : nameCtrl.text,
                       type: type,
-                      targetQuantity: q,
+                      targetQuantity: enteredLots * lotSize.toDouble(),
                       targetPrice: p,
                       targetDate: targetDate,
                       note: noteCtrl.text.isEmpty ? null : noteCtrl.text,

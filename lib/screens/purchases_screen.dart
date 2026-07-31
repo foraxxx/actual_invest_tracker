@@ -12,6 +12,7 @@ import '../services/manual_price_service.dart';
 import '../services/plan_apply_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
+import '../services/moex_sync_service.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import 'home_screen.dart';
@@ -503,8 +504,8 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     final sellTotals = <String, double>{};
     for (final pos in positions) {
       if (!pos.isSell) continue;
-      final qty = double.tryParse(pos.qtyCtrl.text.replaceAll(',', '.'));
-      if (pos.tickerCtrl.text.isEmpty || qty == null) continue;
+      final qty = pos.securityQuantity;
+      if (pos.tickerCtrl.text.isEmpty || qty <= 0) continue;
       sellTotals[pos.tickerCtrl.text.toUpperCase()] =
           (sellTotals[pos.tickerCtrl.text.toUpperCase()] ?? 0) + qty;
     }
@@ -534,9 +535,9 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
 
     int added = 0;
     for (final pos in positions) {
-      final qty = double.tryParse(pos.qtyCtrl.text.replaceAll(',', '.'));
+      final qty = pos.securityQuantity;
       final price = double.tryParse(pos.priceCtrl.text.replaceAll(',', '.'));
-      if (pos.tickerCtrl.text.isEmpty || qty == null || price == null) continue;
+      if (pos.tickerCtrl.text.isEmpty || qty <= 0 || price == null) continue;
       final fee = double.tryParse(pos.feeCtrl.text.replaceAll(',', '.')) ?? 0;
       final ticker = pos.tickerCtrl.text.toUpperCase();
       await StorageService.addPurchase(Purchase(
@@ -581,9 +582,18 @@ class _PositionDraft {
   String? sector;
   bool isSell = false;
   bool applyToNearestPlan = false;
+  int lotSize = 1;
+
+  int get lots => int.tryParse(qtyCtrl.text) ?? 0;
+  double get securityQuantity => lots * lotSize.toDouble();
+
+  void changeLots(int delta) {
+    final next = (lots + delta).clamp(1, 1000000);
+    qtyCtrl.text = '$next';
+  }
 
   double get total {
-    final q = double.tryParse(qtyCtrl.text.replaceAll(',', '.')) ?? 0;
+    final q = securityQuantity;
     final p = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
     final f = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
     return q * p + f;
@@ -672,6 +682,10 @@ class _PositionCard extends StatelessWidget {
                 draft.nameCtrl.text = s.name;
                 draft.type = s.type;
                 draft.sector = s.sector;
+                draft.lotSize = MoexSyncService
+                        .marketSnapshot.value[s.ticker.toUpperCase()]?.lotSize ??
+                    1;
+                if (draft.qtyCtrl.text.isEmpty) draft.qtyCtrl.text = '1';
                 onChanged();
               },
             ),
@@ -693,7 +707,12 @@ class _PositionCard extends StatelessWidget {
                     controller: draft.tickerCtrl,
                     label: 'Тикер',
                     upperCase: true,
-                    onChanged: (_) => onChanged(),
+                    onChanged: (value) {
+                      draft.lotSize = MoexSyncService
+                              .marketSnapshot.value[value.trim().toUpperCase()]?.lotSize ??
+                          1;
+                      onChanged();
+                    },
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -719,24 +738,48 @@ class _PositionCard extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
+                IconButton.filledTonal(
+                  tooltip: 'Уменьшить на один лот',
+                  onPressed: () {
+                    draft.changeLots(-1);
+                    onChanged();
+                  },
+                  icon: const Icon(Icons.remove_rounded),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: AppTextField(
                     controller: draft.qtyCtrl,
-                    label: 'Кол-во',
+                    label: 'Количество лотов',
                     number: true,
+                    integerOnly: true,
+                    suffixText: '× ${draft.lotSize} шт.',
                     onChanged: (_) => onChanged(),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AppTextField(
-                    controller: draft.priceCtrl,
-                    label: 'Цена',
-                    number: true,
-                    onChanged: (_) => onChanged(),
-                  ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  tooltip: 'Добавить один лот',
+                  onPressed: () {
+                    draft.changeLots(1);
+                    onChanged();
+                  },
+                  icon: const Icon(Icons.add_rounded),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+            InfoBanner(
+              icon: Icons.inventory_2_outlined,
+              color: AppColors.info,
+              text: '${draft.lots} лот. × ${draft.lotSize} шт. = ${Fmt.qty(draft.securityQuantity)} шт.',
+            ),
+            const SizedBox(height: 10),
+            AppTextField(
+              controller: draft.priceCtrl,
+              label: 'Цена за одну бумагу',
+              number: true,
+              onChanged: (_) => onChanged(),
             ),
             const SizedBox(height: 10),
             Row(

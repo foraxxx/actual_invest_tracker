@@ -11,6 +11,7 @@ class AppTextField extends StatefulWidget {
   final IconData? icon;
   final String? suffixText;
   final bool number;
+  final bool integerOnly;
   final bool upperCase;
   final bool autofocus;
   final int maxLines;
@@ -24,6 +25,7 @@ class AppTextField extends StatefulWidget {
     this.icon,
     this.suffixText,
     this.number = false,
+    this.integerOnly = false,
     this.upperCase = false,
     this.autofocus = false,
     this.maxLines = 1,
@@ -71,7 +73,12 @@ class _AppTextFieldState extends State<AppTextField> {
         onChanged: widget.onChanged,
         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         textCapitalization: widget.upperCase ? TextCapitalization.characters : TextCapitalization.sentences,
-        keyboardType: widget.number ? const TextInputType.numberWithOptions(decimal: true) : null,
+        keyboardType: widget.number
+            ? TextInputType.numberWithOptions(decimal: !widget.integerOnly)
+            : null,
+        inputFormatters: widget.integerOnly
+            ? const [FilteringTextInputFormatter.digitsOnly]
+            : null,
         decoration: InputDecoration(
           labelText: widget.label,
           hintText: widget.hint,

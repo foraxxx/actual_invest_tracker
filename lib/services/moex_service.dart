@@ -20,6 +20,7 @@ class MoexQuote {
 
   final String board;
   final String market;
+  final int lotSize;
 
   /// Международный код бумаги. Мосбиржа картинок не отдаёт, но по ISIN
   /// логотип можно найти в других источниках.
@@ -58,6 +59,7 @@ class MoexQuote {
     required this.board,
     required this.market,
     required this.fetchedAt,
+    this.lotSize = 1,
     this.isin = '',
     this.faceValue,
     this.faceUnit = 'SUR',
@@ -253,6 +255,7 @@ class MoexService {
         sourceField: field,
         board: board,
         market: market,
+        lotSize: (_toDouble(sec['LOTSIZE'])?.round().clamp(1, 1000000) ?? 1).toInt(),
         isin: (sec['ISIN'] as String?) ?? '',
         faceValue: faceValue,
         faceUnit: '${sec['FACEUNIT'] ?? 'SUR'}',

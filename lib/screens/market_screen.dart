@@ -1080,7 +1080,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   children: [
                     Flexible(
                       child: Text(
-                        q.ticker,
+                        q.shortName.isNotEmpty ? q.shortName : q.ticker,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
@@ -1094,7 +1094,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  q.shortName,
+                  q.ticker,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, color: context.dim),

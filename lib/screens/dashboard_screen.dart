@@ -950,6 +950,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     };
   }
 
+  String _holdingName(String ticker) {
+    for (final purchase in StorageService.purchases.reversed) {
+      if (purchase.ticker.toUpperCase() == ticker.toUpperCase() && purchase.name.trim().isNotEmpty) {
+        return purchase.name.trim();
+      }
+    }
+    return ticker;
+  }
+
   Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {
     final pnlColor = AppColors.pnl(h.pnlRub);
     final density = AppearanceService.density.scale;
@@ -973,7 +982,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            ticker,
+                            _holdingName(ticker),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
