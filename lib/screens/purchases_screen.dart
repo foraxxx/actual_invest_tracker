@@ -619,6 +619,7 @@ class _PositionCard extends StatelessWidget {
     final holding = draft.tickerCtrl.text.isEmpty
         ? null
         : AnalyticsService.currentHoldings()[draft.tickerCtrl.text.toUpperCase()];
+    final hasHolding = holding != null && holding.qty > 0;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -692,9 +693,9 @@ class _PositionCard extends StatelessWidget {
             if (draft.isSell && draft.tickerCtrl.text.isNotEmpty) ...[
               const SizedBox(height: 10),
               InfoBanner(
-                icon: (holding?.qty ?? 0) > 0 ? Icons.inventory_2_outlined : Icons.error_outline_rounded,
-                color: (holding?.qty ?? 0) > 0 ? AppColors.info : AppColors.negative,
-                text: (holding?.qty ?? 0) > 0
+                icon: hasHolding ? Icons.inventory_2_outlined : Icons.error_outline_rounded,
+                color: hasHolding ? AppColors.info : AppColors.negative,
+                text: holding != null && holding.qty > 0
                     ? 'На счету: ${Fmt.qty(holding.qty)} шт по средней ${Fmt.price(holding.avgCost)}'
                     : 'Этой бумаги нет на счету',
               ),
