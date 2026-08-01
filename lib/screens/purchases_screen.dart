@@ -129,7 +129,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                             const SizedBox(height: 2),
                             Text(
                               '${purchases.length} ${Fmt.deals(purchases.length)} · '
-                              '${_year == null ? "все годы" : _year}',
+                              '${_year ?? "все годы"}',
                               style: TextStyle(fontSize: 12, color: context.dim),
                             ),
                           ],
