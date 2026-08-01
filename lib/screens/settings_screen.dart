@@ -9,7 +9,6 @@ import '../design/tokens.dart';
 import '../data/securities.dart';
 import '../services/analytics_service.dart';
 import '../services/appearance_service.dart';
-import '../services/home_widget_service.dart';
 import '../services/auto_backup_service.dart';
 import '../services/backup_crypto_service.dart';
 import '../services/backup_service.dart';
@@ -82,13 +81,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _group(
               index: 1,
-              icon: Icons.widgets_outlined,
-              title: 'Виджет',
-              subtitle: 'Содержимое и оформление',
-              builder: () => [_homeWidgetSection()],
-            ),
-            _group(
-              index: 2,
               icon: Icons.cloud_download_outlined,
               title: 'Биржа и котировки',
               subtitle: 'Загрузка с Мосбиржи, курсы валют, логотипы',
@@ -255,7 +247,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             return Pressable(
                               onTap: () async {
                                 await ThemeService.setAccentColor(p.color);
-                                await HomeWidgetService.update();
                               },
                               child: Column(
                                 children: [
@@ -342,10 +333,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: 'Стоимость портфелей и позиций закрывается точками. '
                           'Нажатие по сумме показывает её, повторное нажатие снова скрывает.',
                       value: AppearanceService.hideAmounts,
-                      onChanged: (v) async {
-                        await AppearanceService.setHideAmounts(v);
-                        await HomeWidgetService.update();
-                      },
+                      onChanged: AppearanceService.setHideAmounts,
                     ),
                   ],
                 ),
@@ -354,49 +342,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               );
-  }
-
-  Widget _homeWidgetSection() {
-    return FadeSlideIn(
-      child: _section(
-        title: 'Виджет на главном экране',
-        subtitle: 'Нажатие переключает выбранные страницы',
-        icon: Icons.widgets_rounded,
-        child: ValueListenableBuilder<int>(
-          valueListenable: AppearanceService.version,
-          builder: (context, _, __) {
-            final selected = AppearanceService.homeWidgetPages;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Страницы по нажатию', style: TextStyle(fontSize: 12, color: context.dim)),
-                for (final page in HomeWidgetPage.values)
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: Text(page.title),
-                    value: selected.contains(page),
-                    onChanged: (enabled) async {
-                      final next = [...selected];
-                      if (enabled == true) {
-                        if (!next.contains(page)) next.add(page);
-                      } else if (next.length > 1) {
-                        next.remove(page);
-                      }
-                      await AppearanceService.setHomeWidgetPages(next);
-                      await HomeWidgetService.update();
-                    },
-                  ),
-                Text(
-                  'Должна быть выбрана хотя бы одна страница.',
-                  style: TextStyle(fontSize: 11, color: context.dim),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
   }
 
   Widget _ratesSection() {

@@ -324,10 +324,6 @@ class StatTile extends StatelessWidget {
                   style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                 ),
               ),
-              if (interactive) ...[
-                const SizedBox(width: 7),
-                InteractiveArrow(color: c),
-              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -344,11 +340,26 @@ class StatTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-          if (hint != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 3),
-              child: Text(hint!, style: TextStyle(fontSize: 10.5, color: context.dim)),
+          if (hint != null || interactive) ...[
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                if (hint != null)
+                  Expanded(
+                    child: MarqueeText(
+                      hint!,
+                      style: TextStyle(fontSize: 10.5, color: context.dim),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                if (interactive) ...[
+                  if (hint != null) const SizedBox(width: 7),
+                  InteractiveArrow(color: c),
+                ],
+              ],
             ),
+          ],
         ],
       ),
     );

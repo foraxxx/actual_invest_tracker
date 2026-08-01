@@ -15,7 +15,6 @@ import '../services/cash_service.dart';
 import '../services/payout_forecast_service.dart';
 import '../services/storage_service.dart';
 import '../services/favorites_service.dart';
-import '../services/home_widget_service.dart';
 import '../services/manual_price_service.dart';
 import '../services/online_price_service.dart';
 import '../services/portfolio_service.dart';
@@ -46,7 +45,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    HomeWidgetService.update();
     // Графики купонов и дивидендов могли ещё не загрузиться к моменту, когда
     // появились бумаги, — просим догрузить при входе на вкладку.
     PayoutForecastService.refresh();
@@ -72,7 +70,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _onDataChanged() {
-    HomeWidgetService.update();
     // Новая сделка могла добавить облигацию. Сразу загружаем её будущий
     // купонный календарь, не дожидаясь следующего фонового обновления MOEX.
     PayoutForecastService.refresh();
@@ -315,6 +312,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         delay: Duration(milliseconds: 40 * step++),
         child: IntrinsicHeight(
             child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
               child: TourSpot(
@@ -349,6 +347,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         delay: Duration(milliseconds: 40 * step++),
         child: IntrinsicHeight(
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
                 child: StatTile(
@@ -381,16 +380,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         FadeSlideIn(
           delay: Duration(milliseconds: 40 * step++),
           child: LayoutBuilder(
-            builder: (context, constraints) {
-              final width = (constraints.maxWidth - 10) / 2;
-              return Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  if (xirr != null)
-                    SizedBox(
-                      width: width,
-                      child: StatTile(
+            builder: (context, _) {
+              final tiles = <Widget>[
+                if (xirr != null)
+                  StatTile(
                     label: 'Доходность (XIRR)',
                     icon: Icons.percent_rounded,
                     text: '${Fmt.pct(xirr)} год.',
@@ -398,11 +391,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: AppColors.pnl(xirr),
                     onTap: () => _showReturnInfo(context, xirr: true),
                   ),
-                    ),
-                  if (twr != null)
-                    SizedBox(
-                      width: width,
-                      child: StatTile(
+                if (twr != null)
+                  StatTile(
                     label: 'Доходность (TWR)',
                     icon: Icons.query_stats_rounded,
                     text: Fmt.pct(twr),
@@ -412,11 +402,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: AppColors.pnl(twr),
                     onTap: () => _showReturnInfo(context, xirr: false),
                   ),
-                    ),
-                  if (payoutForecast > 0)
-                    SizedBox(
-                      width: width,
-                      child: StatTile(
+                if (payoutForecast > 0)
+                  StatTile(
                     label: 'Прогноз выплат',
                     icon: Icons.auto_graph_rounded,
                     value: payoutForecast,
@@ -427,7 +414,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: AppColors.violet,
                     onTap: () => showPayoutForecastSheet(context),
                   ),
+              ];
+              return Column(
+                children: [
+                  for (int i = 0; i < tiles.length; i += 2) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: tiles[i]),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: i + 1 < tiles.length
+                                ? tiles[i + 1]
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
                     ),
+                  ],
                 ],
               );
             },

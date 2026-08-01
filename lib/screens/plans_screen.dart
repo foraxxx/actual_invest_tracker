@@ -711,16 +711,18 @@ class _PlansScreenState extends State<PlansScreen> {
         StorageService.deletePlan(p.id);
         setState(() {});
       },
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: context.isDark ? Colors.white.withOpacity(0.035) : AppColors.lightSurfaceHigh,
-          borderRadius: AppRadius.all(AppRadius.sm),
-        ),
-        child: Opacity(
-          opacity: isCancelled ? 0.5 : 1,
-          child: Column(
+      child: Pressable(
+        onTap: () => _showAddSheet(context, existing: p),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: context.isDark ? Colors.white.withOpacity(0.035) : AppColors.lightSurfaceHigh,
+            borderRadius: AppRadius.all(AppRadius.sm),
+          ),
+          child: Opacity(
+            opacity: isCancelled ? 0.5 : 1,
+            child: Column(
             children: [
               Row(
                 children: [
@@ -744,6 +746,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         MarqueeText(
                           'Цель: ${Fmt.qty(p.targetQuantity)} шт. × '
                           '${p.targetPrice != null ? Fmt.price(p.targetPrice!) : 'цена не указана'}',
+                          alwaysScroll: true,
                           style: TextStyle(fontSize: 11.2, color: context.dim),
                         ),
                       ],
@@ -807,6 +810,7 @@ class _PlansScreenState extends State<PlansScreen> {
                 ),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -861,18 +865,32 @@ class _PlansScreenState extends State<PlansScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Форма нового плана
+  // Форма создания и редактирования плана
   // ---------------------------------------------------------------------------
 
-  void _showAddSheet(BuildContext context) {
-    final tickerCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    final qtyCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final noteCtrl = TextEditingController();
-    AssetType type = AssetType.stock;
-    int lotSize = 1;
-    DateTime? targetDate;
+  void _showAddSheet(BuildContext context, {Plan? existing}) {
+    final editing = existing != null;
+    final initialQuote = existing == null
+        ? null
+        : MoexSyncService.marketSnapshot.value[existing.ticker.toUpperCase()];
+    int lotSize = initialQuote?.lotSize ?? 1;
+    if (existing != null && existing.targetQuantity % lotSize != 0) lotSize = 1;
+
+    final tickerCtrl = TextEditingController(text: existing?.ticker ?? '');
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final qtyCtrl = TextEditingController(
+      text: existing == null ? '' : Fmt.qty(existing.targetQuantity / lotSize),
+    );
+    final priceCtrl = TextEditingController(
+      text: existing?.targetPrice == null
+          ? ''
+          : existing!.targetPrice!
+              .toStringAsFixed(8)
+              .replaceFirst(RegExp(r'\.?0+$'), ''),
+    );
+    final noteCtrl = TextEditingController(text: existing?.note ?? '');
+    AssetType type = existing?.type ?? AssetType.stock;
+    DateTime? targetDate = existing?.targetDate;
 
     showAppSheet(
       context: context,
@@ -890,8 +908,8 @@ class _PlansScreenState extends State<PlansScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SheetHeader(
-                  title: 'Новый план',
-                  subtitle: 'Что и когда хочешь купить',
+                  title: editing ? 'Редактировать план' : 'Новый план',
+                  subtitle: editing ? 'Измени параметры запланированной покупки' : 'Что и когда хочешь купить',
                   trailing: IconButton(
                     icon: const Icon(Icons.close_rounded),
                     onPressed: () => Navigator.pop(ctx),
@@ -1004,7 +1022,9 @@ class _PlansScreenState extends State<PlansScreen> {
                   value: targetDate,
                   label: 'Срок (необязательно)',
                   emptyLabel: 'Без срока',
-                  firstDate: DateTime.now(),
+                  firstDate: existing?.targetDate != null && existing!.targetDate!.isBefore(DateTime.now())
+                      ? existing.targetDate
+                      : DateTime.now(),
                   lastDate: DateTime(2100),
                   onPicked: (d) => setSheetState(() => targetDate = d),
                 ),
@@ -1012,25 +1032,38 @@ class _PlansScreenState extends State<PlansScreen> {
                 AppTextField(controller: noteCtrl, label: 'Заметка (необязательно)'),
                 const SizedBox(height: 22),
                 GradientButton(
-                  label: 'Добавить план',
-                  icon: Icons.flag_rounded,
-                  onPressed: () {
+                  label: editing ? 'Сохранить изменения' : 'Добавить план',
+                  icon: editing ? Icons.save_outlined : Icons.flag_rounded,
+                  onPressed: () async {
                     final enteredLots = int.tryParse(qtyCtrl.text);
                     final p = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
                     if (tickerCtrl.text.isEmpty || enteredLots == null || enteredLots <= 0) return;
-                    StorageService.addPlan(Plan(
-                      id: const Uuid().v4(),
-                      ticker: tickerCtrl.text.toUpperCase(),
-                      name: nameCtrl.text.isEmpty ? tickerCtrl.text : nameCtrl.text,
-                      type: type,
-                      targetQuantity: enteredLots * lotSize.toDouble(),
-                      targetPrice: p,
-                      targetDate: targetDate,
-                      note: noteCtrl.text.isEmpty ? null : noteCtrl.text,
-                      createdAt: DateTime.now(),
-                    ));
+                    if (existing == null) {
+                      await StorageService.addPlan(Plan(
+                        id: const Uuid().v4(),
+                        ticker: tickerCtrl.text.toUpperCase(),
+                        name: nameCtrl.text.isEmpty ? tickerCtrl.text : nameCtrl.text,
+                        type: type,
+                        targetQuantity: enteredLots * lotSize.toDouble(),
+                        targetPrice: p,
+                        targetDate: targetDate,
+                        note: noteCtrl.text.isEmpty ? null : noteCtrl.text,
+                        createdAt: DateTime.now(),
+                      ));
+                    } else {
+                      existing
+                        ..ticker = tickerCtrl.text.toUpperCase()
+                        ..name = nameCtrl.text.isEmpty ? tickerCtrl.text : nameCtrl.text
+                        ..type = type
+                        ..targetQuantity = enteredLots * lotSize.toDouble()
+                        ..targetPrice = p
+                        ..targetDate = targetDate
+                        ..note = noteCtrl.text.isEmpty ? null : noteCtrl.text;
+                      await StorageService.updatePlan(existing);
+                    }
+                    if (!ctx.mounted) return;
                     Navigator.pop(ctx);
-                    setState(() {});
+                    if (mounted) setState(() {});
                   },
                 ),
               ],
