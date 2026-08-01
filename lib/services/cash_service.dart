@@ -58,6 +58,19 @@ class CashSummary {
   double get netInvested => invested - withdrawn;
 }
 
+/// Пополнения, выводы и выплаты внутри выбранного периода.
+class CashPeriodSummary {
+  final double invested;
+  final double withdrawn;
+  final double payouts;
+
+  const CashPeriodSummary({
+    required this.invested,
+    required this.withdrawn,
+    required this.payouts,
+  });
+}
+
 /// Денежный счёт портфеля.
 ///
 /// Пополнения пользователь не записывает — приложение восстанавливает их по
@@ -74,6 +87,34 @@ class CashService {
   /// Ручная запись: положительная сумма — пополнение, отрицательная — вывод.
   /// Отдельная модель не нужна, хватает существующих «пополнений».
   static bool isWithdrawal(Deposit d) => d.amount < 0;
+
+  static CashPeriodSummary periodSummary(CashSummary summary, {DateTime? from}) {
+    double invested = 0;
+    double withdrawn = 0;
+    double payouts = 0;
+
+    for (final move in summary.moves) {
+      if (from != null && !move.date.isAfter(from)) continue;
+      switch (move.kind) {
+        case CashMoveKind.deposit:
+        case CashMoveKind.autoDeposit:
+          invested += move.amountRub;
+        case CashMoveKind.withdrawal:
+          withdrawn += -move.amountRub;
+        case CashMoveKind.payout:
+          payouts += move.amountRub;
+        case CashMoveKind.buy:
+        case CashMoveKind.sell:
+          break;
+      }
+    }
+
+    return CashPeriodSummary(
+      invested: invested,
+      withdrawn: withdrawn,
+      payouts: payouts,
+    );
+  }
 
   static CashSummary summary() {
     final moves = <CashMove>[];

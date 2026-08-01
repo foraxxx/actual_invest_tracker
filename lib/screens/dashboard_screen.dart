@@ -17,11 +17,13 @@ import '../services/storage_service.dart';
 import '../services/favorites_service.dart';
 import '../services/home_widget_service.dart';
 import '../services/manual_price_service.dart';
+import '../services/online_price_service.dart';
 import '../services/portfolio_service.dart';
 import '../services/tax_service.dart';
 import '../services/benchmark_service.dart';
 import '../services/portfolio_history_service.dart';
 import '../widgets/ticker_avatar.dart';
+import '../widgets/payout_forecast_sheet.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
 import 'wrapped_screen.dart';
@@ -145,6 +147,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final realizedPnl = AnalyticsService.totalRealizedPnlRub();
     final holdings = AnalyticsService.currentHoldings();
     final cash = CashService.summary();
+    final periodCash = CashService.periodSummary(
+      cash,
+      from: AnalyticsService.periodStart(_period),
+    );
     // Прогноз считается всегда: с биржевыми графиками он точнее, без них —
     // по прошлым выплатам.
     final payoutSummary = PayoutForecastService.portfolioForecast();
@@ -247,9 +253,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'нереализ. ${Fmt.signedMoney(unrealizedPnl)} · '
-                    'реализ. ${Fmt.signedMoney(realizedPnl)} · '
-                    'доход ${Fmt.signedMoney(totalIncome)}',
+                    'по текущим бумагам ${Fmt.signedMoney(unrealizedPnl)} · '
+                    'по продажам ${Fmt.signedMoney(realizedPnl)} · '
+                    'выплаты ${Fmt.signedMoney(totalIncome)}',
                     style: TextStyle(fontSize: 10.8, color: context.dim, height: 1.3),
                   ),
                 ],
@@ -314,11 +320,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: TourSpot(
                 id: 'invested',
                 child: StatTile(
-                label: 'Вложено своих',
+                label: 'Вложено за период',
                 icon: Icons.account_balance_wallet_outlined,
-                value: cash.invested,
+                value: periodCash.invested,
                 formatter: (v) => Fmt.money(v),
-                hint: cash.withdrawn > 0 ? 'выведено ${Fmt.money(cash.withdrawn)}' : null,
                 color: AppColors.info,
                 onTap: () => _cashSheet(cash),
               ),
@@ -359,11 +364,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: StatTile(
-                  label: 'Получено выплат',
+                  label: 'Выплаты за период',
                   icon: Icons.card_giftcard_rounded,
-                  value: cash.payouts,
+                  value: periodCash.payouts,
                   formatter: (v) => Fmt.money(v),
-                  hint: 'дивиденды и купоны',
                   color: AppColors.positive,
                 ),
               ),
@@ -421,7 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ? '${Fmt.pct(payoutYield)} годовых'
                         : 'по прошлым выплатам',
                     color: AppColors.violet,
-                    onTap: _showPayoutForecast,
+                    onTap: () => showPayoutForecastSheet(context),
                   ),
                     ),
                 ],
@@ -479,14 +483,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     separatorBuilder: (_, __) => const SizedBox(width: 10),
                     itemBuilder: (context, i) {
                       final t = favs[i];
-                      final h = holdings[t];
+                      final name = _favoriteName(t);
                       return Pressable(
                         onTap: () => Navigator.push(
                           context,
                           AppPageRoute(builder: (_) => TickerDetailScreen(ticker: t)),
                         ),
                         child: Container(
-                          width: 78,
+                          width: 112,
                           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                           decoration: BoxDecoration(
                             color: context.isDark ? Colors.white.withOpacity(0.04) : Colors.white,
@@ -499,20 +503,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               TickerAvatar(ticker: t, size: 30, glow: false),
                               const SizedBox(height: 5),
                               Text(
-                                t,
-                                maxLines: 1,
+                                name,
+                                maxLines: 2,
+                                textAlign: TextAlign.center,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                               ),
-                              if (h != null)
-                                Text(
-                                  Fmt.pct(h.pnlPct),
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.pnl(h.pnlRub),
-                                  ),
-                                ),
                             ],
                           ),
                         ),
@@ -757,28 +753,81 @@ class _DashboardScreenState extends State<DashboardScreen> {
         : 'Точность зависит от истории стоимости и денежных движений. Если старых котировок '
             'нет, приложение использует ближайшие известные цены сделок или ручные цены.';
 
-    return showDialog<void>(
+    final value = xirr ? AnalyticsService.xirrPercent() : AnalyticsService.twrPercent();
+
+    return showAppSheet<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(xirr ? Icons.percent_rounded : Icons.query_stats_rounded, color: context.accent),
-            const SizedBox(width: 10),
-            Expanded(child: Text(title)),
-          ],
-        ),
-        content: SingleChildScrollView(
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(intro, style: const TextStyle(height: 1.4)),
-              const SizedBox(height: 14),
-              const Text('Как считается', style: TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 5),
-              Text(calculation, style: const TextStyle(height: 1.4)),
-              const SizedBox(height: 14),
-              Text(example, style: const TextStyle(height: 1.4)),
-              const SizedBox(height: 14),
+              SheetHeader(
+                title: title,
+                subtitle: xirr ? 'Личная доходность ваших денег' : 'Доходность инвестиционной стратегии',
+                trailing: IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (value != null) ...[
+                AppCard(
+                  glow: AppColors.pnl(value),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: AppColors.pnl(value).withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: Icon(
+                          xirr ? Icons.percent_rounded : Icons.query_stats_rounded,
+                          color: AppColors.pnl(value),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Ваш результат', style: TextStyle(fontSize: 11.5, color: context.dim)),
+                            const SizedBox(height: 3),
+                            Text(
+                              xirr ? '${Fmt.pct(value)} годовых' : Fmt.pct(value),
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.pnl(value),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(intro, style: const TextStyle(height: 1.4)),
+                    const SizedBox(height: 16),
+                    const Text('Как считается', style: TextStyle(fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 6),
+                    Text(calculation, style: const TextStyle(height: 1.4)),
+                    const SizedBox(height: 14),
+                    Text(example, style: const TextStyle(height: 1.4)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               InfoBanner(
                 icon: Icons.info_outline_rounded,
                 color: AppColors.info,
@@ -787,9 +836,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
         ),
-        actions: [
-          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Понятно')),
-        ],
       ),
     );
   }
@@ -798,17 +844,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// взялось. Пополнения приложение считает само по сделкам, вывод — то
   /// единственное, что нужно записать руками.
   void _cashSheet(CashSummary cash) {
+    final years = cash.moves.map((move) => move.date.year).toSet().toList()
+      ..sort((a, b) => b.compareTo(a));
+    int selectedYear = years.isEmpty ? DateTime.now().year : years.first;
+    final recordedDeposits = cash.invested - cash.autoInvested;
+    final purchases = cash.moves
+        .where((move) => move.kind == CashMoveKind.buy)
+        .fold(0.0, (sum, move) => sum - move.amountRub);
+    final sales = cash.moves
+        .where((move) => move.kind == CashMoveKind.sell)
+        .fold(0.0, (sum, move) => sum + move.amountRub);
+
     showAppSheet(
       context: context,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.8,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (ctx, scroll) => ListView(
-          controller: scroll,
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          children: [
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final history = cash.moves.where((move) => move.date.year == selectedYear).toList();
+          return DraggableScrollableSheet(
+            initialChildSize: 0.8,
+            minChildSize: 0.5,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (ctx, scroll) => ListView(
+              controller: scroll,
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+              children: [
             SheetHeader(
               title: 'Счёт',
               subtitle: 'Движение денег по портфелю',
@@ -843,6 +903,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 12),
+            _cashFormulaCard(
+              title: 'Как считаются вложенные деньги',
+              total: cash.invested,
+              color: AppColors.info,
+              rows: [
+                ('Записанные пополнения', recordedDeposits),
+                ('Определено по покупкам', cash.autoInvested),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _cashFormulaCard(
+              title: 'Как считаются свободные деньги',
+              total: cash.cash,
+              color: AppColors.gold,
+              rows: [
+                ('Пополнения', cash.invested),
+                ('Продажи', sales),
+                ('Выплаты', cash.payouts),
+                ('Покупки и комиссии', -purchases),
+                ('Выводы', -cash.withdrawn),
+              ],
             ),
             if (cash.autoInvested > 0) ...[
               const SizedBox(height: 12),
@@ -885,66 +968,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
             const SizedBox(height: 18),
-            const SectionTitle(title: 'История', padding: EdgeInsets.only(bottom: 10)),
-            ...cash.moves.map((m) => _cashRow(ctx, m)),
-          ],
-        ),
+            SectionTitle(
+              title: 'История за $selectedYear год',
+              subtitle: '${history.length} ${Fmt.plural(history.length, "операция", "операции", "операций")}',
+              padding: const EdgeInsets.only(bottom: 10),
+            ),
+            if (years.length > 1) ...[
+              PillTabs<int>(
+                values: years,
+                selected: selectedYear,
+                labelOf: (year) => '$year',
+                onChanged: (year) => setSheetState(() => selectedYear = year),
+                padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 14),
+            ],
+            ...history.map((move) => _cashRow(ctx, move)),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  void _showPayoutForecast() {
-    final byMonth = PayoutForecastService.portfolioForecastByMonth();
-    final total = byMonth.values.fold(0.0, (sum, value) => sum + value);
-
-    showAppSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+  Widget _cashFormulaCard({
+    required String title,
+    required double total,
+    required Color color,
+    required List<(String, double)> rows,
+  }) {
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              SheetHeader(
-                title: 'Прогноз выплат',
-                subtitle: 'Дивиденды и купоны на следующие 12 месяцев',
-                trailing: IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(ctx),
+              Icon(Icons.calculate_outlined, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
                 ),
               ),
-              const SizedBox(height: 16),
-              AppCard(
-                padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SectionTitle(
-                      title: 'Ожидаемые выплаты по месяцам',
-                      subtitle: 'Всего около ${Fmt.money(total)}',
-                    ),
-                    BarsChart(
-                      values: byMonth.values.toList(),
-                      labels: byMonth.keys.map(Fmt.monthKeyLabel).toList(),
-                      color: AppColors.violet,
-                      valueFormatter: Fmt.money,
-                      height: 190,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              const InfoBanner(
-                icon: Icons.info_outline_rounded,
-                color: AppColors.info,
-                text: 'Месяцы определяются по объявленному графику выплат, а '
-                    'если его ещё нет — по исторической сезонности. Прогноз не '
-                    'является гарантией будущих выплат.',
+              Text(
+                Fmt.money(total),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 11),
+          for (int i = 0; i < rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: 7),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(rows[i].$1, style: TextStyle(fontSize: 11.5, color: context.dim)),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  Fmt.signedMoney(rows[i].$2),
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1088,6 +1179,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return ticker;
   }
 
+  String _favoriteName(String ticker) {
+    final holdingName = _holdingName(ticker);
+    if (holdingName != ticker) return holdingName;
+
+    for (final income in StorageService.incomes.reversed) {
+      if (income.ticker.toUpperCase() == ticker.toUpperCase() && income.name.trim().isNotEmpty) {
+        return income.name.trim();
+      }
+    }
+
+    final onlineName = OnlinePriceService.get(ticker)?.shortName.trim();
+    return onlineName == null || onlineName.isEmpty ? ticker : onlineName;
+  }
+
   Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {
     final pnlColor = AppColors.pnl(h.pnlRub);
     final density = AppearanceService.density.scale;
@@ -1124,10 +1229,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(
+                    MarqueeText(
                       _holdingSubtitle(h, weight),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                     ),
                   ],

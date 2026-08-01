@@ -52,7 +52,7 @@ class HomeWidgetService {
         HomeWidgetPage.forecast: (
           title: 'Ожидаемые выплаты',
           value: money(forecast),
-          subtitle: 'Прогноз на ближайшие 12 месяцев',
+          subtitle: '12 месяцев со следующего месяца',
           positive: forecast >= 0,
         ),
       };

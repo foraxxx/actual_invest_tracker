@@ -741,15 +741,10 @@ class _PlansScreenState extends State<PlansScreen> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Text(
-                            'Цель: ${p.targetPrice != null ? Fmt.price(p.targetPrice!) : 'цена не указана'}'
-                            ' × ${Fmt.qty(p.targetQuantity)} шт.',
-                            maxLines: 1,
-                            softWrap: false,
-                            style: TextStyle(fontSize: 11.2, color: context.dim),
-                          ),
+                        MarqueeText(
+                          'Цель: ${Fmt.qty(p.targetQuantity)} шт. × '
+                          '${p.targetPrice != null ? Fmt.price(p.targetPrice!) : 'цена не указана'}',
+                          style: TextStyle(fontSize: 11.2, color: context.dim),
                         ),
                       ],
                     ),

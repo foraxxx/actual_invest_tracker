@@ -286,8 +286,13 @@ class StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = color ?? context.accent;
+    final interactive = onTap != null;
     return AppCard(
       onTap: onTap,
+      glow: interactive ? c : null,
+      border: interactive
+          ? Border.all(color: c.withOpacity(context.isDark ? 0.52 : 0.38), width: 1.25)
+          : null,
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -319,6 +324,10 @@ class StatTile extends StatelessWidget {
                   style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                 ),
               ),
+              if (interactive) ...[
+                const SizedBox(width: 7),
+                InteractiveArrow(color: c),
+              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -341,6 +350,33 @@ class StatTile extends StatelessWidget {
               child: Text(hint!, style: TextStyle(fontSize: 10.5, color: context.dim)),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Единый отчётливый маркер того, что карточку можно открыть.
+class InteractiveArrow extends StatelessWidget {
+  final Color color;
+
+  const InteractiveArrow({super.key, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: color.withOpacity(context.isDark ? 0.24 : 0.14),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(
+          color: color.withOpacity(context.isDark ? 0.58 : 0.42),
+        ),
+      ),
+      child: Icon(
+        Icons.arrow_forward_rounded,
+        size: 18,
+        color: color,
       ),
     );
   }
@@ -539,6 +575,7 @@ class InfoBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       onTap: onTap,
+      glow: onTap != null ? color : null,
       padding: const EdgeInsets.all(13),
       color: color.withOpacity(context.isDark ? 0.11 : 0.08),
       border: Border.all(color: color.withOpacity(0.28)),

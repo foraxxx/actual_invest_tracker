@@ -413,6 +413,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   FadeSlideIn(
                     child: IntrinsicHeight(
                         child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Expanded(
                           child: StatTile(
@@ -440,6 +441,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     delay: const Duration(milliseconds: 60),
                     child: IntrinsicHeight(
                         child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Expanded(
                           child: StatTile(
@@ -492,7 +494,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     InfoBanner(
                       icon: Icons.auto_graph_rounded,
                       color: AppColors.violet,
-                      text: 'Ожидаемый доход за 12 мес: ~${Fmt.money(forecast.rub)} '
+                      text: 'Ожидаемый доход за 12 мес со следующего месяца: ~${Fmt.money(forecast.rub)} '
                           '(доходность ~${forecastYield.toStringAsFixed(1)}%) — ${forecast.source}. Не гарантия.',
                     ),
                     const SizedBox(height: 10),

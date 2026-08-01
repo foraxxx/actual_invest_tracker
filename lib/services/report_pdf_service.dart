@@ -307,7 +307,7 @@ class ReportPdfService {
             cell('Куплено', bold: true),
             cell('Продано', bold: true),
             cell('Выплаты', bold: true),
-            cell('Реализ.', bold: true),
+            cell('По продажам', bold: true),
             cell('Стоимость', bold: true),
           ],
         ),

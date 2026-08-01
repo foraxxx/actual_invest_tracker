@@ -135,7 +135,9 @@ class _WrappedScreenState extends State<WrappedScreen> with SingleTickerProvider
           title: 'Дивидендами и купонами получено',
           value: income,
           color: AppColors.positive,
-          subtitle: forecast > 0 ? 'Прогноз на следующие 12 мес: ≈ ${Fmt.money(forecast)}' : null,
+          subtitle: forecast > 0
+              ? '12 месяцев со следующего месяца: ≈ ${Fmt.money(forecast)}'
+              : null,
         ),
       ),
       _StorySlide(

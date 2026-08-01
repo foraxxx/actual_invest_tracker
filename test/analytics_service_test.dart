@@ -182,4 +182,27 @@ void main() {
       closeTo(180, 1e-9),
     );
   });
+
+  test('доходность показывается за год и за всё время у молодого портфеля', () async {
+    final now = DateTime.now();
+    await StorageService.addPurchase(Purchase(
+      id: 'young-buy',
+      date: now.subtract(const Duration(days: 20)),
+      ticker: 'TEST',
+      name: 'Test',
+      type: AssetType.stock,
+      quantity: 10,
+      pricePerUnit: 100,
+    ));
+    await ManualPriceService.setAt('TEST', now, 120);
+
+    final year = AnalyticsService.portfolioChangeForPeriod(PeriodFilter.year1);
+    final all = AnalyticsService.portfolioChangeForPeriod(PeriodFilter.all);
+    expect(year, isNotNull);
+    expect(all, isNotNull);
+    expect(year!.changeAbs, closeTo(200, 0.1));
+    expect(all!.changeAbs, closeTo(200, 0.1));
+    expect(year.changePct, greaterThan(0));
+    expect(all.changePct, greaterThan(0));
+  });
 }

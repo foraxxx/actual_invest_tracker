@@ -85,8 +85,8 @@ class PayoutForecastService {
     version.value++;
   }
 
-  /// Ожидаемые выплаты по одной бумаге за ближайшие 12 месяцев — в рублях на
-  /// всю текущую позицию.
+  /// Ожидаемые выплаты по одной бумаге за 12 полных месяцев, начиная со
+  /// следующего, — в рублях на всю текущую позицию.
   static ({double rub, String source}) forecastForTicker(String ticker) {
     final holding = AnalyticsService.currentHoldings()[ticker];
     if (holding == null || holding.qty <= 0) return (rub: 0, source: 'нет позиции');
@@ -122,8 +122,9 @@ class PayoutForecastService {
   static ({double value, String source}) _bondPerUnit(List<MoexPayout> coupons) {
     final sorted = coupons.toList()..sort((a, b) => a.date.compareTo(b.date));
     final now = DateTime.now();
-    final horizon = now.add(const Duration(days: 365));
-    final upcoming = sorted.where((c) => c.date.isAfter(now)).toList();
+    final firstMonth = DateTime(now.year, now.month + 1);
+    final horizon = DateTime(firstMonth.year, firstMonth.month + 12);
+    final upcoming = sorted.where((c) => !c.date.isBefore(firstMonth)).toList();
     if (upcoming.isEmpty) return (value: 0, source: '');
 
     final withinYear = upcoming.where((c) => c.date.isBefore(horizon)).toList();
@@ -167,6 +168,8 @@ class PayoutForecastService {
   static ({double value, String source}) _sharePerUnit(List<MoexPayout> dividends) {
     if (dividends.isEmpty) return (value: 0, source: '');
     final now = DateTime.now();
+    final firstMonth = DateTime(now.year, now.month + 1);
+    final horizon = DateTime(firstMonth.year, firstMonth.month + 12);
 
     // Суммы по календарным годам: компания может платить в несколько заходов,
     // и сравнивать надо годовые суммы, а не отдельные выплаты.
@@ -183,7 +186,7 @@ class PayoutForecastService {
 
     // Уже объявленные будущие выплаты — самая точная часть прогноза.
     final announced = dividends
-        .where((d) => d.date.isAfter(now) && d.date.isBefore(now.add(const Duration(days: 365))))
+        .where((d) => !d.date.isBefore(firstMonth) && d.date.isBefore(horizon))
         .fold(0.0, (sum, d) => sum + d.amount);
 
     // Темп роста — среднее геометрическое отношений соседних лет. Оно устойчивее
@@ -257,8 +260,9 @@ class PayoutForecastService {
     return (total: total, fromExchange: fromExchange, fromHistory: fromHistory);
   }
 
-  /// Тот же прогноз по портфелю, разложенный по следующим 12 календарным
-  /// месяцам. Итог всегда совпадает с [portfolioForecast]: меняется только
+  /// Тот же прогноз по портфелю, разложенный по 12 полным календарным
+  /// месяцам, начиная со следующего. Итог всегда совпадает с
+  /// [portfolioForecast]: меняется только
   /// распределение суммы по месяцам.
   ///
   /// Сначала используем объявленные будущие даты выплат. Если их ещё нет —
@@ -267,7 +271,11 @@ class PayoutForecastService {
   /// вариантом, когда никаких дат нет.
   static Map<String, double> portfolioForecastByMonth({DateTime? from}) {
     final now = from ?? DateTime.now();
-    final months = List.generate(12, (i) => DateTime(now.year, now.month + i));
+    final firstMonth = DateTime(now.year, now.month + 1);
+    final months = List.generate(
+      12,
+      (i) => DateTime(firstMonth.year, firstMonth.month + i),
+    );
     final result = <String, double>{
       for (final month in months) _monthKey(month): 0,
     };
@@ -280,13 +288,13 @@ class PayoutForecastService {
 
       final weights = List<double>.filled(months.length, 0);
       final payouts = _payouts[ticker] ?? const <MoexPayout>[];
-      final horizon = DateTime(now.year, now.month + 12);
+      final horizon = DateTime(firstMonth.year, firstMonth.month + 12);
 
       // Объявленные выплаты точнее любой экстраполяции.
       for (final payout in payouts) {
         if (!_isForecastPayout(payout) ||
             payout.amount <= 0 ||
-            payout.date.isBefore(now) ||
+            payout.date.isBefore(firstMonth) ||
             !payout.date.isBefore(horizon)) {
           continue;
         }

@@ -13,6 +13,7 @@ import '../services/payout_forecast_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
+import '../widgets/payout_forecast_sheet.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
 
@@ -179,7 +180,9 @@ class _IncomesScreenState extends State<IncomesScreen> {
                       child: InfoBanner(
                         icon: Icons.auto_graph_rounded,
                         color: AppColors.violet,
-                        text: 'Прогноз на 12 месяцев: ~${Fmt.money(forecast)}'
+                        onTap: () => showPayoutForecastSheet(context),
+                        trailing: const InteractiveArrow(color: AppColors.violet),
+                        text: 'Прогноз на 12 месяцев со следующего месяца: ~${Fmt.money(forecast)}'
                             '${forecastYield > 0 ? " (${forecastYield.toStringAsFixed(1)}% годовых)" : ""} — '
                             'по графику купонов и объявленным дивидендам на сегодняшнее '
                             'количество бумаг. Не гарантия.',
@@ -338,7 +341,7 @@ class _IncomesScreenState extends State<IncomesScreen> {
                     children: [
                       Flexible(
                         child: Text(
-                          inc.ticker,
+                          inc.name.trim().isEmpty ? inc.ticker : inc.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
@@ -354,7 +357,7 @@ class _IncomesScreenState extends State<IncomesScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    inc.name,
+                    inc.ticker,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: context.dim, fontWeight: FontWeight.w600),
@@ -432,11 +435,11 @@ class _IncomesScreenState extends State<IncomesScreen> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
+                    Expanded(flex: 2, child: AppTextField(controller: nameCtrl, label: 'Название')),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: AppTextField(controller: tickerCtrl, label: 'Тикер', upperCase: true),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(flex: 2, child: AppTextField(controller: nameCtrl, label: 'Название')),
                   ],
                 ),
                 const SizedBox(height: 12),

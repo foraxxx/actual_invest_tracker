@@ -39,10 +39,7 @@ class HoldingInfo {
   double get pnlPct => costBasisRub == 0 ? 0 : (pnlRub / costBasisRub) * 100;
 }
 
-/// Изменение стоимости "замороженного" на начало периода состава портфеля:
-/// берём тикеры и количество, которые были на начало периода, и сравниваем
-/// их оценку по ценам на тот момент и по сегодняшним ценам. Покупки/продажи,
-/// сделанные ВНУТРИ периода, на это число не влияют — это чистая переоценка.
+/// Финансовый результат и доходность портфеля за выбранный период.
 class PeriodChange {
   final double valueStart;
   final double valueEnd;
@@ -100,7 +97,7 @@ class AnalyticsService {
     return OnlinePriceService.get(ticker)?.price;
   }
 
-  static DateTime? _periodStart(PeriodFilter f, {DateTime? now}) {
+  static DateTime? periodStart(PeriodFilter f, {DateTime? now}) {
     final current = now ?? DateTime.now();
     switch (f) {
       case PeriodFilter.month1:
@@ -117,7 +114,7 @@ class AnalyticsService {
   }
 
   static List<Purchase> filterPurchases(PeriodFilter f, {AssetType? type, String? sector}) {
-    final start = _periodStart(f);
+    final start = periodStart(f);
     return StorageService.purchases.where((p) {
       final okDate = start == null || p.date.isAfter(start);
       final okType = type == null || p.type == type;
@@ -128,7 +125,7 @@ class AnalyticsService {
   }
 
   static List<Income> filterIncomes(PeriodFilter f, {IncomeType? type}) {
-    final start = _periodStart(f);
+    final start = periodStart(f);
     return StorageService.incomes.where((i) {
       final okDate = start == null || i.date.isAfter(start);
       final okType = type == null || i.type == type;
@@ -161,7 +158,7 @@ class AnalyticsService {
   /// прибылью сами по себе.
   static double profitForPeriod(PeriodFilter f, {DateTime? now}) {
     final end = now ?? DateTime.now();
-    final start = _periodStart(f, now: end);
+    final start = periodStart(f, now: end);
     final startValue = start == null
         ? 0.0
         : holdingsAt(date: start).values.fold(0.0, (sum, holding) => sum + holding.valueRub);
@@ -385,62 +382,61 @@ class AnalyticsService {
     return best;
   }
 
-  /// Чистое изменение стоимости портфеля за период, БЕЗ учёта новых покупок
-  /// и продаж, сделанных внутри периода: состав (тикер → количество) на
-  /// начало периода фиксируется, и этот же набор оценивается по ценам на
-  /// начало периода и по сегодняшним. Для PeriodFilter.all возвращает null —
-  /// там нет "состава на начало", с которым можно сравнивать (для всего
-  /// времени такую роль уже играет "Общая прибыль").
+  /// Полный результат и доходность за выбранный период.
+  ///
+  /// Покупки и продажи внутри периода учитываются как денежные потоки, поэтому
+  /// функция работает и когда портфель моложе выбранного интервала, и для
+  /// «Всё время». Доходность считается методом Modified Dietz: каждый поток
+  /// взвешивается по времени, которое деньги успели провести в портфеле.
   static PeriodChange? portfolioChangeForPeriod(PeriodFilter f) {
-    final start = _periodStart(f);
-    if (start == null) return null;
-
     final purchasesSorted = [...StorageService.purchases]..sort(compareTrades);
+    if (purchasesSorted.isEmpty) return null;
+    final end = DateTime.now();
+    final requestedStart = periodStart(f, now: end);
+    final firstTradeStart =
+        purchasesSorted.first.date.subtract(const Duration(microseconds: 1));
+    // Если портфель моложе выбранного периода, не растягиваем его фактические
+    // двадцать дней на весь год: отсчёт начинается с первого вложения.
+    final start = requestedStart == null || requestedStart.isBefore(firstTradeStart)
+        ? firstTradeStart
+        : requestedStart;
+    final durationMicros = end.difference(start).inMicroseconds;
+    if (durationMicros <= 0) return null;
 
-    // Состав портфеля на начало периода: количество и последняя известная
-    // на тот момент цена/валюта каждого тикера.
-    final qtyAtStart = <String, double>{};
-    final priceAtStart = <String, double>{};
-    final currencyOf = <String, String>{};
-    for (final p in purchasesSorted) {
-      if (p.date.isAfter(start)) break;
-      final newQty = (qtyAtStart[p.ticker] ?? 0) + p.signedQuantity;
-      qtyAtStart[p.ticker] = newQty < 0 ? 0 : newQty;
-      priceAtStart[p.ticker] = p.pricePerUnit;
-      currencyOf[p.ticker] = p.currency;
+    final valueStart = holdingsAt(date: start)
+        .values
+        .fold(0.0, (sum, holding) => sum + holding.valueRub);
+    final valueEnd = currentPortfolioValueRub();
+    double weightedFlows = 0;
+    double weightedPositiveFlows = 0;
+
+    for (final trade in purchasesSorted) {
+      if (!trade.date.isAfter(start) || trade.date.isAfter(end)) continue;
+      final amount = CurrencyService.toRub(
+        trade.settlementAmount,
+        trade.currency,
+        date: trade.date,
+      );
+      final flow = trade.isSell ? -amount : amount;
+      final remaining = end.difference(trade.date).inMicroseconds / durationMicros;
+      final weight = remaining.clamp(0.0, 1.0).toDouble();
+      weightedFlows += flow * weight;
+      if (flow > 0) weightedPositiveFlows += flow * weight;
     }
 
-    // Последняя цена сделки ПОСЛЕ начала периода на тикер — пригодится для
-    // бумаг, которые к сегодняшнему дню уже полностью проданы: их сегодняшней
-    // "рыночной" оценки в currentHoldings() уже нет, но известна цена продажи.
-    final lastPriceAfterStart = <String, double>{};
-    for (final p in purchasesSorted) {
-      if (p.date.isAfter(start)) {
-        lastPriceAfterStart[p.ticker] = p.pricePerUnit;
-      }
+    // Без параметра now функция использует текущие онлайн-котировки. Передача
+    // даже DateTime.now() перевела бы holdingsAt в исторический режим и вместо
+    // биржевой цены подставила цену последней сделки.
+    final changeAbs = profitForPeriod(f);
+    var capitalBase = valueStart + weightedFlows;
+    // После крупных продаж классический знаменатель Dietz иногда становится
+    // нулевым или отрицательным. Для интерфейса используем консервативную базу
+    // из начального капитала и взвешенных покупок — показатель не исчезает.
+    if (capitalBase <= 1e-9) {
+      capitalBase = valueStart + weightedPositiveFlows;
     }
-
-    final holdingsToday = currentHoldings();
-
-    double valueStart = 0;
-    double valueEnd = 0;
-    qtyAtStart.forEach((ticker, q) {
-      if (q <= 1e-9) return;
-      final cur = currencyOf[ticker] ?? 'RUB';
-      // Приоритет — реально сохранённая ручная цена на начало периода (или
-      // ближайшую дату до него); если пользователь её не вводил, откатываемся
-      // к цене последней сделки на тот момент (старое приближение).
-      final priceStart = ManualPriceService.priceAt(ticker, start) ?? priceAtStart[ticker] ?? 0;
-      valueStart += CurrencyService.toRub(q * priceStart, cur, date: start);
-
-      final holdingNow = holdingsToday[ticker];
-      final priceEnd = holdingNow?.displayPrice ?? lastPriceAfterStart[ticker] ?? priceStart;
-      valueEnd += CurrencyService.toRub(q * priceEnd, cur);
-    });
-
-    if (valueStart <= 0) return null;
-    final changeAbs = valueEnd - valueStart;
-    final changePct = (changeAbs / valueStart) * 100;
+    if (capitalBase <= 1e-9) return null;
+    final changePct = changeAbs / capitalBase * 100;
     return PeriodChange(valueStart: valueStart, valueEnd: valueEnd, changeAbs: changeAbs, changePct: changePct);
   }
 

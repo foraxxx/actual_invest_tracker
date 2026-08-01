@@ -316,7 +316,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                       children: [
                         Flexible(
                           child: Text(
-                            r.ticker,
+                            r.name.trim().isEmpty ? r.ticker : r.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),

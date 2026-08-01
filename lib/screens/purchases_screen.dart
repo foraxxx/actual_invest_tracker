@@ -32,6 +32,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
   final _searchCtrl = TextEditingController();
   _OpFilter _op = _OpFilter.all;
   AssetType? _type;
+  int? _year = DateTime.now().year;
   String _query = '';
 
   @override
@@ -55,6 +56,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
 
   List<Purchase> get _filtered {
     var list = StorageService.purchases..sort((a, b) => b.date.compareTo(a.date));
+    if (_year != null) list = list.where((p) => p.date.year == _year).toList();
     if (_op != _OpFilter.all) {
       final wantSell = _op == _OpFilter.sell;
       list = list.where((p) => p.isSell == wantSell).toList();
@@ -68,6 +70,20 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     }
     return list;
   }
+
+  List<int> get _availableYears {
+    final years = <int>{
+      DateTime.now().year,
+      ...StorageService.purchases.map((purchase) => purchase.date.year),
+    }.toList()
+      ..sort((a, b) => b.compareTo(a));
+    return years;
+  }
+
+  int get _activeFilterCount =>
+      (_op == _OpFilter.all ? 0 : 1) +
+      (_type == null ? 0 : 1) +
+      (_year == DateTime.now().year ? 0 : 1);
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +128,8 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                             Text('Сделки', style: Theme.of(context).textTheme.headlineMedium),
                             const SizedBox(height: 2),
                             Text(
-                              '${purchases.length} ${Fmt.deals(purchases.length)} в списке',
+                              '${purchases.length} ${Fmt.deals(purchases.length)} · '
+                              '${_year == null ? "все годы" : _year}',
                               style: TextStyle(fontSize: 12, color: context.dim),
                             ),
                           ],
@@ -144,33 +161,18 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  AppSearchField(
-                    controller: _searchCtrl,
-                    hint: 'Поиск по тикеру или названию',
-                    onChanged: (v) => setState(() => _query = v),
-                  ),
-                  const SizedBox(height: 12),
-                  PillTabs<_OpFilter>(
-                    values: _OpFilter.values,
-                    selected: _op,
-                    labelOf: (o) => switch (o) {
-                      _OpFilter.all => 'Все операции',
-                      _OpFilter.buy => 'Покупки',
-                      _OpFilter.sell => 'Продажи',
-                    },
-                    iconOf: (o) => switch (o) {
-                      _OpFilter.all => Icons.all_inclusive_rounded,
-                      _OpFilter.buy => Icons.add_shopping_cart_rounded,
-                      _OpFilter.sell => Icons.sell_outlined,
-                    },
-                    onChanged: (o) => setState(() => _op = o),
-                  ),
-                  const SizedBox(height: 8),
-                  PillTabs<AssetType?>(
-                    values: const <AssetType?>[null, ...AssetType.values],
-                    selected: _type,
-                    labelOf: (t) => t == null ? 'Все типы' : Fmt.assetTypeShort(t),
-                    onChanged: (t) => setState(() => _type = t),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppSearchField(
+                          controller: _searchCtrl,
+                          hint: 'Поиск по тикеру или названию',
+                          onChanged: (v) => setState(() => _query = v),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _filterButton(),
+                    ],
                   ),
                 ],
               ),
@@ -203,6 +205,209 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
         label: const Text('Сделка', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       ),
+      ),
+    );
+  }
+
+  Widget _filterButton() {
+    final active = _activeFilterCount;
+    return Pressable(
+      onTap: _openFilterSheet,
+      child: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          borderRadius: AppRadius.all(AppRadius.sm),
+          color: active > 0
+              ? context.accent.withOpacity(0.16)
+              : (context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh),
+          border: Border.all(
+            color: active > 0 ? context.accent.withOpacity(0.5) : context.hairline,
+            width: active > 0 ? 1.4 : 1.2,
+          ),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.tune_rounded,
+              size: 21,
+              color: active > 0 ? context.accent : context.dim,
+            ),
+            if (active > 0)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: context.accent,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    '$active',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openFilterSheet() {
+    var draftOp = _op;
+    AssetType? draftType = _type;
+    int? draftYear = _year;
+
+    showAppSheet(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SheetHeader(
+                  title: 'Фильтры сделок',
+                  subtitle: 'Год, операция и тип бумаги',
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Год',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final year in _availableYears)
+                      _filterChoice(
+                        label: '$year',
+                        selected: draftYear == year,
+                        onTap: () => setSheetState(() => draftYear = year),
+                      ),
+                    _filterChoice(
+                      label: 'Все годы',
+                      selected: draftYear == null,
+                      onTap: () => setSheetState(() => draftYear = null),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Операция',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final op in _OpFilter.values)
+                      _filterChoice(
+                        label: switch (op) {
+                          _OpFilter.all => 'Все операции',
+                          _OpFilter.buy => 'Покупки',
+                          _OpFilter.sell => 'Продажи',
+                        },
+                        selected: draftOp == op,
+                        onTap: () => setSheetState(() => draftOp = op),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Тип бумаги',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _filterChoice(
+                      label: 'Все типы',
+                      selected: draftType == null,
+                      onTap: () => setSheetState(() => draftType = null),
+                    ),
+                    for (final type in AssetType.values)
+                      _filterChoice(
+                        label: Fmt.assetTypeShort(type),
+                        selected: draftType == type,
+                        onTap: () => setSheetState(() => draftType = type),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                GradientButton(
+                  label: 'Применить',
+                  icon: Icons.check_rounded,
+                  onPressed: () {
+                    setState(() {
+                      _op = draftOp;
+                      _type = draftType;
+                      _year = draftYear;
+                    });
+                    Navigator.pop(ctx);
+                  },
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => setSheetState(() {
+                    draftOp = _OpFilter.all;
+                    draftType = null;
+                    draftYear = DateTime.now().year;
+                  }),
+                  icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                  label: const Text('Сбросить'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _filterChoice({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Pressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected
+              ? context.accent.withOpacity(0.16)
+              : (context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? context.accent.withOpacity(0.55) : context.hairline,
+            width: selected ? 1.4 : 1.2,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            color: selected ? context.accent : null,
+          ),
+        ),
       ),
     );
   }
@@ -304,7 +509,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                     children: [
                       Flexible(
                         child: Text(
-                          p.ticker,
+                          p.name.trim().isEmpty ? p.ticker : p.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
@@ -320,7 +525,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    p.name,
+                    p.ticker,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: context.dim, fontWeight: FontWeight.w600),
@@ -652,7 +857,11 @@ class _PositionCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    draft.tickerCtrl.text.isEmpty ? 'Бумага' : draft.tickerCtrl.text.toUpperCase(),
+                    draft.tickerCtrl.text.isEmpty
+                        ? 'Бумага'
+                        : draft.nameCtrl.text.trim().isEmpty
+                            ? draft.tickerCtrl.text.toUpperCase()
+                            : '${draft.nameCtrl.text.trim()} · ${draft.tickerCtrl.text.toUpperCase()}',
                     style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -712,6 +921,11 @@ class _PositionCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
+                  flex: 2,
+                  child: AppTextField(controller: draft.nameCtrl, label: 'Название'),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
                   child: AppTextField(
                     controller: draft.tickerCtrl,
                     label: 'Тикер',
@@ -723,11 +937,6 @@ class _PositionCard extends StatelessWidget {
                       onChanged();
                     },
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: AppTextField(controller: draft.nameCtrl, label: 'Название'),
                 ),
               ],
             ),
