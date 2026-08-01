@@ -34,6 +34,7 @@ class MoexSyncService with WidgetsBindingObserver {
   bool _sectorsLoaded = false;
   bool _marketVisible = false;
   bool _fullRefreshPending = false;
+  Completer<void>? _activeRefresh;
 
   /// Полный список бумаг с биржи, обновляется тем же циклом. Нужен экрану
   /// «Биржа», чтобы не ходить в сеть отдельно.
@@ -103,12 +104,22 @@ class MoexSyncService with WidgetsBindingObserver {
   }
 
   Future<void> refreshNow({bool? fullMarket, bool force = false}) async {
-    if (!OnlineSettingsService.enabled) return;
+    if (!OnlineSettingsService.enabled && !force) return;
     if (_busy) {
+      if (force) {
+        // Импорт и ручное обновление должны получить свежие цены, даже если в
+        // этот момент заканчивается фоновый запрос. Дожидаемся его и запускаем
+        // явное обновление следом.
+        await _activeRefresh?.future;
+        await refreshNow(fullMarket: fullMarket, force: true);
+        return;
+      }
       if (fullMarket == true) _fullRefreshPending = true;
       return;
     }
     _busy = true;
+    final activeRefresh = Completer<void>();
+    _activeRefresh = activeRefresh;
     refreshing.value = true;
     try {
       final tradingNow = MoexTradingScheduleService.isTradingSession();
@@ -122,7 +133,7 @@ class MoexSyncService with WidgetsBindingObserver {
 
       final loadFullMarket = fullMarket ?? _marketVisible;
       final trackedTickers = <String>{
-        ...AnalyticsService.allOwnedTickers().map((ticker) => ticker.toUpperCase()),
+        ...AnalyticsService.currentHoldings().keys.map((ticker) => ticker.toUpperCase()),
         ...FavoritesService.all.map((ticker) => ticker.toUpperCase()),
       };
       final quotes = loadFullMarket
@@ -218,6 +229,8 @@ class MoexSyncService with WidgetsBindingObserver {
       await OnlineSettingsService.markError('$e');
     } finally {
       _busy = false;
+      if (!activeRefresh.isCompleted) activeRefresh.complete();
+      if (identical(_activeRefresh, activeRefresh)) _activeRefresh = null;
       refreshing.value = false;
       if (_fullRefreshPending && _marketVisible) {
         _fullRefreshPending = false;

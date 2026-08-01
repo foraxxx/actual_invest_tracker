@@ -9,6 +9,7 @@ import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/broker_import_service.dart';
+import '../services/moex_sync_service.dart';
 import '../services/storage_service.dart';
 
 /// Импорт сделок и выплат из отчёта брокера. Сначала выбирается брокер:
@@ -92,6 +93,11 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
         importPayouts: _importPayouts,
         importCash: _importCash,
       );
+      // Импорт — явное действие пользователя. Сразу подтягиваем последние
+      // доступные цены импортированных позиций, даже если торговая сессия
+      // закрыта; иначе до ручного обновления портфель оценивался по ценам
+      // сделок и показывал заниженную стоимость.
+      await MoexSyncService.instance.refreshNow(force: true);
       if (!mounted) return;
       setState(() => _busy = false);
       await showDialog(

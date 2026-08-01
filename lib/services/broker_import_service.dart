@@ -7,6 +7,7 @@ import '../models/deposit.dart';
 import '../models/income.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'html_table_reader.dart';
 import 'moex_service.dart';
 import 'moex_sync_service.dart';
 import 'xlsx_reader.dart';
@@ -14,20 +15,23 @@ import 'storage_service.dart';
 
 /// Поддерживаемые брокеры. У каждого свой формат выгрузки, поэтому файл
 /// разбирается своим парсером — общий «универсальный» разбор тут невозможен.
-enum Broker { vtb }
+enum Broker { vtb, sber }
 
 extension BrokerX on Broker {
   String get title => switch (this) {
         Broker.vtb => 'ВТБ Инвестиции',
+        Broker.sber => 'СберИнвестиции',
       };
 
   String get hint => switch (this) {
         Broker.vtb => 'Отчёт брокера в XLSX: в приложении ВТБ Мои Инвестиции — '
             'Профиль → Отчёты → Брокерский отчёт за период.',
+        Broker.sber => 'Брокерский отчёт в HTML из СберИнвестиций.',
       };
 
   List<String> get extensions => switch (this) {
         Broker.vtb => ['xlsx'],
+        Broker.sber => ['html', 'htm'],
       };
 }
 
@@ -42,6 +46,7 @@ class ImportedTrade {
   final double fee;
   final String currency;
   final bool isSell;
+  final AssetType? assetType;
 
   /// Определённый тикер. null — не удалось сопоставить.
   String? ticker;
@@ -55,6 +60,7 @@ class ImportedTrade {
     required this.fee,
     required this.currency,
     required this.isSell,
+    this.assetType,
     this.ticker,
   });
 }
@@ -67,6 +73,7 @@ class ImportedPayout {
   final double amount;
   final String currency;
   final bool isCoupon;
+  final double taxPaid;
   String? ticker;
 
   ImportedPayout({
@@ -76,6 +83,7 @@ class ImportedPayout {
     required this.amount,
     required this.currency,
     required this.isCoupon,
+    this.taxPaid = 0,
     this.ticker,
   });
 }
@@ -100,12 +108,14 @@ class ImportedHolding {
   final String rawName;
   final String isin;
   final double quantity;
+  final AssetType? assetType;
   String? ticker;
 
   ImportedHolding({
     required this.rawName,
     required this.isin,
     required this.quantity,
+    this.assetType,
     this.ticker,
   });
 }
@@ -144,6 +154,7 @@ class BrokerImportService {
   static BrokerImportResult parse(Broker broker, Uint8List bytes) {
     return switch (broker) {
       Broker.vtb => _parseVtb(bytes),
+      Broker.sber => _parseSber(bytes),
     };
   }
 
@@ -307,6 +318,255 @@ class BrokerImportService {
   }
 
   // ---------------------------------------------------------------------------
+  // СберИнвестиции
+  // ---------------------------------------------------------------------------
+
+  static BrokerImportResult _parseSber(Uint8List bytes) {
+    final tables = HtmlTableReader.tables(bytes);
+    final source = HtmlTableReader.text(bytes);
+    final trades = <ImportedTrade>[];
+    final payouts = <ImportedPayout>[];
+    final cash = <ImportedCashMove>[];
+    final holdings = <ImportedHolding>[];
+
+    final directory = <({String name, String code, String isin, AssetType type})>[];
+    final directoryTable = _htmlTable(tables, ['Наименование', 'Код', 'ISIN ценной бумаги']);
+    if (directoryTable != null && directoryTable.isNotEmpty) {
+      final header = directoryTable.first;
+      final cName = _col(header, ['Наименование']);
+      final cCode = _col(header, ['Код']);
+      final cIsin = _col(header, ['ISIN ценной бумаги']);
+      final cType = _col(header, ['Вид, Категория', 'Тип, иная информация']);
+      for (final row in directoryTable.skip(1)) {
+        final name = _at(row, cName).trim();
+        final code = _at(row, cCode).trim().toUpperCase();
+        final isin = _at(row, cIsin).trim().toUpperCase();
+        if (name.isEmpty || code.isEmpty || code == '2') continue;
+        final typeText = _at(row, cType).toLowerCase();
+        final type = typeText.contains('облигац')
+            ? AssetType.bond
+            : typeText.contains('пай') || typeText.contains('фонд')
+                ? AssetType.etf
+                : AssetType.stock;
+        directory.add((name: name, code: code, isin: isin, type: type));
+      }
+    }
+
+    ({String name, String code, String isin, AssetType type})? securityFor({
+      String code = '',
+      String isin = '',
+      String text = '',
+    }) {
+      final upperCode = code.trim().toUpperCase();
+      final upperIsin = isin.trim().toUpperCase();
+      final lowerText = text.toLowerCase();
+      for (final security in directory) {
+        if (upperIsin.isNotEmpty && security.isin == upperIsin) return security;
+        if (upperCode.isNotEmpty && security.code == upperCode) return security;
+      }
+      // В описании купона Сбер пишет короткое имя выпуска после «по».
+      // Сначала ищем длинные названия, чтобы «Сбер» не победил «Сбер1Р5».
+      final sorted = directory.toList()
+        ..sort((a, b) => b.name.length.compareTo(a.name.length));
+      for (final security in sorted) {
+        if (lowerText.contains(security.name.toLowerCase()) ||
+            lowerText.contains(security.code.toLowerCase())) {
+          return security;
+        }
+      }
+      return null;
+    }
+
+    // Сделки. Денежная «Сумма» надёжнее колонки «Цена»: цена облигации в
+    // отчёте дана в процентах от номинала, а приложению нужны рубли за штуку.
+    final tradeTable = _htmlTable(tables, ['Дата заключения', 'Наименование ЦБ', 'Номер сделки']);
+    if (tradeTable != null && tradeTable.isNotEmpty) {
+      final header = tradeTable.first;
+      final cDate = _col(header, ['Дата заключения']);
+      final cTime = _col(header, ['Время заключения']);
+      final cName = _col(header, ['Наименование ЦБ']);
+      final cCode = _col(header, ['Код ЦБ']);
+      final cCurrency = _col(header, ['Валюта']);
+      final cKind = _col(header, ['Вид']);
+      final cQty = _col(header, ['Количество, шт']);
+      final cSum = _col(header, ['Сумма']);
+      final cNkd = _col(header, ['НКД']);
+      final cBrokerFee = _col(header, ['Комиссия Брокера']);
+      final cExchangeFee = _col(header, ['Комиссия Биржи']);
+
+      for (final row in tradeTable.skip(1)) {
+        final kind = _at(row, cKind).toLowerCase();
+        if (kind != 'покупка' && kind != 'продажа') continue;
+        final date = _parseDateTime(_at(row, cDate), _at(row, cTime));
+        final qty = _parseNum(_at(row, cQty));
+        final sum = _parseNum(_at(row, cSum));
+        if (date == null || qty == null || qty <= 0 || sum == null || sum <= 0) continue;
+
+        final name = _at(row, cName).trim();
+        final code = _at(row, cCode).trim().toUpperCase();
+        final security = securityFor(code: code, text: name);
+        final nkd = _parseNum(_at(row, cNkd)) ?? 0;
+        final commissions = (_parseNum(_at(row, cBrokerFee)) ?? 0) +
+            (_parseNum(_at(row, cExchangeFee)) ?? 0);
+        final isSell = kind == 'продажа';
+        trades.add(ImportedTrade(
+          date: date,
+          rawName: security?.name ?? name,
+          isin: security?.isin ?? _isinFrom(code),
+          quantity: qty,
+          pricePerUnit: sum / qty,
+          fee: isSell ? commissions - nkd : commissions + nkd,
+          currency: _currency(_at(row, cCurrency)),
+          isSell: isSell,
+          assetType: security?.type,
+          ticker: security?.code ?? (code.isEmpty ? null : code),
+        ));
+      }
+    }
+
+    // Деньги и выплаты находятся в одной таблице. Сделки, комиссии и налоги
+    // здесь игнорируем: они уже учтены в таблице сделок и не являются внешним
+    // пополнением или самостоятельной выплатой.
+    final cashTable = _htmlTable(
+      tables,
+      ['Дата', 'Описание операции', 'Сумма зачисления', 'Сумма списания'],
+    );
+    if (cashTable != null && cashTable.isNotEmpty) {
+      final header = cashTable.first;
+      final cDate = _col(header, ['Дата']);
+      final cDescription = _col(header, ['Описание операции']);
+      final cCurrency = _col(header, ['Валюта']);
+      final cCredit = _col(header, ['Сумма зачисления']);
+      final cDebit = _col(header, ['Сумма списания']);
+
+      for (final row in cashTable.skip(1)) {
+        final date = _parseDate(_at(row, cDate));
+        if (date == null) continue;
+        final description = _at(row, cDescription).trim();
+        final lower = description.toLowerCase();
+        final credit = _parseNum(_at(row, cCredit)) ?? 0;
+        final debit = _parseNum(_at(row, cDebit)) ?? 0;
+        final currency = _currency(_at(row, cCurrency));
+
+        final isCoupon = lower.contains('купон');
+        final isDividend = lower.startsWith('дивиденды');
+        if ((isCoupon || isDividend) && credit > 0) {
+          final isin = _isinFrom(description);
+          final security = securityFor(isin: isin, text: description);
+          final grossMatch = RegExp(
+            r'Дополнительная информация:\s*Дивиденды\s+([\d\s.,]+)\s+RUR',
+            caseSensitive: false,
+          ).firstMatch(description);
+          final gross = grossMatch == null ? credit : (_parseNum(grossMatch.group(1)!) ?? credit);
+          payouts.add(ImportedPayout(
+            date: date,
+            rawName: security?.name ?? description,
+            isin: security?.isin ?? isin,
+            amount: gross,
+            taxPaid: (gross - credit).clamp(0.0, gross).toDouble(),
+            currency: currency,
+            isCoupon: isCoupon,
+            ticker: security?.code,
+          ));
+        } else if (lower == 'зачисление д/с' && credit > 0) {
+          cash.add(ImportedCashMove(
+            date: date,
+            amount: credit,
+            currency: currency,
+            note: description,
+          ));
+        } else if (lower == 'списание д/с' && debit > 0) {
+          cash.add(ImportedCashMove(
+            date: date,
+            amount: -debit,
+            currency: currency,
+            note: description,
+          ));
+        }
+      }
+    }
+
+    // В некоторых отчётах Сбера есть отдельная таблица остатков. В файлах,
+    // где к концу периода всё продано, этой таблицы может не быть вовсе.
+    final holdingTable = _sberHoldingTable(tables);
+    if (holdingTable != null && holdingTable.isNotEmpty) {
+      final header = holdingTable.first;
+      final cName = _col(header, ['Наименование ЦБ']);
+      final cCode = _col(header, ['Код ЦБ']);
+      final cQty = _col(header, ['Плановый исходящий остаток', 'Исходящий остаток']);
+      for (final row in holdingTable.skip(1)) {
+        final qty = _parseNum(_at(row, cQty));
+        if (qty == null || qty <= 0) continue;
+        final name = _at(row, cName).trim();
+        final code = _at(row, cCode).trim().toUpperCase();
+        final security = securityFor(code: code, text: name);
+        holdings.add(ImportedHolding(
+          rawName: security?.name ?? name,
+          isin: security?.isin ?? _isinFrom(code),
+          quantity: qty,
+          assetType: security?.type,
+          ticker: security?.code ?? (code.isEmpty ? null : code),
+        ));
+      }
+    }
+
+    _resolveTickers(trades, payouts, holdings);
+    final periodMatch = RegExp(
+      r'за период с\s+(\d{2}[.]\d{2}[.]\d{4})\s+по\s+(\d{2}[.]\d{2}[.]\d{4})',
+      caseSensitive: false,
+    ).firstMatch(source);
+    return BrokerImportResult(
+      trades: trades,
+      payouts: payouts,
+      cashMoves: cash,
+      holdings: holdings,
+      period: periodMatch == null
+          ? 'Отчёт СберИнвестиций'
+          : 'Отчёт СберИнвестиций: ${periodMatch.group(1)} — ${periodMatch.group(2)}',
+    );
+  }
+
+  static List<List<String>>? _htmlTable(
+    List<List<List<String>>> tables,
+    List<String> requiredHeaders,
+  ) {
+    for (final table in tables) {
+      if (table.isEmpty) continue;
+      final headerText = table.first.join(' | ');
+      if (requiredHeaders.every(headerText.contains)) return table;
+    }
+    return null;
+  }
+
+  static List<List<String>>? _sberHoldingTable(
+    List<List<List<String>>> tables,
+  ) {
+    for (final table in tables) {
+      if (table.isEmpty) continue;
+      final header = table.first.join(' | ');
+      final identifiesSecurity = header.contains('Наименование ЦБ') && header.contains('Код ЦБ');
+      final hasEndingBalance = header.contains('Плановый исходящий остаток') ||
+          header.contains('Исходящий остаток');
+      if (identifiesSecurity && hasEndingBalance) return table;
+    }
+    return null;
+  }
+
+  static DateTime? _parseDateTime(String date, String time) {
+    final day = _parseDate(date);
+    if (day == null) return null;
+    final parts = time.trim().split(':').map(int.tryParse).toList();
+    return DateTime(
+      day.year,
+      day.month,
+      day.day,
+      parts.isNotEmpty ? parts[0] ?? 0 : 0,
+      parts.length > 1 ? parts[1] ?? 0 : 0,
+      parts.length > 2 ? parts[2] ?? 0 : 0,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Сопоставление бумаг
   // ---------------------------------------------------------------------------
 
@@ -363,13 +623,13 @@ class BrokerImportService {
     }
 
     for (final t in trades) {
-      t.ticker = resolve(t.isin, t.rawName);
+      t.ticker ??= resolve(t.isin, t.rawName);
     }
     for (final p in payouts) {
-      p.ticker = resolve(p.isin, p.rawName);
+      p.ticker ??= resolve(p.isin, p.rawName);
     }
     for (final h in holdings) {
-      h.ticker = resolve(h.isin, h.rawName);
+      h.ticker ??= resolve(h.isin, h.rawName);
     }
   }
 
@@ -484,7 +744,9 @@ class BrokerImportService {
           date: t.date,
           ticker: ticker.toUpperCase(),
           name: info?.name ?? t.rawName.split(',').first.trim(),
-          type: info?.type ?? (t.rawName.contains('обл') ? AssetType.bond : AssetType.stock),
+          type: t.assetType ??
+              info?.type ??
+              (t.rawName.toLowerCase().contains('обл') ? AssetType.bond : AssetType.stock),
           quantity: t.quantity,
           pricePerUnit: t.pricePerUnit,
           fee: t.fee,
@@ -518,9 +780,11 @@ class BrokerImportService {
           ticker: ticker.toUpperCase(),
           name: info?.name ?? ticker,
           type: p.isCoupon ? IncomeType.coupon : IncomeType.dividend,
-          // В отчёте сумма уже за вычетом налога, если он удерживался.
+          // Сбер указывает начисленную сумму и фактическое зачисление —
+          // разницу сохраняем как удержанный налог. У ВТБ доступна только
+          // чистая сумма, поэтому там taxPaid остаётся нулём.
           amountGross: p.amount,
-          taxPaid: 0,
+          taxPaid: p.taxPaid,
           currency: p.currency,
           note: 'Импорт из отчёта брокера',
         ));
