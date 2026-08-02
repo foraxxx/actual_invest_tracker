@@ -338,9 +338,12 @@ class StatTile extends StatelessWidget {
               text ?? '—',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
             ),
-          if (hint != null || interactive) ...[
-            const SizedBox(height: 5),
-            Row(
+          const SizedBox(height: 5),
+          // Одинаковая нижняя строка не даёт плиткам без подписи или стрелки
+          // менять высоту соседних карточек и всей сетки.
+          SizedBox(
+            height: 28,
+            child: Row(
               children: [
                 if (hint != null)
                   Expanded(
@@ -357,7 +360,7 @@ class StatTile extends StatelessWidget {
                 ],
               ],
             ),
-          ],
+          ),
         ],
       ),
     );

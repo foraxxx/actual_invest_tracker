@@ -183,7 +183,7 @@ class MoexSyncService with WidgetsBindingObserver {
       // Курсы валют кладём в общую историю сегодняшней датой: валютные
       // операции пересчитываются по курсу на дату сделки, поэтому онлайн
       // может обновлять только сегодняшнюю точку. Всё, что раньше, остаётся
-      // тем, что ты ввёл руками.
+      // значением, введённым вручную.
       try {
         final rates = await MoexService.fetchCurrencyRates();
         currencyRates.value = rates;

@@ -6,17 +6,12 @@ import '../design/motion.dart';
 import '../design/page_tour.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
-import '../data/securities.dart';
-import '../services/analytics_service.dart';
 import '../services/appearance_service.dart';
 import '../services/auto_backup_service.dart';
 import '../services/backup_crypto_service.dart';
 import '../services/backup_service.dart';
 import '../services/backup_settings_service.dart';
 import '../services/currency_service.dart';
-import '../services/favorites_service.dart';
-import '../services/moex_service.dart';
-import '../services/logo_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_settings_service.dart';
 import '../services/sector_service.dart';
@@ -951,89 +946,9 @@ class _AutoBackupSectionState extends State<_AutoBackupSection> {
 }
 
 
-/// Загрузка котировок с Мосбиржи. Пока это только проверка связи: цены
-/// показываются в самой секции и никуда не сохраняются — так можно убедиться,
-/// что биржа отвечает и числа разбираются верно, до того как они начнут
-/// влиять на расчёты портфеля.
-class _OnlineDataSection extends StatefulWidget {
+/// Настройки автоматической загрузки рыночных данных с Мосбиржи.
+class _OnlineDataSection extends StatelessWidget {
   const _OnlineDataSection();
-
-  @override
-  State<_OnlineDataSection> createState() => _OnlineDataSectionState();
-}
-
-class _OnlineDataSectionState extends State<_OnlineDataSection> {
-  bool _loading = false;
-  bool _logosLoading = false;
-  String? _logosResult;
-  String? _error;
-
-  /// Разовая попытка подтянуть логотипы для бумаг портфеля: удобно, чтобы не
-  /// ждать, пока они появятся сами при пролистывании списков.
-  Future<void> _fetchLogos() async {
-    setState(() {
-      _logosLoading = true;
-      _logosResult = null;
-    });
-    await LogoService.forgetFailedAttempts();
-    final snapshot = MoexSyncService.marketSnapshot.value;
-    // Логотипы нужны и для избранного: это бумаги, которые ты смотришь часто.
-    final map = <String, String>{
-      for (final t in {...AnalyticsService.allOwnedTickers(), ...FavoritesService.all})
-        t: snapshot[t]?.isin ?? '',
-    };
-    final result = await LogoService.fetchForAll(
-      map,
-      names: {
-        for (final t in map.keys)
-          t: snapshot[t]?.shortName ?? SecuritiesDatabase.byTicker(t)?.name ?? t,
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _logosLoading = false;
-      final failed = result.failed;
-      _logosResult = [
-        'Подтянуто логотипов: ${result.loaded} из ${map.length}',
-        if (failed.isNotEmpty) 'Не нашлись: ${failed.join(", ")}',
-        if (failed.isNotEmpty)
-          'Для них проверены адреса источников — если пришлёшь этот список, '
-              'подберу рабочий. Логотип всегда можно поставить вручную в карточке бумаги.',
-        // Полный журнал по каждой ненайденной бумаге: по нему сразу видно,
-        // какой источник живой, а какой пора выбрасывать.
-        for (final ticker in failed)
-          '\n$ticker:\n${(LogoService.lastFailures[ticker.toUpperCase()] ?? const []).join("\n")}',
-      ].join('\n');
-    });
-  }
-  Map<String, MoexQuote> _quotes = {};
-  List<String> _missing = [];
-
-  Future<void> _check() async {
-    final tickers = AnalyticsService.allOwnedTickers().toSet();
-    setState(() {
-      _loading = true;
-      _error = null;
-      _missing = [];
-    });
-    try {
-      final quotes = await MoexService.fetchQuotes(tickers: tickers);
-      await OnlineSettingsService.markSynced(quotes.length);
-      if (!mounted) return;
-      setState(() {
-        _quotes = quotes;
-        _missing = tickers.where((t) => !quotes.containsKey(t)).toList()..sort();
-        _loading = false;
-      });
-    } catch (e) {
-      await OnlineSettingsService.markError('$e');
-      if (!mounted) return;
-      setState(() {
-        _error = '$e';
-        _loading = false;
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1116,88 +1031,6 @@ class _OnlineDataSectionState extends State<_OnlineDataSection> {
                 style: TextStyle(fontSize: 11, height: 1.4, color: context.dim),
               ),
             ],
-            if (enabled) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _logosLoading ? null : _fetchLogos,
-                icon: _logosLoading
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.image_outlined, size: 18),
-                label: Text(_logosLoading ? 'Ищу логотипы…' : 'Подтянуть логотипы бумаг'),
-              ),
-              if (_logosResult != null) ...[
-                const SizedBox(height: 8),
-                Text(_logosResult!, style: TextStyle(fontSize: 11.5, color: context.dim)),
-              ],
-            ],
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _loading ? null : _check,
-              icon: _loading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.wifi_tethering_rounded, size: 18),
-              label: Text(_loading ? 'Спрашиваю биржу…' : 'Проверить связь'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              InfoBanner(
-                icon: Icons.cloud_off_rounded,
-                color: AppColors.negative,
-                text: 'Не получилось: $_error',
-              ),
-            ],
-            if (_quotes.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Text(
-                'Ответ биржи',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
-              ),
-              const SizedBox(height: 8),
-              ...(_quotes.values.toList()..sort((a, b) => a.ticker.compareTo(b.ticker))).map(
-                (q) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 108,
-                        child: Text(
-                          q.ticker,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                        ),
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              Fmt.price(q.price, currency: '₽', isBond: q.isBond),
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                            ),
-                            Text(
-                              '${q.board} · ${q.sourceField}'
-                              '${q.faceValue != null ? " · номинал ${Fmt.price(q.faceValue!, isBond: true)}" : ""}',
-                              style: TextStyle(fontSize: 10.5, color: context.dim),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            if (_missing.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              InfoBanner(
-                icon: Icons.help_outline_rounded,
-                color: AppColors.warning,
-                text: 'Не нашлись на бирже: ${_missing.join(", ")}. '
-                    'Скорее всего, бумага торгуется в другом режиме — пришли мне этот список, добавлю режим.',
-              ),
-            ],
           ],
         );
       },
@@ -1251,7 +1084,7 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Файл копии будет зашифрован этим паролем. Забудешь его — '
+                'Файл копии будет зашифрован этим паролем. Если Вы его забудете, '
                 'восстановить данные из такой копии не сможет никто, включая меня.',
                 style: TextStyle(fontSize: 12.5, height: 1.4, color: context.dim),
               ),
@@ -1403,7 +1236,7 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
               const InfoBanner(
                 icon: Icons.warning_amber_rounded,
                 color: AppColors.warning,
-                text: 'Пароль восстановить нельзя. Если забудешь его, зашифрованная копия '
+                text: 'Пароль восстановить нельзя. Если Вы его забудете, зашифрованная копия '
                     'останется нечитаемой навсегда — запишите его где-нибудь отдельно.',
               ),
             ],

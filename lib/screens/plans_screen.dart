@@ -912,7 +912,7 @@ class _PlansScreenState extends State<PlansScreen> {
               children: [
                 SheetHeader(
                   title: editing ? 'Редактировать план' : 'Новый план',
-                  subtitle: editing ? 'Измени параметры запланированной покупки' : 'Что и когда хочешь купить',
+                  subtitle: editing ? 'Измените параметры запланированной покупки' : 'Что и когда Вы хотите купить',
                   trailing: IconButton(
                     icon: const Icon(Icons.close_rounded),
                     onPressed: () => Navigator.pop(ctx),

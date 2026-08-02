@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'tokens.dart';
 
 /// Текстовое поле формы: при фокусе подсвечивается акцентной рамкой и мягким
-/// свечением, так что всегда понятно, куда сейчас пишешь.
+/// свечением, так что активное поле всегда хорошо заметно.
 class AppTextField extends StatefulWidget {
   final TextEditingController controller;
   final String label;

@@ -1146,7 +1146,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 title: withdrawal ? 'Вывод со счёта' : 'Пополнение счёта',
                 subtitle: withdrawal
                     ? 'Деньги, которые Вы сняли у брокера'
-                    : 'Если хочешь записать пополнение точно, а не доверять расчёту',
+                    : 'Если Вы хотите записать пополнение точно, а не использовать автоматический расчёт',
                 trailing: IconButton(
                   icon: const Icon(Icons.close_rounded),
                   onPressed: () => Navigator.pop(ctx),

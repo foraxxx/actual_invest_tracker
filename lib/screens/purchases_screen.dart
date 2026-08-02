@@ -718,7 +718,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     sellTotals.forEach((ticker, sellQty) {
       final available = AnalyticsService.currentHoldings()[ticker]?.qty ?? 0;
       if (sellQty > available + 1e-9) {
-        problems.add('$ticker: в наличии ${Fmt.qty(available)} шт, продаёшь ${Fmt.qty(sellQty)} шт');
+        problems.add('$ticker: в наличии ${Fmt.qty(available)} шт, Вы продаёте ${Fmt.qty(sellQty)} шт');
       }
     });
     if (problems.isNotEmpty) {

@@ -35,7 +35,7 @@ class SecurityPickerField extends StatelessWidget {
       optionsBuilder: (textEditingValue) {
         if (textEditingValue.text.isEmpty) {
           // Пустой запрос — показываем избранное: чаще всего покупают именно
-          // то, что уже отслеживаешь.
+          // то, что уже отслеживается.
           final favTickers = FavoritesService.all;
           if (favTickers.isEmpty) return SecuritiesDatabase.search('');
           final favs = favTickers

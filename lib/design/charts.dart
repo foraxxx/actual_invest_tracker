@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -207,6 +208,10 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
   final Map<int, double> _pointers = {};
   bool _multiTouchGesture = false;
   double _panDuringGesture = 0;
+  Timer? _holdTimer;
+  int? _primaryPointer;
+  double _primaryDownX = 0;
+  bool _trackingTouch = false;
 
   /// Отметка сделки, по которой нажали: её окно висит до следующего нажатия.
   int? _marker;
@@ -276,6 +281,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
 
   @override
   void dispose() {
+    _holdTimer?.cancel();
     _c.dispose();
     super.dispose();
   }
@@ -287,6 +293,37 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
     if (idx != _touch) {
       setState(() => _touch = idx);
       HapticFeedback.selectionClick();
+    }
+  }
+
+  void _startTouchTracking(int pointer, double dx, double width) {
+    _holdTimer?.cancel();
+    _primaryPointer = pointer;
+    _primaryDownX = dx;
+    _trackingTouch = false;
+    _holdTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || _multiTouchGesture || _pointers.length != 1 || !_pointers.containsKey(pointer)) return;
+      _trackingTouch = true;
+      _updateTouch(_pointers[pointer]!, width);
+    });
+  }
+
+  void _moveTouchTracking(int pointer, double dx, double width) {
+    if (pointer != _primaryPointer) return;
+    if (_trackingTouch) {
+      _updateTouch(dx, width);
+    } else if ((dx - _primaryDownX).abs() > 10) {
+      _holdTimer?.cancel();
+    }
+  }
+
+  void _stopTouchTracking(int pointer) {
+    if (pointer != _primaryPointer) return;
+    _holdTimer?.cancel();
+    _primaryPointer = null;
+    if (_trackingTouch || _touch != null) {
+      _trackingTouch = false;
+      if (mounted) setState(() => _touch = null);
     }
   }
 
@@ -344,9 +381,15 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           behavior: HitTestBehavior.opaque,
           onPointerDown: widget.interactive
               ? (e) {
-                  if (_pointers.isEmpty) _panDuringGesture = 0;
+                  if (_pointers.isEmpty) {
+                    _panDuringGesture = 0;
+                    _startTouchTracking(e.pointer, e.localPosition.dx, w);
+                  }
                   _pointers[e.pointer] = e.localPosition.dx;
                   if (_pointers.length >= 2) {
+                    _holdTimer?.cancel();
+                    _trackingTouch = false;
+                    if (_touch != null) setState(() => _touch = null);
                     _multiTouchGesture = true;
                     // Если первый палец успел чуть сдвинуть окно до появления
                     // второго, возвращаем график на исходное место.
@@ -361,11 +404,13 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           onPointerMove: widget.interactive
               ? (e) {
                   _pointers[e.pointer] = e.localPosition.dx;
+                  _moveTouchTracking(e.pointer, e.localPosition.dx, w);
                   _syncRange(w);
                 }
               : null,
           onPointerUp: widget.interactive
               ? (e) {
+                  _stopTouchTracking(e.pointer);
                   _pointers.remove(e.pointer);
                   _syncRange(w);
                   if (_pointers.isEmpty) {
@@ -375,6 +420,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
               : null,
           onPointerCancel: widget.interactive
               ? (e) {
+                  _stopTouchTracking(e.pointer);
                   _pointers.remove(e.pointer);
                   _syncRange(w);
                   if (_pointers.isEmpty) {
@@ -389,7 +435,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           onHorizontalDragUpdate:
               _canScroll
                   ? (d) {
-                      if (_multiTouchGesture || _pointers.length >= 2) return;
+                      if (_multiTouchGesture || _pointers.length >= 2 || _trackingTouch) return;
                       final delta = -d.delta.dx / _step(w);
                       _panDuringGesture += delta;
                       widget.onPan!(delta);
@@ -400,13 +446,8 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                   if (!_multiTouchGesture) widget.onPanEnd?.call();
                 }
               : null,
-          // Курсор по линии — долгим нажатием, чтобы не мешать листанию.
-          onLongPressStart:
-              widget.interactive ? (d) => _updateTouch(d.localPosition.dx, w) : null,
-          onLongPressMoveUpdate:
-              widget.interactive ? (d) => _updateTouch(d.localPosition.dx, w) : null,
-          onLongPressEnd: widget.interactive ? (_) => setState(() => _touch = null) : null,
-          onLongPressCancel: widget.interactive ? () => setState(() => _touch = null) : null,
+          // Удержание обрабатывает Listener выше и больше не проигрывает
+          // горизонтальному drag-жесту при небольшом движении пальца.
           onTapDown: widget.interactive ? (d) => _updateTouch(d.localPosition.dx, w) : null,
           onTapUp: widget.interactive ? (d) => _handleTap(d.localPosition.dx, w) : null,
           onTapCancel: widget.interactive ? () => setState(() => _touch = null) : null,
@@ -792,7 +833,7 @@ class _SparklinePainter extends CustomPainter {
         return;
       }
       // Замер окрашивается по направлению: цена выросла — зелёным, упала —
-      // красным. Так итог виден раньше, чем прочитаешь цифры.
+      // красным. Так итог заметен ещё до чтения чисел.
       final rangeColor = AppColors.pnl(values[ri] - values[li]);
 
       canvas.drawRect(

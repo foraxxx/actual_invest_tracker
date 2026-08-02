@@ -38,7 +38,7 @@ class TickerDetailScreen extends StatefulWidget {
 
 class _TickerDetailScreenState extends State<TickerDetailScreen> {
   /// История цены с биржи. Грузится один раз при открытии карточки и работает
-  /// для любой бумаги, даже если ты её никогда не покупал.
+  /// для любой бумаги, даже если её раньше не покупали.
   List<MapEntry<DateTime, double>> _exchangeHistory = const [];
   bool _exchangeLoading = false;
   bool _loadingOlderHistory = false;
@@ -169,7 +169,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
   }
 
   /// Дивиденды по акции или купоны и амортизация по облигации — прямо с
-  /// биржи, независимо от того, покупал ты бумагу или нет.
+  /// биржи, независимо от наличия покупок этой бумаги.
   /// Облигация ли это — по данным биржи. Влияет на подписи: у акции не бывает
   /// купонов, у облигации — дивидендов.
   bool get _isBond =>
