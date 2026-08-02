@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../design/motion.dart';
 import '../services/portfolio_service.dart';
 import '../services/portfolio_overview_service.dart';
 import 'home_screen.dart';
@@ -163,19 +164,28 @@ class _PortfoliosOverviewScreenState extends State<PortfoliosOverviewScreen> {
                                 ],
                               ),
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text('${s.valueRub.toStringAsFixed(0)} ₽', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                Text(
-                                  '${s.profitRub >= 0 ? "+" : ""}${s.profitRub.toStringAsFixed(0)} ₽',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: s.profitRub >= 0 ? Colors.green : Colors.red,
-                                    fontWeight: FontWeight.w600,
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  AdaptiveSingleLineText(
+                                    '${s.valueRub.toStringAsFixed(0)} ₽',
+                                    alignment: Alignment.centerRight,
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
                                   ),
-                                ),
-                              ],
+                                  AdaptiveSingleLineText(
+                                    '${s.profitRub >= 0 ? "+" : ""}${s.profitRub.toStringAsFixed(0)} ₽',
+                                    alignment: Alignment.centerRight,
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: s.profitRub >= 0 ? Colors.green : Colors.red,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                             const SizedBox(width: 4),
                             Icon(Icons.chevron_right, color: Colors.grey.shade400),

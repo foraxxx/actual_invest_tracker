@@ -324,6 +324,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
 
     final trades = StorageService.purchases.where((p) => p.ticker == widget.ticker).toList();
     if (trades.isEmpty) return (markers: markers, labels: labels);
+    final assetType = trades.first.type;
 
     // Одна точка графика может покрывать несколько дней (неделя, месяц) —
     // ищем ближайшую точку не позже даты сделки.
@@ -367,9 +368,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       labels[i] = [
         Fmt.date(g.date),
         if (hasBuy) 'куплено ${Fmt.qty(g.buyQty)} шт',
-        if (hasBuy) 'по ${Fmt.price(g.buySum / g.buyQty)}',
+        if (hasBuy) 'по ${Fmt.price(g.buySum / g.buyQty, type: assetType)}',
         if (hasSell) 'продано ${Fmt.qty(g.sellQty)} шт',
-        if (hasSell) 'по ${Fmt.price(g.sellSum / g.sellQty)}',
+        if (hasSell) 'по ${Fmt.price(g.sellSum / g.sellQty, type: assetType)}',
       ].join('\n');
     });
 
@@ -381,6 +382,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final ticker = widget.ticker;
     final purchases = StorageService.purchases.where((p) => p.ticker == ticker).toList()
       ..sort((a, b) => b.date.compareTo(a.date));
+    final assetType = purchases.isNotEmpty
+        ? purchases.first.type
+        : (MoexSyncService.marketSnapshot.value[ticker]?.isBond == true
+            ? AssetType.bond
+            : AssetType.stock);
     final holding = AnalyticsService.currentHoldings()[ticker];
     // Тот же расчёт, что и на главной: по истории выплат самой бумаги, а не
     // по тому, что успел получить владелец.
@@ -428,7 +434,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                           child: StatTile(
                             label: 'Средняя цена',
                             icon: Icons.straighten_rounded,
-                            text: Fmt.price(holding.avgCost),
+                            text: Fmt.price(holding.avgCost, type: assetType),
                             color: AppColors.violet,
                           ),
                         ),
@@ -447,7 +453,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                           child: StatTile(
                             label: holding.hasManualPrice ? 'Текущая цена' : 'Последняя цена',
                             icon: Icons.edit_rounded,
-                            text: Fmt.price(holding.displayPrice),
+                            text: Fmt.price(holding.displayPrice, type: assetType),
                             hint: 'нажми, чтобы уточнить',
                             color: context.accent,
                             onTap: () => _showSetPriceDialog(context, ticker, holding),
@@ -458,7 +464,8 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                           child: StatTile(
                             label: 'Прибыль / убыток',
                             icon: holding.pnlRub >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded,
-                            text: '${Fmt.signedMoney(holding.pnlRub)} · ${Fmt.pct(holding.pnlPct)}',
+                            text: Fmt.signedMoney(holding.pnlRub),
+                            hint: Fmt.pct(holding.pnlPct),
                             color: pnlColor,
                           ),
                         ),
@@ -696,23 +703,33 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     ),
                     const SizedBox(height: 18),
                     if (holding != null)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          RollingNumber(
-                            value: holding.valueRub,
-                            formatter: (v) => Fmt.money(v),
-                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -1),
+                          SizedBox(
+                            width: double.infinity,
+                            child: RollingNumber(
+                              value: holding.valueRub,
+                              formatter: (v) => Fmt.money(v),
+                              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -1),
+                            ),
                           ),
-                          const SizedBox(width: 10),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: TagChip(
-                              text: '${Fmt.pct(holding.pnlPct)} · ${Fmt.signedMoney(holding.pnlRub)}',
-                              color: pnlColor,
-                              icon: holding.pnlRub >= 0
-                                  ? Icons.trending_up_rounded
-                                  : Icons.trending_down_rounded,
+                          const SizedBox(height: 7),
+                          SizedBox(
+                            width: double.infinity,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: TagChip(
+                                  text: '${Fmt.pct(holding.pnlPct)} · ${Fmt.signedMoney(holding.pnlRub)}',
+                                  color: pnlColor,
+                                  icon: holding.pnlRub >= 0
+                                      ? Icons.trending_up_rounded
+                                      : Icons.trending_down_rounded,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -853,7 +870,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   Text('Номинал', style: TextStyle(fontSize: 11, color: context.dim)),
                   const SizedBox(height: 3),
                   Text(
-                    Fmt.price(face, currency: currency == 'RUB' ? '₽' : currency),
+                    Fmt.price(
+                      face,
+                      currency: currency == 'RUB' ? '₽' : currency,
+                      isBond: true,
+                    ),
                     style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
                   ),
                   if (currency != 'RUB')
@@ -908,9 +929,15 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 ),
               ),
               if (visibleValues.length > 1)
-                TagChip(
-                  text: '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)} · ${Fmt.pct(changePct)}',
-                  color: AppColors.pnl(change),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: TagChip(
+                      text: '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)} · ${Fmt.pct(changePct)}',
+                      color: AppColors.pnl(change),
+                    ),
+                  ),
                 )
               else if (online && !_exchangeLoading)
                 IconButton(
@@ -961,9 +988,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             markerLabel: (i) => trades.labels[i] ?? '',
                             onPan: _viewSize < all.length ? _panChart : null,
                             dateLabel: (i) => Fmt.dateTime(all[i].key, withTime: _intraday),
-                            priceLabel: (v) => Fmt.price(v),
+                            priceLabel: (v) => Fmt.price(v, type: assetType),
                             tooltipBuilder: (i, v) =>
-                                '${Fmt.dateTime(all[i].key, withTime: _intraday)}\n${Fmt.price(v)}',
+                                '${Fmt.dateTime(all[i].key, withTime: _intraday)}\n${Fmt.price(v, type: assetType)}',
                           );
                         },
                       ),
@@ -1038,7 +1065,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${p.isSell ? 'Продажа' : 'Покупка'} · ${Fmt.qty(p.quantity)} шт × ${p.pricePerUnit}',
+                  '${p.isSell ? 'Продажа' : 'Покупка'} · ${Fmt.qty(p.quantity)} шт × ${Fmt.price(p.pricePerUnit, type: p.type)}',
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
                 const SizedBox(height: 2),
@@ -1328,9 +1355,22 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     );
   }
 
+  AssetType _assetTypeFor(String ticker) {
+    for (final purchase in StorageService.purchases.reversed) {
+      if (purchase.ticker.toUpperCase() == ticker.toUpperCase()) {
+        return purchase.type;
+      }
+    }
+    return MoexSyncService.marketSnapshot.value[ticker.toUpperCase()]?.isBond == true
+        ? AssetType.bond
+        : AssetType.stock;
+  }
+
   Future<void> _showSetPriceDialog(BuildContext context, String ticker, HoldingInfo holding) async {
     final ctrl = TextEditingController(
-      text: holding.hasManualPrice ? Fmt.price(holding.displayPrice) : '',
+      text: holding.hasManualPrice
+          ? Fmt.priceInput(holding.displayPrice, type: _assetTypeFor(ticker))
+          : '',
     );
 
     await showDialog(

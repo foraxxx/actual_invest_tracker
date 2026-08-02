@@ -12,6 +12,7 @@ import '../models/purchase.dart';
 import '../services/analytics_service.dart';
 import '../services/storage_service.dart';
 import '../services/moex_sync_service.dart';
+import '../services/online_price_service.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import 'home_screen.dart';
@@ -745,7 +746,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         const SizedBox(height: 2),
                         MarqueeText(
                           'Цель: ${Fmt.qty(p.targetQuantity)} шт. × '
-                          '${p.targetPrice != null ? Fmt.price(p.targetPrice!) : 'цена не указана'}',
+                          '${p.targetPrice != null ? Fmt.price(p.targetPrice!, type: p.type) : 'цена не указана'}',
                           alwaysScroll: true,
                           style: TextStyle(fontSize: 11.2, color: context.dim),
                         ),
@@ -783,7 +784,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     Expanded(child: MiniProgressBar(value: progress, color: AppColors.positive)),
                     const SizedBox(width: 8),
                     Text(
-                      'куплено ${Fmt.qty(p.purchasedQuantity)} по ${Fmt.price(p.purchasedAvgPrice)}',
+                      'куплено ${Fmt.qty(p.purchasedQuantity)} по ${Fmt.price(p.purchasedAvgPrice, type: p.type)}',
                       style: TextStyle(fontSize: 10.3, fontWeight: FontWeight.w700, color: context.dim),
                     ),
                   ],
@@ -873,7 +874,10 @@ class _PlansScreenState extends State<PlansScreen> {
     final initialQuote = existing == null
         ? null
         : MoexSyncService.marketSnapshot.value[existing.ticker.toUpperCase()];
-    int lotSize = initialQuote?.lotSize ?? 1;
+    final initialCached = existing == null
+        ? null
+        : OnlinePriceService.get(existing.ticker);
+    int lotSize = initialQuote?.lotSize ?? initialCached?.lotSize ?? 1;
     if (existing != null && existing.targetQuantity % lotSize != 0) lotSize = 1;
 
     final tickerCtrl = TextEditingController(text: existing?.ticker ?? '');
@@ -884,12 +888,12 @@ class _PlansScreenState extends State<PlansScreen> {
     final priceCtrl = TextEditingController(
       text: existing?.targetPrice == null
           ? ''
-          : existing!.targetPrice!
-              .toStringAsFixed(8)
-              .replaceFirst(RegExp(r'\.?0+$'), ''),
+          : Fmt.priceInput(existing!.targetPrice!, type: existing.type),
     );
     final noteCtrl = TextEditingController(text: existing?.note ?? '');
     AssetType type = existing?.type ?? AssetType.stock;
+    String selectedTicker = existing?.ticker.toUpperCase() ?? '';
+    bool priceEdited = existing != null;
     DateTime? targetDate = existing?.targetDate;
 
     showAppSheet(
@@ -917,22 +921,34 @@ class _PlansScreenState extends State<PlansScreen> {
                 ),
                 const SizedBox(height: 18),
                 SecurityPickerField(
-                  onSelected: (s) {
-                    tickerCtrl.text = s.ticker;
+                  onSelected: (s) async {
+                    final key = s.ticker.toUpperCase();
+                    selectedTicker = key;
+                    priceEdited = false;
+                    tickerCtrl.text = key;
                     nameCtrl.text = s.name;
                     final quote =
-                        MoexSyncService.marketSnapshot.value[s.ticker.toUpperCase()];
-                    final currentPrice =
-                        quote?.price ?? AnalyticsService.priceFor(s.ticker);
+                        MoexSyncService.marketSnapshot.value[key];
+                    final cached = OnlinePriceService.get(key);
+                    final currentPrice = quote?.price ?? cached?.price;
                     if (currentPrice != null && currentPrice > 0) {
-                      priceCtrl.text = currentPrice
-                          .toStringAsFixed(8)
-                          .replaceFirst(RegExp(r'\.?0+$'), '');
+                      priceCtrl.text = Fmt.priceInput(currentPrice, type: s.type);
                     }
                     setSheetState(() {
                       type = s.type;
-                      lotSize = quote?.lotSize ?? 1;
+                      lotSize = quote?.lotSize ?? cached?.lotSize ?? 1;
                       if (qtyCtrl.text.isEmpty) qtyCtrl.text = '1';
+                    });
+
+                    // Даже при закрытой бирже уточняем последнюю доступную
+                    // цену и лот выбранной бумаги. Весь рынок не загружается.
+                    final fresh = await MoexSyncService.instance.fetchQuote(key);
+                    if (!ctx.mounted || fresh == null || selectedTicker != key) return;
+                    setSheetState(() {
+                      lotSize = fresh.lotSize;
+                      if (!priceEdited && fresh.price > 0) {
+                        priceCtrl.text = Fmt.priceInput(fresh.price, type: s.type);
+                      }
                     });
                   },
                 ),
@@ -1007,7 +1023,10 @@ class _PlansScreenState extends State<PlansScreen> {
                   controller: priceCtrl,
                   label: 'Желаемая цена за одну бумагу',
                   number: true,
-                  onChanged: (_) => setSheetState(() {}),
+                  onChanged: (_) {
+                    priceEdited = true;
+                    setSheetState(() {});
+                  },
                 ),
                 if (estimated > 0) ...[
                   const SizedBox(height: 12),

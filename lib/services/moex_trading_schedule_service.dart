@@ -25,14 +25,28 @@ class MoexTradingScheduleService {
   /// чтобы забрать финальные бесплатные котировки с задержкой ISS.
   static bool needsFinalRefresh(DateTime? lastSync, [DateTime? now]) {
     final msk = moscowNow(now);
-    if (msk.hour != 0 || msk.minute < _finalRefreshMinute) return false;
-    final previousDay = msk.subtract(const Duration(days: 1));
-    if (!_isWeekday(previousDay)) return false;
-    if (lastSync == null) return true;
+    var boundaryDay = DateTime.utc(msk.year, msk.month, msk.day);
+    final minute = msk.hour * 60 + msk.minute;
 
-    final lastMsk = moscowNow(lastSync);
-    final finalBoundary = DateTime.utc(msk.year, msk.month, msk.day, 0, _finalRefreshMinute);
-    return lastMsk.isBefore(finalBoundary);
+    // В 00:05 становятся доступны финальные данные предыдущей сессии.
+    // До 00:05 последней завершённой остаётся более ранняя торговая дата.
+    if (minute < _finalRefreshMinute) {
+      boundaryDay = boundaryDay.subtract(const Duration(days: 1));
+    }
+
+    var sessionDay = boundaryDay.subtract(const Duration(days: 1));
+    while (!_isWeekday(sessionDay)) {
+      sessionDay = sessionDay.subtract(const Duration(days: 1));
+    }
+    final finalBoundary = DateTime.utc(
+      sessionDay.year,
+      sessionDay.month,
+      sessionDay.day + 1,
+      0,
+      _finalRefreshMinute,
+    );
+    if (lastSync == null) return true;
+    return moscowNow(lastSync).isBefore(finalBoundary);
   }
 
   /// Задержка до следующего полезного автоматического пробуждения таймера.

@@ -33,6 +33,7 @@ class MoexSyncService with WidgetsBindingObserver {
   bool _observing = false;
   bool _sectorsLoaded = false;
   bool _marketVisible = false;
+  bool _fullMarketLoadedForSession = false;
   bool _fullRefreshPending = false;
   Completer<void>? _activeRefresh;
 
@@ -86,7 +87,28 @@ class MoexSyncService with WidgetsBindingObserver {
     if (_marketVisible == visible) return;
     _marketVisible = visible;
     if (visible && OnlineSettingsService.enabled) {
-      unawaited(refreshNow(fullMarket: true));
+      unawaited(refreshNow(
+        fullMarket: true,
+        force: !_fullMarketLoadedForSession,
+      ));
+    }
+  }
+
+  /// Точечно получает последнюю доступную котировку выбранной бумаги.
+  /// Используется формами, которым цена нужна сразу: запрос разрешён и вне
+  /// торгов, поскольку MOEX тогда возвращает последнюю сделку/цену закрытия.
+  Future<MoexQuote?> fetchQuote(String ticker) async {
+    final key = ticker.trim().toUpperCase();
+    if (key.isEmpty || !OnlineSettingsService.enabled) return null;
+    try {
+      final quotes = await MoexService.fetchQuotes(tickers: {key});
+      final quote = quotes[key];
+      if (quote == null) return null;
+      marketSnapshot.value = {...marketSnapshot.value, key: quote};
+      await OnlinePriceService.saveAll({key: quote});
+      return quote;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -144,6 +166,9 @@ class MoexSyncService with WidgetsBindingObserver {
       marketSnapshot.value = loadFullMarket
           ? quotes
           : <String, MoexQuote>{...marketSnapshot.value, ...quotes};
+      if (loadFullMarket && quotes.isNotEmpty) {
+        _fullMarketLoadedForSession = true;
+      }
 
       // На диск кладём только то, что реально нужно между запусками: бумаги
       // портфеля и избранное. Писать в Hive несколько тысяч строк каждые

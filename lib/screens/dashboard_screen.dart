@@ -11,6 +11,7 @@ import '../design/tokens.dart';
 import '../services/analytics_service.dart';
 import '../services/appearance_service.dart';
 import '../models/deposit.dart';
+import '../models/purchase.dart';
 import '../services/cash_service.dart';
 import '../services/payout_forecast_service.dart';
 import '../services/storage_service.dart';
@@ -52,6 +53,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     PortfolioHistoryService.refresh();
     StorageService.dataVersion.addListener(_onDataChanged);
     ManualPriceService.version.addListener(_onDataChanged);
+    OnlinePriceService.version.addListener(_onPriceChanged);
     BenchmarkService.returnPercent.addListener(_onDataChanged);
     BenchmarkService.error.addListener(_onDataChanged);
     PortfolioHistoryService.timeline.addListener(_onDataChanged);
@@ -62,6 +64,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     StorageService.dataVersion.removeListener(_onDataChanged);
     ManualPriceService.version.removeListener(_onDataChanged);
+    OnlinePriceService.version.removeListener(_onPriceChanged);
     BenchmarkService.returnPercent.removeListener(_onDataChanged);
     BenchmarkService.error.removeListener(_onDataChanged);
     PortfolioHistoryService.timeline.removeListener(_onDataChanged);
@@ -73,6 +76,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Новая сделка могла добавить облигацию. Сразу загружаем её будущий
     // купонный календарь, не дожидаясь следующего фонового обновления MOEX.
     PayoutForecastService.refresh();
+    if (mounted) setState(() {});
+  }
+
+  void _onPriceChanged() {
     if (mounted) setState(() {});
   }
 
@@ -134,12 +141,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildContent(BuildContext context) {
-    final onlineTimeline = PortfolioHistoryService.timeline.value;
-    final timeline = onlineTimeline.length > 1
-        ? onlineTimeline
-        : AnalyticsService.portfolioValueTimeline();
-    final chartError = PortfolioHistoryService.error.value;
     final currentValue = AnalyticsService.currentPortfolioValueRub();
+    final onlineTimeline = PortfolioHistoryService.timeline.value;
+    final timeline = PortfolioHistoryService.withCurrentPoint(
+      onlineTimeline.length > 1
+          ? onlineTimeline
+          : AnalyticsService.portfolioValueTimeline(),
+      currentValue,
+    );
+    final chartError = PortfolioHistoryService.error.value;
     final unrealizedPnl = AnalyticsService.totalUnrealizedPnlRub();
     final realizedPnl = AnalyticsService.totalRealizedPnlRub();
     final holdings = AnalyticsService.currentHoldings();
@@ -195,15 +205,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       'Стоимость портфеля',
                       style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim),
                     ),
-                    const Spacer(),
-                    if (periodChange != null)
-                      TagChip(
-                        text: '${Fmt.pct(periodChange.changePct)} · ${_periodLabel(_period).toLowerCase()}',
-                        color: AppColors.pnl(periodChange.changeAbs),
-                        icon: periodChange.changeAbs >= 0
-                            ? Icons.trending_up_rounded
-                            : Icons.trending_down_rounded,
+                    if (periodChange != null) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: TagChip(
+                              text: '${Fmt.pct(periodChange.changePct)} · ${_periodLabel(_period).toLowerCase()}',
+                              color: AppColors.pnl(periodChange.changeAbs),
+                              icon: periodChange.changeAbs >= 0
+                                  ? Icons.trending_up_rounded
+                                  : Icons.trending_down_rounded,
+                            ),
+                          ),
+                        ),
                       ),
+                    ] else
+                      const Spacer(),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -322,6 +342,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 icon: Icons.account_balance_wallet_outlined,
                 value: periodCash.invested,
                 formatter: (v) => Fmt.money(v),
+                hint: 'пополнения − выводы',
                 color: AppColors.info,
                 onTap: () => _cashSheet(cash),
               ),
@@ -334,6 +355,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 icon: Icons.payments_outlined,
                 value: periodProfit,
                 formatter: (v) => Fmt.money(v),
+                hint: 'рост + продажи + выплаты',
                 color: AppColors.pnl(periodProfit),
               ),
             ),
@@ -367,6 +389,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.card_giftcard_rounded,
                   value: periodCash.payouts,
                   formatter: (v) => Fmt.money(v),
+                  hint: 'дивиденды и купоны',
                   color: AppColors.positive,
                 ),
               ),
@@ -1166,14 +1189,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Вторая строка в карточке бумаги — что показывать, выбирается в
   /// настройках оформления.
-  String _holdingSubtitle(HoldingInfo h, double share) {
+  String _holdingSubtitle(String ticker, HoldingInfo h, double share) {
+    final type = _holdingType(ticker);
     return switch (AppearanceService.holdingSubtitle) {
       HoldingSubtitle.quantityAndPrice =>
-        '${Fmt.qty(h.qty)} шт · ${Fmt.price(h.avgCost)} → ${Fmt.price(h.displayPrice)}',
+        '${Fmt.qty(h.qty)} шт · ${Fmt.price(h.avgCost, type: type)} → ${Fmt.price(h.displayPrice, type: type)}',
       HoldingSubtitle.share => '${(share * 100).toStringAsFixed(1)}% портфеля · ${Fmt.qty(h.qty)} шт',
       HoldingSubtitle.profitRub => '${Fmt.signedMoney(h.pnlRub)} · ${Fmt.qty(h.qty)} шт',
       HoldingSubtitle.profitPct => '${Fmt.pct(h.pnlPct)} · ${Fmt.qty(h.qty)} шт',
     };
+  }
+
+  AssetType _holdingType(String ticker) {
+    for (final purchase in StorageService.purchases.reversed) {
+      if (purchase.ticker.toUpperCase() == ticker.toUpperCase()) {
+        return purchase.type;
+      }
+    }
+    return AssetType.stock;
   }
 
   String _holdingName(String ticker) {
@@ -1236,7 +1269,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(height: 2),
                     MarqueeText(
-                      _holdingSubtitle(h, weight),
+                      _holdingSubtitle(ticker, h, weight),
                       style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                     ),
                   ],

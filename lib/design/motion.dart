@@ -189,13 +189,53 @@ class RollingNumber extends StatelessWidget {
       tween: Tween<double>(end: value),
       duration: duration,
       curve: Curves.easeOutCubic,
-      builder: (context, animated, _) => Text(
+      builder: (context, animated, _) => AdaptiveSingleLineText(
         formatter(animated),
         style: style,
         textAlign: textAlign,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       ),
+    );
+  }
+}
+
+/// Однострочное значение, которое никогда не обрезает значащие цифры.
+/// При нехватке места шрифт равномерно уменьшается, сохраняя всю сумму,
+/// процент и знак валюты видимыми.
+class AdaptiveSingleLineText extends StatelessWidget {
+  final String text;
+  final TextStyle? style;
+  final TextAlign? textAlign;
+  final AlignmentGeometry alignment;
+
+  const AdaptiveSingleLineText(
+    this.text, {
+    super.key,
+    this.style,
+    this.textAlign,
+    this.alignment = Alignment.centerLeft,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final child = Text(
+          text,
+          style: style,
+          textAlign: textAlign,
+          maxLines: 1,
+          softWrap: false,
+        );
+        if (!constraints.hasBoundedWidth) return child;
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: alignment,
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

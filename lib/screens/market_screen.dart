@@ -12,7 +12,6 @@ import '../services/currency_service.dart';
 import '../services/favorites_service.dart';
 import '../services/market_filter_service.dart';
 import '../services/moex_service.dart';
-import '../services/network_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/moex_trading_schedule_service.dart';
 import '../services/online_price_service.dart';
@@ -377,6 +376,13 @@ class _MarketScreenState extends State<MarketScreen> {
                   ],
                 ),
               ),
+              ValueListenableBuilder<int>(
+                valueListenable: OnlineSettingsService.version,
+                builder: (context, _, __) =>
+                    OnlineSettingsService.lastError == null
+                        ? const SizedBox.shrink()
+                        : const _BlinkingConnectionIcon(),
+              ),
               IconButton(
                 icon: const Icon(Icons.refresh_rounded),
                 tooltip: 'Обновить сейчас',
@@ -390,7 +396,6 @@ class _MarketScreenState extends State<MarketScreen> {
             padding: const EdgeInsets.only(bottom: kListBottomPadding),
             physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
             children: [
-              _vpnBanner(),
               TourSpot(id: 'rates', child: _ratesCard()),
               TourSpot(id: 'chart', child: _chartCard()),
               const SizedBox(height: 6),
@@ -414,37 +419,6 @@ class _MarketScreenState extends State<MarketScreen> {
       ],
     );
   }
-
-
-  /// Плашка появляется, только если загрузка сорвалась. Частая причина — VPN:
-  /// Мосбиржа ограничивает доступ из-за рубежа.
-  Widget _vpnBanner() {
-    return ValueListenableBuilder<int>(
-      valueListenable: OnlineSettingsService.version,
-      builder: (context, _, __) {
-        final error = OnlineSettingsService.lastError;
-        if (error == null) return const SizedBox.shrink();
-        return ValueListenableBuilder<bool>(
-          valueListenable: NetworkService.vpnDetected,
-          builder: (context, vpn, __) => Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: InfoBanner(
-              icon: vpn ? Icons.vpn_key_off_rounded : Icons.cloud_off_rounded,
-              color: AppColors.warning,
-              text: vpn
-                  ? 'Похоже, включён VPN — из-за него запросы к бирже не проходят. '
-                      'Мосбиржа ограничивает доступ из-за рубежа, так что котировки, курсы и '
-                      'графики не загрузятся, пока VPN активен.'
-                  : 'Данные с биржи не загрузились: $error\n'
-                      'Частая причина — включённый VPN: Мосбиржа ограничивает доступ '
-                      'из-за рубежа. Если он включён, попробуй выключить.',
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _ratesCard() {
     const visibleCurrencies = ['USD', 'EUR', 'CNY'];
     return Padding(
@@ -1129,7 +1103,7 @@ class _MarketScreenState extends State<MarketScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                Fmt.price(q.price, currency: '₽'),
+                Fmt.price(q.price, currency: '₽', isBond: q.isBond),
                 style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
               const SizedBox(height: 3),
@@ -1154,5 +1128,56 @@ class _MarketScreenState extends State<MarketScreen> {
         ],
       ),
     );
+  }
+}
+
+class _BlinkingConnectionIcon extends StatefulWidget {
+  const _BlinkingConnectionIcon();
+
+  @override
+  State<_BlinkingConnectionIcon> createState() =>
+      _BlinkingConnectionIconState();
+}
+
+class _BlinkingConnectionIconState extends State<_BlinkingConnectionIcon>
+    with SingleTickerProviderStateMixin {
+  final _tooltipKey = GlobalKey<TooltipState>();
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  )..repeat(reverse: true);
+
+  late final Animation<double> _opacity = Tween<double>(
+    begin: 0.28,
+    end: 1,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = Tooltip(
+      key: _tooltipKey,
+      message: 'Проблемы с интернетом',
+      triggerMode: TooltipTriggerMode.manual,
+      showDuration: const Duration(seconds: 3),
+      child: IconButton(
+        tooltip: null,
+        visualDensity: VisualDensity.compact,
+        icon: const Icon(
+          Icons.wifi_off_rounded,
+          color: AppColors.negative,
+          size: 21,
+        ),
+        onPressed: () => _tooltipKey.currentState?.ensureTooltipVisible(),
+      ),
+    );
+    if (MediaQuery.of(context).disableAnimations) return icon;
+    return FadeTransition(opacity: _opacity, child: icon);
   }
 }

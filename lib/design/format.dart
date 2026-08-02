@@ -39,28 +39,18 @@ class Fmt {
       '${v >= 0 ? '+' : ''}${group(v, decimals: decimals)}\u00A0$currency';
 
 
-  /// Цена или выплата «как есть»: число знаков подбирается под величину, а
-  /// хвостовые нули убираются.
-  ///
-  /// У копеечных бумаг вроде дивиденда 0,0212 ₽ фиксированные два знака
-  /// превращали значение в 0,02 — то есть в ноль по смыслу. Здесь мелкие
-  /// суммы показываются целиком, а крупные не засоряются лишними знаками.
-  static String price(double v, {String? currency}) {
+  /// Единый формат цены бумаги во всём приложении:
+  /// облигации — целые рубли, обычные бумаги — до 2 знаков, бумаги дешевле
+  /// одного рубля — до 5 знаков. Незначащие нули в конце не показываются.
+  static String price(
+    double v, {
+    String? currency,
+    AssetType? type,
+    bool isBond = false,
+  }) {
     final a = v.abs();
-    final int decimals;
-    if (a >= 1000) {
-      decimals = 2;
-    } else if (a >= 100) {
-      decimals = 2;
-    } else if (a >= 10) {
-      decimals = 3;
-    } else if (a >= 1) {
-      decimals = 4;
-    } else if (a >= 0.01) {
-      decimals = 5;
-    } else {
-      decimals = 8;
-    }
+    final bond = isBond || type == AssetType.bond;
+    final decimals = bond ? 0 : (a < 1 ? 5 : 2);
 
     var text = v.toStringAsFixed(decimals);
     if (text.contains('.')) {
@@ -78,6 +68,23 @@ class Fmt {
     );
     final result = parts.length > 1 ? '$sign$grouped,${parts[1]}' : '$sign$grouped';
     return currency == null ? result : '$result $currency';
+  }
+
+  /// Тот же лимит точности, но без разделителей разрядов и с точкой — для
+  /// подстановки в редактируемые числовые поля.
+  static String priceInput(
+    double v, {
+    AssetType? type,
+    bool isBond = false,
+  }) {
+    final bond = isBond || type == AssetType.bond;
+    final decimals = bond ? 0 : (v.abs() < 1 ? 5 : 2);
+    var result = v.toStringAsFixed(decimals);
+    if (result.contains('.')) {
+      result = result.replaceAll(RegExp(r'0+$'), '');
+      if (result.endsWith('.')) result = result.substring(0, result.length - 1);
+    }
+    return result;
   }
 
   static String pct(double v, {int decimals = 1}) => '${v >= 0 ? '+' : ''}${v.toStringAsFixed(decimals)}%';

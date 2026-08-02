@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'moex_service.dart';
-import 'moex_trading_schedule_service.dart';
 import 'online_settings_service.dart';
 import 'storage_service.dart';
 import '../models/purchase.dart';
@@ -19,16 +18,33 @@ class PortfolioHistoryService {
   static final ValueNotifier<bool> loading = ValueNotifier(false);
   static final ValueNotifier<String?> error = ValueNotifier(null);
 
+  /// Возвращает историю с гарантированно актуальной последней точкой.
+  /// Исторические значения приходят с MOEX, а точка «сейчас» должна всегда
+  /// совпадать с суммой, показанной над графиком.
+  static List<MapEntry<DateTime, double>> withCurrentPoint(
+    List<MapEntry<DateTime, double>> source,
+    double currentValue, {
+    DateTime? now,
+  }) {
+    final currentDate = now ?? DateTime.now();
+    final result = [...source]..sort((a, b) => a.key.compareTo(b.key));
+    if (result.isNotEmpty && _sameDay(result.last.key, currentDate)) {
+      result[result.length - 1] = MapEntry(currentDate, currentValue);
+    } else {
+      result.add(MapEntry(currentDate, currentValue));
+    }
+    return result;
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
   static Future<void> refresh() async {
     if (loading.value || StorageService.purchases.isEmpty) {
       return;
     }
     if (!OnlineSettingsService.enabled) {
       error.value = 'Онлайн-история выключена — показаны локальные данные';
-      return;
-    }
-    if (!MoexTradingScheduleService.isTradingSession() &&
-        !MoexTradingScheduleService.needsFinalRefresh(OnlineSettingsService.lastSyncAt)) {
       return;
     }
     loading.value = true;

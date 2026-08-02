@@ -334,11 +334,9 @@ class StatTile extends StatelessWidget {
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
             )
           else
-            Text(
+            AdaptiveSingleLineText(
               text ?? '—',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           if (hint != null || interactive) ...[
             const SizedBox(height: 5),

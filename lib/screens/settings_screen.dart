@@ -1171,12 +1171,12 @@ class _OnlineDataSectionState extends State<_OnlineDataSection> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              Fmt.price(q.price, currency: '₽'),
+                              Fmt.price(q.price, currency: '₽', isBond: q.isBond),
                               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                             ),
                             Text(
                               '${q.board} · ${q.sourceField}'
-                              '${q.faceValue != null ? " · номинал ${Fmt.price(q.faceValue!)}" : ""}',
+                              '${q.faceValue != null ? " · номинал ${Fmt.price(q.faceValue!, isBond: true)}" : ""}',
                               style: TextStyle(fontSize: 10.5, color: context.dim),
                             ),
                           ],

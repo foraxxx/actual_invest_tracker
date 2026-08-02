@@ -532,7 +532,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${Fmt.date(p.date)} · ${Fmt.qty(p.quantity)} шт × ${p.pricePerUnit}'
+                    '${Fmt.date(p.date)} · ${Fmt.qty(p.quantity)} шт × ${Fmt.price(p.pricePerUnit, type: p.type)}'
                     '${p.fee > 0 ? ' · комиссия ${Fmt.qty(p.fee)}' : ''}',
                     style: TextStyle(fontSize: 11.3, color: context.dim, fontWeight: FontWeight.w600),
                   ),
@@ -913,7 +913,7 @@ class _PositionCard extends StatelessWidget {
                 icon: hasHolding ? Icons.inventory_2_outlined : Icons.error_outline_rounded,
                 color: hasHolding ? AppColors.info : AppColors.negative,
                 text: holding != null && holding.qty > 0
-                    ? 'На счету: ${Fmt.qty(holding.qty)} шт по средней ${Fmt.price(holding.avgCost)}'
+                    ? 'На счету: ${Fmt.qty(holding.qty)} шт по средней ${Fmt.price(holding.avgCost, type: draft.type)}'
                     : 'Этой бумаги нет на счету',
               ),
             ],

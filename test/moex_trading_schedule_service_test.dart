@@ -33,6 +33,20 @@ void main() {
       expect(MoexTradingScheduleService.needsFinalRefresh(now, now), isFalse);
     });
 
+    test('does not miss the final refresh when the app opens later', () {
+      final sunday = DateTime.utc(2026, 8, 9, 9); // 12:00 MSK.
+      final beforeFridayClose = DateTime.utc(2026, 8, 7, 18);
+      final afterFridayFinal = DateTime.utc(2026, 8, 8, 0);
+      expect(
+        MoexTradingScheduleService.needsFinalRefresh(beforeFridayClose, sunday),
+        isTrue,
+      );
+      expect(
+        MoexTradingScheduleService.needsFinalRefresh(afterFridayFinal, sunday),
+        isFalse,
+      );
+    });
+
     test('sleeps until Monday after the Friday final refresh', () {
       final saturday = DateTime.utc(2026, 8, 7, 21, 10); // Saturday 00:10 MSK.
       final delay = MoexTradingScheduleService.nextAutomaticDelay(60, saturday);

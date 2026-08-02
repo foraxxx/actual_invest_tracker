@@ -11,12 +11,14 @@ class OnlinePrice {
   final DateTime fetchedAt;
   final String shortName;
   final String board;
+  final int lotSize;
 
   const OnlinePrice({
     required this.price,
     required this.fetchedAt,
     required this.shortName,
     required this.board,
+    this.lotSize = 1,
   });
 
   Map<String, dynamic> toJson() => {
@@ -24,6 +26,7 @@ class OnlinePrice {
         't': fetchedAt.toIso8601String(),
         'n': shortName,
         'b': board,
+        'l': lotSize,
       };
 
   static OnlinePrice? fromJson(Map<String, dynamic> j) {
@@ -35,6 +38,7 @@ class OnlinePrice {
       fetchedAt: t,
       shortName: '${j['n'] ?? ''}',
       board: '${j['b'] ?? ''}',
+      lotSize: ((j['l'] as num?)?.round() ?? 1).clamp(1, 1000000).toInt(),
     );
   }
 }
@@ -91,6 +95,7 @@ class OnlinePriceService {
         fetchedAt: q.fetchedAt,
         shortName: q.shortName,
         board: q.board,
+        lotSize: q.lotSize,
       ).toJson());
     });
     await _box.putAll(entries);
