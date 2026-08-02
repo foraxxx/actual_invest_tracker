@@ -32,6 +32,7 @@ class MoexSyncService with WidgetsBindingObserver {
   bool _busy = false;
   bool _observing = false;
   bool _sectorsLoaded = false;
+  final Set<String> _sectorBondsProcessed = {};
   bool _marketVisible = false;
   bool _fullMarketLoadedForSession = false;
   bool _fullRefreshPending = false;
@@ -150,6 +151,7 @@ class MoexSyncService with WidgetsBindingObserver {
       );
       if (!force && !tradingNow && !finalRefresh) {
         await _refreshReferenceDataIfNeeded();
+        await _refreshSectorData(const {});
         return;
       }
 
@@ -198,50 +200,7 @@ class MoexSyncService with WidgetsBindingObserver {
         // Курсы — не главное: если не приехали, котировки всё равно обновились.
       }
 
-      // Отрасли меняются раз в квартал — тянем один раз за сессию.
-      if (!_sectorsLoaded) {
-        _sectorsLoaded = true;
-        try {
-          final sectors = await MoexService.fetchSectorMap();
-          // Сначала публикуем отрасли акций. Затем для облигаций портфеля
-          // находим акцию того же эмитента и наследуем её отрасль.
-          SectorService.setExchangeSectors(sectors);
-          final enriched = Map<String, String>.from(sectors);
-          final owned = AnalyticsService.allOwnedTickers();
-          final portfolioBonds = <String>{
-            for (final trade in StorageService.purchases)
-              if (trade.type == AssetType.bond) trade.ticker.toUpperCase(),
-          };
-          for (final ticker in owned) {
-            final upper = ticker.toUpperCase();
-            final quote = quotes[upper];
-            final isBond = quote?.isBond == true || portfolioBonds.contains(upper);
-            if (!isBond || enriched.containsKey(upper)) continue;
-
-            // Resolve the issuer by MOEX emitent_id. issuerShareFor only
-            // returns a share whose emitent_id exactly matches the bond's,
-            // so similarly named unrelated companies cannot leak a sector.
-            await MoexService.issuerInfoFor(upper);
-            final issuerShare = await MoexService.issuerShareFor(upper);
-            if (issuerShare != null) {
-              final issuerSector = SectorService.sectorFor(issuerShare);
-              if (issuerSector != 'Без сектора') {
-                enriched[upper] = issuerSector;
-                continue;
-              }
-            }
-
-            // Для выпусков без публичной акции оставляем полезную категорию,
-            // а не безликое «Без сектора».
-            enriched[upper] = upper.startsWith('SU')
-                ? 'Государственные облигации'
-                : 'Корпоративные облигации';
-          }
-          SectorService.setExchangeSectors(enriched);
-        } catch (_) {
-          _sectorsLoaded = false;
-        }
-      }
+      await _refreshSectorData(quotes);
 
       // Графики купонов и дивидендов подтягиваем один раз для новых бумаг:
       // они известны заранее и меняются редко.
@@ -265,6 +224,62 @@ class MoexSyncService with WidgetsBindingObserver {
         _restartTimer();
       }
     }
+  }
+
+  Future<void> _refreshSectorData(Map<String, MoexQuote> quotes) async {
+    // Базовую карту отраслей акций тянем один раз за сессию. Новые
+    // облигации при этом обрабатываются при каждом обновлении отдельно.
+    if (!_sectorsLoaded) {
+      try {
+        final sectors = await MoexService.fetchSectorMap();
+        if (sectors.isNotEmpty) {
+          SectorService.setExchangeSectors(sectors);
+          _sectorsLoaded = true;
+          // Если ранее использовалась резервная категория, после появления
+          // базовой карты пробуем определить отрасль эмитента ещё раз.
+          _sectorBondsProcessed.clear();
+        }
+      } catch (_) {
+        _sectorsLoaded = false;
+      }
+    }
+    await _enrichNewBondSectors(quotes);
+  }
+
+  Future<void> _enrichNewBondSectors(Map<String, MoexQuote> quotes) async {
+    final owned = AnalyticsService.allOwnedTickers().map((t) => t.toUpperCase()).toSet();
+    final portfolioBonds = <String>{
+      for (final trade in StorageService.purchases)
+        if (trade.type == AssetType.bond) trade.ticker.toUpperCase(),
+    };
+    final snapshot = marketSnapshot.value;
+    final additions = <String, String>{};
+
+    for (final upper in owned) {
+      final quote = quotes[upper] ?? snapshot[upper];
+      final isBond = quote?.isBond == true || portfolioBonds.contains(upper);
+      if (!isBond || _sectorBondsProcessed.contains(upper)) continue;
+
+      var sector = upper.startsWith('SU')
+          ? 'Государственные облигации'
+          : 'Корпоративные облигации';
+      try {
+        // Связь выпуска с эмитентом подтверждается точным emitent_id.
+        await MoexService.issuerInfoFor(upper);
+        final issuerShare = await MoexService.issuerShareFor(upper);
+        if (issuerShare != null) {
+          final issuerSector = SectorService.sectorFor(issuerShare);
+          if (issuerSector != 'Без сектора') sector = issuerSector;
+        }
+      } catch (_) {
+        // Резервная категория полезнее, чем «Без сектора»; сетевой поиск
+        // повторится после успешной загрузки базовой карты отраслей.
+      }
+      additions[upper] = sector;
+      if (_sectorsLoaded) _sectorBondsProcessed.add(upper);
+    }
+
+    SectorService.mergeExchangeSectors(additions);
   }
 
   /// Купоны и дивиденды не зависят от того, открыта ли торговая сессия, но

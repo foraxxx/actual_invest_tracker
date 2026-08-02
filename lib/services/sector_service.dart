@@ -96,6 +96,13 @@ class SectorService {
     version.value++;
   }
 
+  /// Добавляет отрасли новых бумаг, не стирая уже загруженную карту рынка.
+  static void mergeExchangeSectors(Map<String, String> map) {
+    if (map.isEmpty) return;
+    _fromExchange = {..._fromExchange, ...map};
+    version.value++;
+  }
+
   static int get exchangeSectorCount => _fromExchange.length;
 
   static String sectorFor(String ticker) {

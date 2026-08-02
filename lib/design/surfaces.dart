@@ -341,8 +341,8 @@ class StatTile extends StatelessWidget {
           const SizedBox(height: 5),
           // Одинаковая нижняя строка не даёт плиткам без подписи или стрелки
           // менять высоту соседних карточек и всей сетки.
-          SizedBox(
-            height: 28,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 28),
             child: Row(
               children: [
                 if (hint != null)

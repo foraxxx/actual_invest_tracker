@@ -182,7 +182,10 @@ class LogoService {
       }
     }
     final attemptKey = issuerId == null || issuerId.isEmpty ? key : 'issuer_$issuerId';
-    if (_inFlight.contains(attemptKey) || _recentlyTried(key)) return false;
+    // Неудачи запоминаются по эмитенту, а не по отдельному выпуску. Старые
+    // отметки по тикерам выпусков намеренно больше не учитываются — это сразу
+    // запускает улучшенный поиск для облигаций, которые раньше не находились.
+    if (_inFlight.contains(attemptKey) || _recentlyTried(attemptKey)) return false;
     _inFlight.add(attemptKey);
 
     final tried = <String>[];
@@ -219,7 +222,7 @@ class LogoService {
             final ext = type.contains('png') ? 'png' : (type.contains('svg') ? 'svg' : 'jpg');
             if (ext == 'svg') continue; // SVG Image.file не покажет
             await _setFetchedLogo(key, response.bodyBytes, ext, issuerId: issuerId);
-            await _box.delete('$_triedPrefix$key');
+            await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
             lastFailures.remove(key);
             return true;
           }
@@ -261,7 +264,7 @@ class LogoService {
               type.contains('png') ? 'png' : 'jpg',
               issuerId: issuerId,
             );
-            await _box.delete('$_triedPrefix$key');
+            await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
             lastFailures.remove(key);
             return true;
           }
@@ -270,7 +273,10 @@ class LogoService {
         }
       }
 
-      await _box.put('$_triedPrefix$key', DateTime.now().toIso8601String());
+      await _box.put(
+        '$_triedPrefix${attemptKey.toUpperCase()}',
+        DateTime.now().toIso8601String(),
+      );
       lastFailures[key] = tried;
       return false;
     } finally {

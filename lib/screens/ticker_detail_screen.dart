@@ -9,6 +9,7 @@ import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
+import '../data/securities.dart';
 import '../models/income.dart';
 import '../models/purchase.dart';
 import '../services/analytics_service.dart';
@@ -440,7 +441,17 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         ? TaxService.openLotsForTicker(ticker)
         : <OpenLotInfo>[];
     final taxBreakdown = TaxService.enabled ? TaxService.saleTaxBreakdown() : <String, SaleTaxResult>{};
-    final name = purchases.isNotEmpty ? purchases.first.name : ticker;
+    final quote = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()];
+    final exchangeName = quote?.shortName.trim() ?? '';
+    final savedName = purchases.isNotEmpty ? purchases.first.name.trim() : '';
+    final referenceName = SecuritiesDatabase.byTicker(ticker)?.name.trim() ?? '';
+    final name = exchangeName.isNotEmpty
+        ? exchangeName
+        : savedName.isNotEmpty && savedName.toUpperCase() != ticker.toUpperCase()
+            ? savedName
+            : referenceName.isNotEmpty
+                ? referenceName
+                : ticker;
     final sector = SectorService.sectorFor(ticker);
 
     final pnlColor = AppColors.pnl(holding?.pnlRub ?? 0);
