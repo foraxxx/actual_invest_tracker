@@ -85,8 +85,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
           FadeSlideIn(child: _summaryCard(report)),
 
           const SizedBox(height: 14),
-          IntrinsicHeight(
-            child: Row(
+          Row(
               children: [
                 Expanded(
                   child: StatTile(
@@ -108,11 +107,9 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                   ),
                 ),
               ],
-            ),
           ),
           const SizedBox(height: 10),
-          IntrinsicHeight(
-            child: Row(
+          Row(
               children: [
                 Expanded(
                   child: StatTile(
@@ -134,7 +131,6 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                   ),
                 ),
               ],
-            ),
           ),
 
           if (report.payoutsByMonth.isNotEmpty) ...[

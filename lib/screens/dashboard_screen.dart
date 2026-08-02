@@ -330,9 +330,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // --- Показатели ---
       FadeSlideIn(
         delay: Duration(milliseconds: 40 * step++),
-        child: IntrinsicHeight(
-            child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: TourSpot(
@@ -361,15 +360,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
-          ),
       ),
 
       const SizedBox(height: 10),
       FadeSlideIn(
         delay: Duration(milliseconds: 40 * step++),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: StatTile(
@@ -394,7 +391,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
             ],
-          ),
         ),
       ),
 
@@ -442,9 +438,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   for (int i = 0; i < tiles.length; i += 2) ...[
                     if (i > 0) const SizedBox(height: 10),
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                    Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(child: tiles[i]),
                           const SizedBox(width: 10),
@@ -454,7 +449,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 : const SizedBox.shrink(),
                           ),
                         ],
-                      ),
                     ),
                   ],
                 ],
@@ -907,8 +901,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            IntrinsicHeight(
-              child: Row(
+            Row(
                 children: [
                   Expanded(
                     child: StatTile(
@@ -917,7 +910,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       value: cash.invested,
                       formatter: (v) => Fmt.money(v),
                       color: AppColors.info,
-                      marqueeLabel: true,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -931,7 +923,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 ],
-              ),
             ),
             const SizedBox(height: 12),
             _cashFormulaCard(

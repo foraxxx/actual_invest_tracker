@@ -268,7 +268,6 @@ class StatTile extends StatelessWidget {
   final String? text;
   final String? hint;
   final VoidCallback? onTap;
-  final bool marqueeLabel;
 
   const StatTile({
     super.key,
@@ -280,7 +279,6 @@ class StatTile extends StatelessWidget {
     this.text,
     this.hint,
     this.onTap,
-    this.marqueeLabel = false,
   });
 
   @override
@@ -318,9 +316,8 @@ class StatTile extends StatelessWidget {
                 // Длинные подписи вроде «Доход за период» не влезают в
                 // половину ширины экрана — вместо обрезки многоточием текст
                 // медленно едет и возвращается.
-                child: MarqueeText(
+                child: AdaptiveSingleLineText(
                   label,
-                  alwaysScroll: marqueeLabel,
                   style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                 ),
               ),

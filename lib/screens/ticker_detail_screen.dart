@@ -467,9 +467,8 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
               delegate: SliverChildListDelegate([
                 if (holding != null) ...[
                   FadeSlideIn(
-                    child: IntrinsicHeight(
-                        child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: StatTile(
@@ -490,14 +489,12 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                         ),
                       ],
                     ),
-                      ),
                   ),
                   const SizedBox(height: 10),
                   FadeSlideIn(
                     delay: const Duration(milliseconds: 60),
-                    child: IntrinsicHeight(
-                        child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
                           child: StatTile(
@@ -521,7 +518,6 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                         ),
                       ],
                     ),
-                      ),
                   ),
                   const SizedBox(height: 14),
                 ],
