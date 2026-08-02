@@ -215,7 +215,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
             const EmptyState(
               icon: Icons.event_busy_rounded,
               title: 'За этот год данных нет',
-              subtitle: 'Выбери другой год — в списке только те, где были сделки или выплаты.',
+              subtitle: 'Выберите другой год — в списке только те, где были сделки или выплаты.',
             ),
 
           const SizedBox(height: 22),

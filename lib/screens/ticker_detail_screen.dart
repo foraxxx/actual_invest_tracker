@@ -41,6 +41,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
   /// для любой бумаги, даже если ты её никогда не покупал.
   List<MapEntry<DateTime, double>> _exchangeHistory = const [];
   bool _exchangeLoading = false;
+  bool _loadingOlderHistory = false;
   String? _exchangeError;
   ChartRange _range = ChartRange.year;
 
@@ -61,6 +62,48 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final maxStart = (_exchangeHistory.length - _viewSize).toDouble();
     if (maxStart <= 0) return;
     setState(() => _viewStart = (_viewStart + deltaPoints).clamp(0.0, maxStart).toDouble());
+  }
+
+  List<MapEntry<DateTime, double>> _scaleBondHistory(
+    List<MapEntry<DateTime, double>> points,
+  ) {
+    final quote = MoexSyncService.marketSnapshot.value[widget.ticker.toUpperCase()];
+    final face = quote?.faceValue;
+    return quote?.isBond == true && face != null && face > 0
+        ? points.map((e) => MapEntry(e.key, e.value * face / 100)).toList()
+        : points;
+  }
+
+  Future<void> _loadOlderExchangeHistory() async {
+    final span = _range.span;
+    if (_loadingOlderHistory || span == null || _exchangeHistory.isEmpty || _viewStart > _viewSize * 0.25) return;
+    _loadingOlderHistory = true;
+    final first = _exchangeHistory.first.key;
+    final quote = MoexSyncService.marketSnapshot.value[widget.ticker.toUpperCase()];
+    try {
+      final raw = await MoexService.fetchSecurityCandles(
+        widget.ticker,
+        from: first.subtract(span * _range.bufferFactor),
+        till: first.subtract(const Duration(seconds: 1)),
+        interval: _range.interval,
+        maxRows: _range.maxRows,
+        market: quote?.market,
+      );
+      if (!mounted || raw.isEmpty) return;
+      final older = _scaleBondHistory(raw);
+      final existing = _exchangeHistory.map((e) => e.key).toSet();
+      final added = older.where((e) => !existing.contains(e.key)).toList();
+      if (added.isEmpty) return;
+      setState(() {
+        _exchangeHistory = [...added, ..._exchangeHistory]
+          ..sort((a, b) => a.key.compareTo(b.key));
+        _viewStart += added.length;
+      });
+    } catch (_) {
+      // Оставляем уже загруженный участок и повторяем при следующем жесте.
+    } finally {
+      _loadingOlderHistory = false;
+    }
   }
 
   @override
@@ -104,20 +147,16 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       // Облигации на бирже котируются в процентах от номинала — приводим к
       // рублям, иначе график покажет 110 вместо 1105 и не сойдётся с ценой
       // в карточке.
-      final face = quote?.faceValue;
-      final scaled = (quote?.isBond == true && face != null && face > 0)
-          ? points.map((e) => MapEntry(e.key, e.value * face / 100)).toList()
-          : points;
+      final scaled = _scaleBondHistory(points);
 
       if (!mounted) return;
       setState(() {
         _exchangeHistory = scaled;
         _exchangeError =
             scaled.isEmpty ? 'Нет данных за выбранный период' : null;
-        _viewSize = scaled.isEmpty
-            ? 0
-            : (scaled.length / _range.bufferFactor).round().clamp(2, scaled.length);
-        _viewStart = math.max(0, scaled.length - _viewSize).toDouble();
+        final window = chartWindowForDates(scaled.map((e) => e.key).toList(), _range);
+        _viewSize = window.size;
+        _viewStart = window.start.toDouble();
         _exchangeLoading = false;
       });
     } catch (_) {
@@ -454,7 +493,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             label: holding.hasManualPrice ? 'Текущая цена' : 'Последняя цена',
                             icon: Icons.edit_rounded,
                             text: Fmt.price(holding.displayPrice, type: assetType),
-                            hint: 'нажми, чтобы уточнить',
+                            hint: 'нажмите, чтобы уточнить',
                             color: context.accent,
                             onTap: () => _showSetPriceDialog(context, ticker, holding),
                           ),
@@ -893,6 +932,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
 
   Widget _exchangeHistoryCard() {
     final all = _exchangeHistory;
+    final assetType = _assetTypeFor(widget.ticker);
     final size = _viewSize == 0 ? all.length : _viewSize;
     final int startIndex = _viewStart.round().clamp(0, all.isEmpty ? 0 : all.length - 1).toInt();
     final int endIndex = math.min<int>(all.length, startIndex + size);
@@ -987,6 +1027,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             markers: trades.markers,
                             markerLabel: (i) => trades.labels[i] ?? '',
                             onPan: _viewSize < all.length ? _panChart : null,
+                            onPanEnd: _loadOlderExchangeHistory,
                             dateLabel: (i) => Fmt.dateTime(all[i].key, withTime: _intraday),
                             priceLabel: (v) => Fmt.price(v, type: assetType),
                             tooltipBuilder: (i, v) =>
@@ -1009,13 +1050,13 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
 
   String _emptyText() {
     if (!OnlineSettingsService.enabled) {
-      return 'Включи загрузку с биржи в разделе «Настройки → Биржа и котировки», '
+      return 'Включите загрузку с биржи в разделе «Настройки → Биржа и котировки», '
           'и здесь появится история цены.';
     }
     if (_exchangeError != null) {
       return '$_exchangeError\nНажмите обновление в углу карточки.';
     }
-    return 'Биржа не отдала историю за «${_range.label}». Попробуй другой период — '
+    return 'Биржа не отдала историю за «${_range.label}». Попробуйте другой период — '
         'по редким бумагам данных за короткий срок может не быть.';
   }
 
@@ -1383,7 +1424,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           children: [
             Text(
               'Приложение офлайн и не тянет котировки, поэтому по умолчанию берётся цена последней '
-              'сделки. Укажи актуальную цену вручную — стоимость портфеля и графики пересчитаются честно.',
+              'сделки. Укажите актуальную цену вручную — стоимость портфеля и графики будут пересчитаны.',
               style: TextStyle(color: context.dim, fontSize: 12, height: 1.4),
             ),
             const SizedBox(height: 14),

@@ -45,7 +45,7 @@ extension ChartRangeX on ChartRange {
         ChartRange.month => DateTime.now().subtract(const Duration(days: 31)),
         ChartRange.year => DateTime.now().subtract(const Duration(days: 365)),
         ChartRange.fiveYears => DateTime.now().subtract(const Duration(days: 365 * 5)),
-        ChartRange.all => DateTime(2000),
+        ChartRange.all => DateTime(1990),
       };
 
   /// Интервал свечи подбирается под диапазон: за день нужны минуты, за пять
@@ -96,6 +96,48 @@ extension ChartRangeX on ChartRange {
     if (s == null) return from;
     return DateTime.now().subtract(s * bufferFactor);
   }
+
+  /// Левая календарная граница окна, оканчивающегося в [anchor]. В отличие от
+  /// деления массива точек на части, выходные и пропуски торгов не меняют период.
+  DateTime windowFrom(DateTime anchor) => switch (this) {
+        ChartRange.day => anchor.subtract(const Duration(days: 1)),
+        ChartRange.week => anchor.subtract(const Duration(days: 7)),
+        ChartRange.month => _calendarBack(anchor, months: 1),
+        ChartRange.year => _calendarBack(anchor, years: 1),
+        ChartRange.fiveYears => _calendarBack(anchor, years: 5),
+        ChartRange.all => DateTime(1990),
+      };
+
+  static DateTime _calendarBack(DateTime value, {int months = 0, int years = 0}) {
+    final targetMonth = value.month - months;
+    final normalized = DateTime(value.year - years, targetMonth, 1);
+    final lastDay = DateTime(normalized.year, normalized.month + 1, 0).day;
+    return DateTime(
+      normalized.year,
+      normalized.month,
+      math.min(value.day, lastDay),
+      value.hour,
+      value.minute,
+      value.second,
+    );
+  }
+}
+
+class ChartWindow {
+  final int start;
+  final int size;
+
+  const ChartWindow({required this.start, required this.size});
+}
+
+/// Находит окно выбранной календарной длины, привязанное к последней котировке.
+ChartWindow chartWindowForDates(List<DateTime> dates, ChartRange range) {
+  if (dates.isEmpty) return const ChartWindow(start: 0, size: 0);
+  if (range == ChartRange.all) return ChartWindow(start: 0, size: dates.length);
+  final from = range.windowFrom(dates.last);
+  var start = dates.indexWhere((date) => !date.isBefore(from));
+  if (start < 0) start = math.max(0, dates.length - 1);
+  return ChartWindow(start: start, size: dates.length - start);
 }
 
 
@@ -163,6 +205,8 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
   /// Позиции всех прижатых пальцев. Считаем их сами через Listener: обычные
   /// жесты отдают только один указатель, а для замера нужны оба.
   final Map<int, double> _pointers = {};
+  bool _multiTouchGesture = false;
+  double _panDuringGesture = 0;
 
   /// Отметка сделки, по которой нажали: её окно висит до следующего нажатия.
   int? _marker;
@@ -300,7 +344,17 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           behavior: HitTestBehavior.opaque,
           onPointerDown: widget.interactive
               ? (e) {
+                  if (_pointers.isEmpty) _panDuringGesture = 0;
                   _pointers[e.pointer] = e.localPosition.dx;
+                  if (_pointers.length >= 2) {
+                    _multiTouchGesture = true;
+                    // Если первый палец успел чуть сдвинуть окно до появления
+                    // второго, возвращаем график на исходное место.
+                    if (_panDuringGesture != 0 && widget.onPan != null) {
+                      widget.onPan!(-_panDuringGesture);
+                      _panDuringGesture = 0;
+                    }
+                  }
                   _syncRange(w);
                 }
               : null,
@@ -314,12 +368,18 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
               ? (e) {
                   _pointers.remove(e.pointer);
                   _syncRange(w);
+                  if (_pointers.isEmpty) {
+                    Future.microtask(() => _multiTouchGesture = false);
+                  }
                 }
               : null,
           onPointerCancel: widget.interactive
               ? (e) {
                   _pointers.remove(e.pointer);
                   _syncRange(w);
+                  if (_pointers.isEmpty) {
+                    Future.microtask(() => _multiTouchGesture = false);
+                  }
                 }
               : null,
           child: GestureDetector(
@@ -327,8 +387,19 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           // Перетаскивание листает период — но только если экран это разрешил.
           // Тянем — окно едет вместе с пальцем, точка в точку.
           onHorizontalDragUpdate:
-              _canScroll ? (d) => widget.onPan!(-d.delta.dx / _step(w)) : null,
-          onHorizontalDragEnd: _canScroll ? (_) => widget.onPanEnd?.call() : null,
+              _canScroll
+                  ? (d) {
+                      if (_multiTouchGesture || _pointers.length >= 2) return;
+                      final delta = -d.delta.dx / _step(w);
+                      _panDuringGesture += delta;
+                      widget.onPan!(delta);
+                    }
+                  : null,
+          onHorizontalDragEnd: _canScroll
+              ? (_) {
+                  if (!_multiTouchGesture) widget.onPanEnd?.call();
+                }
+              : null,
           // Курсор по линии — долгим нажатием, чтобы не мешать листанию.
           onLongPressStart:
               widget.interactive ? (d) => _updateTouch(d.localPosition.dx, w) : null,

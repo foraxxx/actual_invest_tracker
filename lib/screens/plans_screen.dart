@@ -9,7 +9,6 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
-import '../services/analytics_service.dart';
 import '../services/storage_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_price_service.dart';
@@ -202,7 +201,7 @@ class _PlansScreenState extends State<PlansScreen> {
         PageTourStep(
           anchor: 'fab',
           title: 'Новый план',
-          text: 'Что и когда собираешься купить. Приложение посчитает, сколько на это понадобится.',
+          text: 'Что и когда Вы собираетесь купить. Приложение рассчитает необходимую сумму.',
         ),
         PageTourStep(
           anchor: 'list',
@@ -219,7 +218,7 @@ class _PlansScreenState extends State<PlansScreen> {
             ? const EmptyState(
                 icon: Icons.flag_rounded,
                 title: 'Планов пока нет',
-                subtitle: 'Запланируй будущие покупки — приложение соберёт их по срокам '
+                subtitle: 'Запланируйте будущие покупки — приложение соберёт их по срокам '
                     'и посчитает, сколько денег на это понадобится.',
               )
             : Column(

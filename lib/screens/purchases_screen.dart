@@ -184,8 +184,8 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                       icon: Icons.swap_horiz_rounded,
                       title: StorageService.purchases.isEmpty ? 'Сделок ещё нет' : 'Ничего не найдено',
                       subtitle: StorageService.purchases.isEmpty
-                          ? 'Нажми «Сделка», чтобы записать покупку или продажу — можно сразу несколько бумаг за раз.'
-                          : 'Попробуй изменить фильтры или поисковый запрос.',
+                          ? 'Нажмите «Сделка», чтобы записать покупку или продажу — можно сразу несколько бумаг за раз.'
+                          : 'Попробуйте изменить фильтры или поисковый запрос.',
                     )
                   : _buildList(purchases, taxBreakdown),
             ),

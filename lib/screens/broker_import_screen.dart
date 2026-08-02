@@ -140,7 +140,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         children: [
           Text(
-            'Отчёты у брокеров устроены по-разному, поэтому сначала выбери своего — '
+            'Отчёты у брокеров устроены по-разному, поэтому сначала выберите своего — '
             'файл будет разобран по его формату.',
             style: TextStyle(fontSize: 12, height: 1.45, color: context.dim),
           ),
@@ -273,7 +273,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                   color: AppColors.warning,
                   text: 'Не удалось определить тикер у ${result.unresolvedTrades.length} '
                       '${Fmt.plural(result.unresolvedTrades.length, "сделки", "сделок", "сделок")}. '
-                      'Впиши тикеры ниже или оставь пустыми — такие строки будут пропущены. '
+                      'Впишите тикеры ниже или оставьте пустыми — такие строки будут пропущены. '
                       'Включённая загрузка с биржи распознаёт бумаги по ISIN.',
                 ),
                 const SizedBox(height: 10),
@@ -398,7 +398,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                       'то, что показывает приложение брокера на конец периода.'
                   : 'Без замены содержимого к текущим количествам добавится только то, чего '
                       'ещё нет в портфеле. Если справа выходит не то, что показывает брокер, '
-                      'включи «Заменить содержимое портфеля».',
+                      'включите «Заменить содержимое портфеля».',
               style: TextStyle(fontSize: 11, height: 1.4, color: context.dim),
             ),
           ],

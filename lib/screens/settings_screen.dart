@@ -156,7 +156,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Icon(Icons.lock_outline_rounded, size: 18, color: context.dim),
                   const SizedBox(height: 8),
                   Text(
-                    'Данные хранятся на этом устройстве. В интернет приложение ходит\nтолько за котировками, и только если ты это разрешил.',
+                    'Данные хранятся только на этом устройстве. Интернет используется для получения\n'
+                    'котировок, курсов валют, сведений о бумагах и логотипов. Онлайн-загрузка\n'
+                    'работает только с Вашего разрешения.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: context.dim, fontSize: 11.5, height: 1.5),
                   ),
@@ -632,7 +634,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Введи пароль, которым была закрыта эта копия. '
+              'Введите пароль, которым была закрыта эта копия. '
               'Без него прочитать файл невозможно — пароль нигде не хранится, '
               'кроме устройства, где делался бэкап.',
               style: TextStyle(fontSize: 13, height: 1.4),
@@ -851,7 +853,7 @@ class _AutoBackupSectionState extends State<_AutoBackupSection> {
             Text(
               'Приложение само сохраняет JSON-бэкап текущего портфеля в выбранную папку при каждом '
               'изменении данных. На некоторых версиях Android доступны для записи не все папки — '
-              'если не срабатывает, попробуй «Загрузки».',
+              'если не срабатывает, попробуйте «Загрузки».',
               style: TextStyle(fontSize: 11.3, height: 1.45, color: context.dim),
             ),
             const SizedBox(height: 12),
@@ -873,7 +875,7 @@ class _AutoBackupSectionState extends State<_AutoBackupSection> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          path ?? 'Сначала выбери папку ниже',
+                          path ?? 'Сначала выберите папку ниже',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 11, color: context.dim),
@@ -938,7 +940,7 @@ class _AutoBackupSectionState extends State<_AutoBackupSection> {
               InfoBanner(
                 icon: Icons.error_outline_rounded,
                 color: AppColors.negative,
-                text: 'Последнее сохранение не удалось: $error\nПопробуй выбрать другую папку.',
+                text: 'Последнее сохранение не удалось: $error\nПопробуйте выбрать другую папку.',
               ),
             ],
           ],
@@ -1045,8 +1047,8 @@ class _OnlineDataSectionState extends State<_OnlineDataSection> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Приложение обращается только к iss.moex.com и только когда ты это разрешишь. '
-              'Биржа отдаёт данные с задержкой около 15 минут, а вне торгов — цену последнего '
+              'С Вашего разрешения приложение получает рыночные данные с Мосбиржи, а логотипы — '
+              'из Wikidata и Wikimedia Commons. Биржа отдаёт данные с задержкой около 15 минут, а вне торгов — цену последнего '
               'торгового дня, поэтому время котировки всегда показывается рядом с ней.',
               style: TextStyle(fontSize: 11.3, height: 1.45, color: context.dim),
             ),
@@ -1402,7 +1404,7 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
                 icon: Icons.warning_amber_rounded,
                 color: AppColors.warning,
                 text: 'Пароль восстановить нельзя. Если забудешь его, зашифрованная копия '
-                    'останется нечитаемой навсегда — запиши его где-нибудь отдельно.',
+                    'останется нечитаемой навсегда — запишите его где-нибудь отдельно.',
               ),
             ],
           ],

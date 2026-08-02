@@ -106,19 +106,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         PageTourStep(
           anchor: 'hero',
           title: 'Стоимость портфеля',
-          text: 'Сколько сейчас стоят бумаги и сколько ты на них заработал. График показывает, '
-              'как менялась стоимость. Проведи по нему пальцем — покажет дату и сумму.',
+          text: 'Сколько сейчас стоят бумаги и сколько Вы на них заработали. График показывает, '
+              'как менялась стоимость. Проведите по нему пальцем — он покажет дату и сумму.',
         ),
         PageTourStep(
           anchor: 'invested',
           title: 'Вложено своих',
-          text: 'Только твои деньги, пришедшие извне. Пополнения приложение считает само по '
-              'сделкам: продал бумаги и купил новые — вложено не вырастет. Нажми, чтобы открыть счёт.',
+          text: 'Только Ваши деньги, поступившие извне. Пополнения приложение считает автоматически по '
+              'сделкам: продажа и новая покупка не увеличивают вложенную сумму. Нажмите, чтобы открыть счёт.',
         ),
         PageTourStep(
           anchor: 'cash',
           title: 'Свободные деньги',
-          text: 'Деньги на счёте, ещё не вложенные в бумаги. Если ты снял их у брокера — запиши '
+          text: 'Деньги на счёте, ещё не вложенные в бумаги. Если Вы сняли их у брокера — запишите '
               'вывод, иначе следующая покупка спишется с них и вложения окажутся занижены.',
         ),
         PageTourStep(
@@ -290,7 +290,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     child: Text(
-                      'Добавь первую сделку — здесь появится график стоимости',
+                      'Добавьте первую сделку — здесь появится график стоимости',
                       style: TextStyle(fontSize: 12, color: context.dim),
                     ),
                   ),
@@ -572,9 +572,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         icon: Icons.inventory_2_outlined,
         color: AppColors.neutral,
         text: StorageService.purchases.isEmpty
-            ? 'Сделок пока нет — добавь первую на вкладке «Сделки».'
+            ? 'Сделок пока нет — добавьте первую на вкладке «Сделки».'
             : 'Сделки есть, но по всем бумагам куплено ровно столько же, сколько продано, '
-                'поэтому открытых позиций не осталось. Проверь количество в продажах и '
+                'поэтому открытых позиций не осталось. Проверьте количество в продажах и '
                 'написание тикеров: «SBER» и «Sber» считаются разными бумагами.',
       ));
     }
@@ -665,7 +665,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ..add(const EmptyState(
           icon: Icons.insights_rounded,
           title: 'Портфель пока пуст',
-          subtitle: 'Добавь первую сделку на вкладке «Сделки» — и здесь появятся '
+          subtitle: 'Добавьте первую сделку на вкладке «Сделки» — и здесь появятся '
               'графики, состав портфеля и вся статистика.',
         ));
     }
@@ -760,8 +760,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _showReturnInfo(BuildContext context, {required bool xirr}) {
     final title = xirr ? 'Доходность XIRR' : 'Доходность TWR';
     final intro = xirr
-        ? 'XIRR показывает личную среднегодовую доходность ваших денег. '
-            'Он учитывает, сколько вы вложили и в какие именно даты.'
+        ? 'XIRR показывает личную среднегодовую доходность Ваших денег. '
+            'Он учитывает, сколько Вы вложили и в какие именно даты.'
         : 'TWR показывает, как работал сам портфель, если убрать влияние '
             'размера и времени пополнений и выводов.';
     final calculation = xirr
@@ -795,7 +795,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               SheetHeader(
                 title: title,
-                subtitle: xirr ? 'Личная доходность ваших денег' : 'Доходность инвестиционной стратегии',
+                subtitle: xirr ? 'Личная доходность Ваших денег' : 'Доходность инвестиционной стратегии',
                 trailing: IconButton(
                   icon: const Icon(Icons.close_rounded),
                   onPressed: () => Navigator.pop(ctx),
@@ -972,7 +972,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 icon: Icons.info_outline_rounded,
                 color: AppColors.warning,
                 text: 'На счёте числится ${Fmt.money(cash.cash)} свободными. Если этих денег '
-                    'у брокера уже нет — запиши вывод, иначе следующая покупка спишется '
+                    'у брокера уже нет — запишите вывод, иначе следующая покупка спишется '
                     'с них и «Вложено» окажется занижено.',
               ),
             ],
@@ -1145,7 +1145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               SheetHeader(
                 title: withdrawal ? 'Вывод со счёта' : 'Пополнение счёта',
                 subtitle: withdrawal
-                    ? 'Деньги, которые ты снял у брокера'
+                    ? 'Деньги, которые Вы сняли у брокера'
                     : 'Если хочешь записать пополнение точно, а не доверять расчёту',
                 trailing: IconButton(
                   icon: const Icon(Icons.close_rounded),

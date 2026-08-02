@@ -117,7 +117,7 @@ class _WrappedScreenState extends State<WrappedScreen> with SingleTickerProvider
         eyebrow: 'ПРИБЫЛЬ',
         accent: AppColors.pnl(totalProfit),
         content: _bigNumberSlide(
-          title: totalProfit >= 0 ? 'Суммарно ты заработал' : 'Суммарный результат',
+          title: totalProfit >= 0 ? 'Суммарно Вы заработали' : 'Суммарный результат',
           value: totalProfit,
           color: AppColors.pnl(totalProfit),
           showSign: true,
@@ -475,7 +475,7 @@ class _WrappedScreenState extends State<WrappedScreen> with SingleTickerProvider
         ),
         const SizedBox(height: 8),
         const Text(
-          'Загляни снова, когда портфель подрастёт',
+          'Загляните снова, когда портфель подрастёт',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white60, fontSize: 13),
         ),

@@ -25,4 +25,15 @@ void main() {
       expect(Fmt.priceInput(1234.56, type: AssetType.bond), '1235');
     });
   });
+
+  group('month names', () {
+    test('uses nominative case for month group headings', () {
+      expect(Fmt.monthTitle('2026-06'), 'Июнь 2026');
+      expect(Fmt.monthTitle('2026-07'), 'Июль 2026');
+    });
+
+    test('keeps genitive case inside a full date', () {
+      expect(Fmt.dateLong(DateTime(2026, 7, 2)), '2 июля 2026');
+    });
+  });
 }

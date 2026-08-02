@@ -15,6 +15,11 @@ class Fmt {
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
   ];
 
+  static const _monthsStandalone = [
+    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+  ];
+
   /// Разделяет разряды неразрывным пробелом: большие суммы читаются с
   /// одного взгляда, и строка не рвётся посреди числа при переносе.
   static String group(double v, {int decimals = 0}) {
@@ -130,7 +135,7 @@ class Fmt {
     final parts = key.split('-');
     if (parts.length < 2) return key;
     final month = int.tryParse(parts[1]) ?? 1;
-    return '${_monthsFull[(month - 1).clamp(0, 11)]} ${parts[0]}';
+    return '${_monthsStandalone[(month - 1).clamp(0, 11)]} ${parts[0]}';
   }
 
   /// Русские окончания: 1 бумага, 2 бумаги, 5 бумаг.

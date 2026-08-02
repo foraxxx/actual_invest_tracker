@@ -87,7 +87,7 @@ class _IncomesScreenState extends State<IncomesScreen> {
             ? const EmptyState(
                 icon: Icons.payments_rounded,
                 title: 'Выплат пока нет',
-                subtitle: 'Записывай сюда полученные дивиденды и купоны — приложение '
+                subtitle: 'Записывайте сюда полученные дивиденды и купоны — приложение '
                     'посчитает доходность и построит прогноз на следующие 12 месяцев.',
               )
             : ListView(

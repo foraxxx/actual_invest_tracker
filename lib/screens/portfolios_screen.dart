@@ -98,7 +98,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
         PageTourStep(
           anchor: 'card',
           title: 'Портфель',
-          text: 'Нажми, чтобы открыть: внутри своя история сделок, выплат и планов. '
+          text: 'Нажмите, чтобы открыть: внутри своя история сделок, выплат и планов. '
               'Долгий список кнопок справа — переименовать, закрыть или удалить.',
         ),
         PageTourStep(
@@ -117,7 +117,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
               ? EmptyState(
                   icon: Icons.folder_off_outlined,
                   title: 'Портфелей нет',
-                  subtitle: 'Создай первый портфель — в нём будут храниться сделки, выплаты и планы.',
+                  subtitle: 'Создайте первый портфель — в нём будут храниться сделки, выплаты и планы.',
                   action: GradientButton(
                     label: 'Создать портфель',
                     icon: Icons.add_rounded,

@@ -39,6 +39,7 @@ class _MarketScreenState extends State<MarketScreen> {
   String _chartKey = 'IMOEX';
   List<MapEntry<DateTime, double>> _chartPoints = const [];
   bool _chartLoading = false;
+  bool _loadingOlder = false;
   String? _chartError;
   ChartRange _range = ChartRange.year;
 
@@ -55,6 +56,52 @@ class _MarketScreenState extends State<MarketScreen> {
     final maxStart = (_chartPoints.length - _viewSize).toDouble();
     if (maxStart <= 0) return;
     setState(() => _viewStart = (_viewStart + deltaPoints).clamp(0.0, maxStart).toDouble());
+  }
+
+  Future<List<MapEntry<DateTime, double>>> _fetchChartSegment(
+    DateTime from, {
+    DateTime? till,
+  }) async {
+    if (_chartKey == 'IMOEX') {
+      return MoexService.fetchCandles(
+        engine: 'stock', market: 'index', secId: 'IMOEX', from: from, till: till,
+        interval: _range.interval, maxRows: _range.maxRows,
+      );
+    }
+    if (!MoexService.resolvedCurrencySecIds.containsKey(_chartKey)) {
+      await MoexService.fetchCurrencyRates();
+    }
+    final secId = MoexService.resolvedCurrencySecIds[_chartKey];
+    if (secId == null) return const [];
+    return MoexService.fetchCandles(
+      engine: 'currency', market: 'selt', secId: secId, from: from, till: till,
+      interval: _range.interval, maxRows: _range.maxRows,
+    );
+  }
+
+  Future<void> _loadOlderChart() async {
+    final span = _range.span;
+    if (_loadingOlder || span == null || _chartPoints.isEmpty || _viewStart > _viewSize * 0.25) return;
+    _loadingOlder = true;
+    final first = _chartPoints.first.key;
+    try {
+      final older = await _fetchChartSegment(
+        first.subtract(span * _range.bufferFactor),
+        till: first.subtract(const Duration(seconds: 1)),
+      );
+      if (!mounted || older.isEmpty) return;
+      final existing = _chartPoints.map((e) => e.key).toSet();
+      final added = older.where((e) => !existing.contains(e.key)).toList();
+      if (added.isEmpty) return;
+      setState(() {
+        _chartPoints = [...added, ..._chartPoints]..sort((a, b) => a.key.compareTo(b.key));
+        _viewStart += added.length;
+      });
+    } catch (_) {
+      // Оставляем уже загруженный участок и повторяем при следующем жесте.
+    } finally {
+      _loadingOlder = false;
+    }
   }
 
   @override
@@ -122,31 +169,14 @@ class _MarketScreenState extends State<MarketScreen> {
     try {
       final List<MapEntry<DateTime, double>> points;
       if (_chartKey == 'IMOEX') {
-        points = await MoexService.fetchCandles(
-          engine: 'stock',
-          market: 'index',
-          secId: 'IMOEX',
-          from: _range.bufferFrom,
-          interval: _range.interval,
-          maxRows: _range.maxRows,
-        );
+        points = await _fetchChartSegment(_range.bufferFrom);
       } else {
         // Инструмент валютной пары определяется по ответу биржи; если его ещё
         // не спрашивали, курс подтянет его заодно.
         if (!MoexService.resolvedCurrencySecIds.containsKey(_chartKey)) {
           await MoexService.fetchCurrencyRates();
         }
-        final secId = MoexService.resolvedCurrencySecIds[_chartKey];
-        points = secId == null
-            ? const []
-            : await MoexService.fetchCandles(
-                engine: 'currency',
-                market: 'selt',
-                secId: secId,
-                from: _range.bufferFrom,
-                interval: _range.interval,
-                maxRows: _range.maxRows,
-              );
+        points = await _fetchChartSegment(_range.bufferFrom);
       }
       var result = points;
       if (_range == ChartRange.day && result.isEmpty) {
@@ -160,10 +190,9 @@ class _MarketScreenState extends State<MarketScreen> {
             result.isEmpty ? 'Нет данных за выбранный период' : null;
         // Показываем правый край — свежий период, а слева остаётся запас для
         // листания.
-        _viewSize = result.isEmpty
-            ? 0
-            : (result.length / _range.bufferFactor).round().clamp(2, result.length);
-        _viewStart = math.max(0, result.length - _viewSize).toDouble();
+        final window = chartWindowForDates(result.map((e) => e.key).toList(), _range);
+        _viewSize = window.size;
+        _viewStart = window.start.toDouble();
         _chartLoading = false;
       });
     } catch (_) {
@@ -247,7 +276,7 @@ class _MarketScreenState extends State<MarketScreen> {
           anchor: 'rates',
           title: 'Курсы валют',
           text: 'Приходят с валютного рынка Мосбиржи вместе с котировками. По ним же '
-              'пересчитываются твои валютные сделки.',
+              'пересчитываются Ваши валютные сделки.',
         ),
         PageTourStep(
           anchor: 'chart',
@@ -258,8 +287,8 @@ class _MarketScreenState extends State<MarketScreen> {
         PageTourStep(
           anchor: 'search',
           title: 'Поиск и фильтры',
-          text: 'Найди бумагу по тикеру или названию, отфильтруй по типу. Тап по строке '
-              'открывает карточку — купить можно прямо оттуда, даже если бумаги у тебя нет.',
+          text: 'Найдите бумагу по тикеру или названию, отфильтруйте по типу. Нажатие на строку '
+              'открывает карточку — купить можно прямо оттуда, даже если бумаги у Вас нет.',
         ),
       ],
       child: Scaffold(
@@ -272,7 +301,7 @@ class _MarketScreenState extends State<MarketScreen> {
               return EmptyState(
                 icon: Icons.cloud_off_rounded,
                 title: 'Загрузка с биржи выключена',
-                subtitle: 'Включи её в настройках — и здесь появятся все бумаги Мосбиржи с котировками.',
+                subtitle: 'Включите её в настройках — и здесь появятся все бумаги Мосбиржи с котировками.',
                 action: GradientButton(
                   label: 'Открыть настройки',
                   icon: Icons.tune_rounded,
@@ -411,7 +440,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   title: quotes.isEmpty ? 'Жду первую загрузку' : 'Ничего не нашлось',
                   subtitle: quotes.isEmpty
                       ? 'Котировки подтянутся через несколько секунд после запуска.'
-                      : 'Попробуй другой запрос или сними фильтр.',
+                      : 'Попробуйте другой запрос или снимите фильтр.',
                 ),
             ],
           ),
@@ -545,6 +574,7 @@ class _MarketScreenState extends State<MarketScreen> {
                               dateLabel: (i) => Fmt.dateTime(all[i].key, withTime: _intraday),
                               priceLabel: (v) => Fmt.price(v),
                               onPan: _viewSize < all.length ? _panChart : null,
+                              onPanEnd: _loadOlderChart,
                             ),
             ),
             if (visibleValues.length > 1) ...[
