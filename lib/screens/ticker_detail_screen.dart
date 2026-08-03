@@ -890,47 +890,86 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       padding: const EdgeInsets.only(bottom: 14),
       child: AppCard(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Погашение', style: TextStyle(fontSize: 11, color: context.dim)),
-                  const SizedBox(height: 3),
-                  Text(
-                    matDate == null ? 'бессрочная' : Fmt.date(matDate),
-                    style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Погашение', style: TextStyle(fontSize: 11, color: context.dim)),
+                      const SizedBox(height: 3),
+                      Text(
+                        matDate == null ? 'бессрочная' : Fmt.date(matDate),
+                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                      ),
+                      if (daysLeft != null && daysLeft > 0)
+                        Text(_timeLeft(daysLeft), style: TextStyle(fontSize: 10.5, color: context.dim)),
+                    ],
                   ),
-                  if (daysLeft != null && daysLeft > 0)
-                    Text(_timeLeft(daysLeft), style: TextStyle(fontSize: 10.5, color: context.dim)),
-                ],
-              ),
+                ),
+                Container(width: 1, height: 40, color: context.hairline),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Номинал', style: TextStyle(fontSize: 11, color: context.dim)),
+                      const SizedBox(height: 3),
+                      Text(
+                        Fmt.price(
+                          face,
+                          currency: currency == 'RUB' ? '₽' : currency,
+                          isBond: true,
+                        ),
+                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                      ),
+                      if (currency != 'RUB')
+                        Text(
+                          '≈ ${Fmt.money(faceRub)}',
+                          style: TextStyle(fontSize: 10.5, color: context.dim),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Container(width: 1, height: 40, color: context.hairline),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Номинал', style: TextStyle(fontSize: 11, color: context.dim)),
-                  const SizedBox(height: 3),
-                  Text(
-                    Fmt.price(
-                      face,
-                      currency: currency == 'RUB' ? '₽' : currency,
-                      isBond: true,
+            if (quote.yieldPct != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                decoration: BoxDecoration(
+                  color: AppColors.positive.withOpacity(.08),
+                  border: Border.all(color: AppColors.positive.withOpacity(.65)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.trending_up_rounded, size: 17, color: AppColors.positive),
+                    const SizedBox(width: 7),
+                    const Expanded(
+                      child: Text(
+                        'Доходность к погашению',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                      ),
                     ),
-                    style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
-                  ),
-                  if (currency != 'RUB')
+                    const SizedBox(width: 8),
                     Text(
-                      '≈ ${Fmt.money(faceRub)}',
-                      style: TextStyle(fontSize: 10.5, color: context.dim),
+                      '${quote.yieldPct!.toStringAsFixed(2)}%',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.positive,
+                      ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

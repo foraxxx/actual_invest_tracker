@@ -268,6 +268,7 @@ class StatTile extends StatelessWidget {
   final String? text;
   final String? hint;
   final VoidCallback? onTap;
+  final bool compact;
 
   const StatTile({
     super.key,
@@ -279,6 +280,7 @@ class StatTile extends StatelessWidget {
     this.text,
     this.hint,
     this.onTap,
+    this.compact = false,
   });
 
   @override
@@ -291,7 +293,7 @@ class StatTile extends StatelessWidget {
       border: interactive
           ? Border.all(color: c.withOpacity(context.isDark ? 0.52 : 0.38), width: 1.25)
           : null,
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(compact ? 12 : 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -323,7 +325,7 @@ class StatTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: compact ? 8 : 10),
           if (value != null && formatter != null)
             RollingNumber(
               value: value!,
@@ -335,29 +337,31 @@ class StatTile extends StatelessWidget {
               text ?? '—',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
             ),
-          const SizedBox(height: 5),
-          // Одинаковая нижняя строка не даёт плиткам без подписи или стрелки
-          // менять высоту соседних карточек и всей сетки.
-          ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 28),
-            child: Row(
-              children: [
-                if (hint != null)
-                  Expanded(
-                    child: MarqueeText(
-                      hint!,
-                      style: TextStyle(fontSize: 10.5, color: context.dim),
-                    ),
-                  )
-                else
-                  const Spacer(),
-                if (interactive) ...[
-                  if (hint != null) const SizedBox(width: 7),
-                  InteractiveArrow(color: c),
+          if (!compact) ...[
+            const SizedBox(height: 5),
+            // Одинаковая нижняя строка не даёт плиткам без подписи или стрелки
+            // менять высоту соседних карточек и всей сетки.
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 28),
+              child: Row(
+                children: [
+                  if (hint != null)
+                    Expanded(
+                      child: MarqueeText(
+                        hint!,
+                        style: TextStyle(fontSize: 10.5, color: context.dim),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  if (interactive) ...[
+                    if (hint != null) const SizedBox(width: 7),
+                    InteractiveArrow(color: c),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

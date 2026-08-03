@@ -6,6 +6,7 @@ import '../models/purchase.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'favorites_service.dart';
+import 'logo_service.dart';
 import 'moex_service.dart';
 import 'moex_trading_schedule_service.dart';
 import 'network_service.dart';
@@ -33,6 +34,7 @@ class MoexSyncService with WidgetsBindingObserver {
   bool _observing = false;
   bool _sectorsLoaded = false;
   final Set<String> _sectorBondsProcessed = {};
+  bool _portfolioLogosStarted = false;
   bool _marketVisible = false;
   bool _fullMarketLoadedForSession = false;
   bool _fullRefreshPending = false;
@@ -152,6 +154,7 @@ class MoexSyncService with WidgetsBindingObserver {
       if (!force && !tradingNow && !finalRefresh) {
         await _refreshReferenceDataIfNeeded();
         await _refreshSectorData(const {});
+        _startPortfolioLogoRefresh();
         return;
       }
 
@@ -201,6 +204,7 @@ class MoexSyncService with WidgetsBindingObserver {
       }
 
       await _refreshSectorData(quotes);
+      _startPortfolioLogoRefresh();
 
       // Графики купонов и дивидендов подтягиваем один раз для новых бумаг:
       // они известны заранее и меняются редко.
@@ -244,6 +248,44 @@ class MoexSyncService with WidgetsBindingObserver {
       }
     }
     await _enrichNewBondSectors(quotes);
+  }
+
+  void _startPortfolioLogoRefresh() {
+    if (_portfolioLogosStarted || !OnlineSettingsService.enabled) return;
+    _portfolioLogosStarted = true;
+    unawaited(_refreshPortfolioLogos());
+  }
+
+  Future<void> _refreshPortfolioLogos() async {
+    try {
+      final holdings = AnalyticsService.currentHoldings().keys
+          .map((ticker) => ticker.toUpperCase())
+          .toSet();
+      final names = <String, String>{};
+      for (final trade in StorageService.purchases.reversed) {
+        final ticker = trade.ticker.toUpperCase();
+        if (holdings.contains(ticker) && !names.containsKey(ticker) && trade.name.trim().isNotEmpty) {
+          names[ticker] = trade.name.trim();
+        }
+      }
+
+      for (final ticker in holdings) {
+        if (LogoService.getPath(ticker) != null || ticker.startsWith('SU')) continue;
+        final quote = marketSnapshot.value[ticker];
+        final isin = quote?.isin.isNotEmpty == true
+            ? quote!.isin
+            : await MoexService.isinOf(ticker);
+        await LogoService.fetchIfMissing(
+          ticker,
+          isin: isin,
+          companyName: quote?.shortName ?? names[ticker],
+        );
+      }
+    } finally {
+      // Успешные логотипы уже закэшированы, а неудачные защищены своим
+      // интервалом повтора. Разрешаем новый проход при следующей синхронизации.
+      _portfolioLogosStarted = false;
+    }
   }
 
   Future<void> _enrichNewBondSectors(Map<String, MoexQuote> quotes) async {

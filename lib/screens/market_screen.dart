@@ -1111,12 +1111,34 @@ class _MarketScreenState extends State<MarketScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, color: context.dim),
                 ),
-                if (q.turnover > 0 || q.yieldPct != null) ...[
-                  const SizedBox(height: 2),
+                if (q.yieldPct != null) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.positive.withOpacity(.08),
+                        border: Border.all(color: AppColors.positive.withOpacity(.65)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Доходность ${q.yieldPct!.toStringAsFixed(1)}%',
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.positive,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                if (q.turnover > 0 || (q.isBond && q.couponsPerYear != null)) ...[
+                  const SizedBox(height: 3),
                   Text(
                     [
                       if (q.turnover > 0) 'оборот ${Fmt.compact(q.turnover)}',
-                      if (q.yieldPct != null) 'доходность ${q.yieldPct!.toStringAsFixed(1)}%',
                       if (q.isBond && q.couponsPerYear != null)
                         'купон ${q.isFloater ? "переменный" : "постоянный"}',
                     ].join(' · '),

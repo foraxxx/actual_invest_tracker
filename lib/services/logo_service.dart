@@ -26,6 +26,15 @@ class LogoService {
 
   static Future<void> init() async {
     _box = await Hive.openBox<String>(boxName);
+    // После изменения источников и поиска по эмитенту старые недельные
+    // запреты на повтор больше не актуальны. Сбрасываем их один раз.
+    const retrySchemaKey = '#retry_schema';
+    const retrySchema = '2';
+    if (_box.get(retrySchemaKey) != retrySchema) {
+      final failedKeys = _box.keys.where((key) => '$key'.startsWith(_triedPrefix)).toList();
+      await _box.deleteAll(failedKeys);
+      await _box.put(retrySchemaKey, retrySchema);
+    }
   }
 
   static String? getPath(String ticker) {
@@ -131,6 +140,30 @@ class LogoService {
     'https://invest-brands.cdn-tinkoff.ru/{ticker_lower}x160.png',
   ];
 
+  static const _requestHeaders = {
+    'User-Agent': 'InvestTracker/1.0 (Android; logo cache)',
+    'Accept': 'image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8',
+  };
+
+  static String? _imageExtension(List<int> bytes, String contentType) {
+    if (bytes.length <= 200) return null;
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) return 'png';
+    if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return 'jpg';
+    }
+    if (bytes.length >= 12 &&
+        String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
+        String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP') return 'webp';
+    if (contentType.contains('png')) return 'png';
+    if (contentType.contains('jpeg') || contentType.contains('jpg')) return 'jpg';
+    if (contentType.contains('webp')) return 'webp';
+    return null;
+  }
+
   /// Последние неудачи с адресами, которые пробовались, — показывается в
   /// настройках. По этому списку понятно, каких источников не хватает.
   static final Map<String, List<String>> lastFailures = {};
@@ -213,14 +246,15 @@ class LogoService {
           continue;
         }
         try {
-          final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+          final response = await http
+              .get(Uri.parse(url), headers: _requestHeaders)
+              .timeout(const Duration(seconds: 10));
           final type = response.headers['content-type'] ?? '';
           tried.add('${response.statusCode} ${type.split(';').first} · $url');
           // Часть CDN на «нет такой картинки» отвечает не 404, а заглушкой
           // или html — поэтому проверяем и тип, и размер.
-          if (response.statusCode == 200 && type.startsWith('image/') && response.bodyBytes.length > 200) {
-            final ext = type.contains('png') ? 'png' : (type.contains('svg') ? 'svg' : 'jpg');
-            if (ext == 'svg') continue; // SVG Image.file не покажет
+          final ext = _imageExtension(response.bodyBytes, type);
+          if (response.statusCode == 200 && ext != null) {
             await _setFetchedLogo(key, response.bodyBytes, ext, issuerId: issuerId);
             await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
             lastFailures.remove(key);
@@ -251,17 +285,17 @@ class LogoService {
           continue;
         }
         try {
-          final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 12));
+          final response = await http
+              .get(Uri.parse(url), headers: _requestHeaders)
+              .timeout(const Duration(seconds: 12));
           final type = response.headers['content-type'] ?? '';
           tried.add('${response.statusCode} ${type.split(';').first} · $url');
-          if (response.statusCode == 200 &&
-              type.startsWith('image/') &&
-              !type.contains('svg') &&
-              response.bodyBytes.length > 200) {
+          final ext = _imageExtension(response.bodyBytes, type);
+          if (response.statusCode == 200 && ext != null) {
             await _setFetchedLogo(
               key,
               response.bodyBytes,
-              type.contains('png') ? 'png' : 'jpg',
+              ext,
               issuerId: issuerId,
             );
             await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');

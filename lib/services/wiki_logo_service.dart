@@ -9,6 +9,10 @@ class WikiLogoService {
   static const _timeout = Duration(seconds: 12);
   static final Map<String, String?> _cache = {};
   static final Map<String, Map?> _claimsCache = {};
+  static const _headers = {
+    'User-Agent': 'InvestTracker/1.0 (Android; issuer logo lookup)',
+    'Accept': 'application/json',
+  };
 
   /// Searches by the official issuer name as well as its short and historical
   /// aliases. Only entities that look like organisations are accepted.
@@ -57,7 +61,7 @@ class WikiLogoService {
         'limit': '7',
         'format': 'json',
       });
-      final response = await http.get(uri).timeout(_timeout);
+      final response = await http.get(uri, headers: _headers).timeout(_timeout);
       if (response.statusCode != 200) continue;
       final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
       for (final item in json['search'] as List? ?? const []) {
@@ -101,7 +105,7 @@ class WikiLogoService {
       'entity': entityId,
       'format': 'json',
     });
-    final response = await http.get(uri).timeout(_timeout);
+    final response = await http.get(uri, headers: _headers).timeout(_timeout);
     if (response.statusCode != 200) return null;
     final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final claims = json['claims'] as Map?;
@@ -130,7 +134,7 @@ class WikiLogoService {
       'format': 'json',
       'origin': '*',
     });
-    final response = await http.get(uri).timeout(_timeout);
+    final response = await http.get(uri, headers: _headers).timeout(_timeout);
     if (response.statusCode != 200) return null;
     final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final pages = (json['query'] as Map?)?['pages'] as Map?;
