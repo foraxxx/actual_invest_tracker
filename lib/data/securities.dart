@@ -15,6 +15,7 @@ class SecuritiesDatabase {
     SecurityInfo(ticker: 'NVTK', name: 'Новатэк', type: AssetType.stock, sector: 'Нефть и газ'),
     SecurityInfo(ticker: 'TATN', name: 'Татнефть', type: AssetType.stock, sector: 'Нефть и газ'),
     SecurityInfo(ticker: 'SNGS', name: 'Сургутнефтегаз', type: AssetType.stock, sector: 'Нефть и газ'),
+    SecurityInfo(ticker: 'SNGSP', name: 'Сургутнефтегаз (прив.)', type: AssetType.stock, sector: 'Нефть и газ'),
     SecurityInfo(ticker: 'TRNFP', name: 'Транснефть', type: AssetType.stock, sector: 'Нефть и газ'),
 
     // --- Финансы ---
@@ -46,6 +47,7 @@ class SecuritiesDatabase {
     // --- Ритейл и потребительский сектор ---
     SecurityInfo(ticker: 'MGNT', name: 'Магнит', type: AssetType.stock, sector: 'Ритейл'),
     SecurityInfo(ticker: 'FIVE', name: 'X5 Group', type: AssetType.stock, sector: 'Ритейл'),
+    SecurityInfo(ticker: 'X5', name: 'X5 Group', type: AssetType.stock, sector: 'Ритейл'),
     SecurityInfo(ticker: 'OZON', name: 'Ozon', type: AssetType.stock, sector: 'Ритейл'),
     SecurityInfo(ticker: 'LENT', name: 'Лента', type: AssetType.stock, sector: 'Ритейл'),
 

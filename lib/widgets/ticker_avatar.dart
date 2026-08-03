@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../data/securities.dart';
 import '../services/moex_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_settings_service.dart';
@@ -73,10 +74,11 @@ class TickerAvatar extends StatelessWidget {
           final isin = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()]?.isin;
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             final quote = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()];
+            final referenceName = SecuritiesDatabase.byTicker(ticker)?.name;
             if (await LogoService.fetchIfMissing(
               ticker,
               isin: isin,
-              companyName: quote?.shortName,
+              companyName: referenceName ?? quote?.shortName,
             )) {
               return;
             }
@@ -89,7 +91,7 @@ class TickerAvatar extends StatelessWidget {
               isin: isin,
               issuerTicker: issuer,
               issuerIsin: await MoexService.isinOf(issuer),
-              companyName: quote?.shortName,
+              companyName: referenceName ?? quote?.shortName,
               issuerName: await MoexService.nameOf(issuer),
             );
           });

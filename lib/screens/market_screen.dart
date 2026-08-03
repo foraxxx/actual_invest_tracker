@@ -7,6 +7,7 @@ import '../design/motion.dart';
 import '../design/page_tour.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
+import '../data/securities.dart';
 import '../services/analytics_service.dart';
 import '../services/currency_service.dart';
 import '../services/favorites_service.dart';
@@ -1074,6 +1075,8 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _row(MoexQuote q, bool isOwned) {
+    final referenceName = SecuritiesDatabase.byTicker(q.ticker)?.name.trim() ?? '';
+    final displayName = referenceName.isNotEmpty ? referenceName : q.shortName;
     return AppCard(
       padding: const EdgeInsets.all(12),
       onTap: () => Navigator.push(
@@ -1092,7 +1095,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   children: [
                     Flexible(
                       child: Text(
-                        q.shortName.isNotEmpty ? q.shortName : q.ticker,
+                        displayName.isNotEmpty ? displayName : q.ticker,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
@@ -1134,13 +1137,11 @@ class _MarketScreenState extends State<MarketScreen> {
                     ),
                   ),
                 ],
-                if (q.turnover > 0 || (q.isBond && q.couponsPerYear != null)) ...[
+                if (q.turnover > 0) ...[
                   const SizedBox(height: 3),
                   Text(
                     [
                       if (q.turnover > 0) 'оборот ${Fmt.compact(q.turnover)}',
-                      if (q.isBond && q.couponsPerYear != null)
-                        'купон ${q.isFloater ? "переменный" : "постоянный"}',
                     ].join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

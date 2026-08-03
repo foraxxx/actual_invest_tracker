@@ -445,12 +445,12 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final exchangeName = quote?.shortName.trim() ?? '';
     final savedName = purchases.isNotEmpty ? purchases.first.name.trim() : '';
     final referenceName = SecuritiesDatabase.byTicker(ticker)?.name.trim() ?? '';
-    final name = exchangeName.isNotEmpty
-        ? exchangeName
+    final name = referenceName.isNotEmpty
+        ? referenceName
         : savedName.isNotEmpty && savedName.toUpperCase() != ticker.toUpperCase()
             ? savedName
-            : referenceName.isNotEmpty
-                ? referenceName
+            : exchangeName.isNotEmpty
+                ? exchangeName
                 : ticker;
     final sector = SectorService.sectorFor(ticker);
 
@@ -970,6 +970,17 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 ),
               ],
             ),
+            if (quote.couponsPerYear != null) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TagChip(
+                  text: 'Купон ${quote.isFloater ? "переменный" : "постоянный"}',
+                  color: AppColors.gold,
+                  icon: Icons.payments_outlined,
+                ),
+              ),
+            ],
             if (quote.yieldPct != null) ...[
               const SizedBox(height: 12),
               Container(

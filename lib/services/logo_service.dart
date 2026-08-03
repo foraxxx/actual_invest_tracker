@@ -230,6 +230,23 @@ class LogoService {
     try {
       // Пробуем сначала свои идентификаторы, потом эмитента.
       final resolvedIssuerTicker = issuerTicker ?? await MoexService.issuerShareFor(key);
+      // Если логотип уже был скачан для другой бумаги того же эмитента
+      // (например, SNGS для SNGSP), не идём в сеть повторно. Повышаем
+      // файл до общего логотипа эмитента и даём его всем выпускам.
+      if (issuerId != null &&
+          issuerId.isNotEmpty &&
+          resolvedIssuerTicker != null &&
+          resolvedIssuerTicker.toUpperCase() != key) {
+        final proxyPath = getPath(resolvedIssuerTicker);
+        if (proxyPath != null) {
+          await _box.put('$_issuerPrefix$issuerId'.toUpperCase(), proxyPath);
+          await _box.put(key, '$_aliasPrefix$issuerId');
+          await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
+          lastFailures.remove(key);
+          version.value++;
+          return true;
+        }
+      }
       final resolvedIssuerIsin = issuerIsin ??
           (resolvedIssuerTicker == null ? null : await MoexService.isinOf(resolvedIssuerTicker));
       final variants = <({String? isin, String ticker})>[
