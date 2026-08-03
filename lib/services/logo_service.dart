@@ -29,7 +29,7 @@ class LogoService {
     // После изменения источников и поиска по эмитенту старые недельные
     // запреты на повтор больше не актуальны. Сбрасываем их один раз.
     const retrySchemaKey = '#retry_schema';
-    const retrySchema = '3';
+    const retrySchema = '4';
     if (_box.get(retrySchemaKey) != retrySchema) {
       final failedKeys = _box.keys.where((key) => '$key'.startsWith(_triedPrefix)).toList();
       await _box.deleteAll(failedKeys);
@@ -129,15 +129,9 @@ class LogoService {
   /// достаточно поправить этот список.
   static const List<String> urlTemplates = [
     'https://invest-brands.cdn-tinkoff.ru/{isin}x160.png',
-    'https://invest-brands.cdn-tinkoff.ru/{isin}x320.png',
-    'https://invest-brands.cdn-tinkoff.ru/{isin}x640.png',
     'https://invest-brands.cdn-tinkoff.ru/{ticker}x160.png',
-    'https://invest-brands.cdn-tinkoff.ru/{ticker}x320.png',
     'https://static.tinkoff.ru/brands/traiding/{isin}x160.png',
     'https://static.tinkoff.ru/brands/traiding/{ticker}x160.png',
-    // Некоторые CDN хранят имена в нижнем регистре.
-    'https://invest-brands.cdn-tinkoff.ru/{isin_lower}x160.png',
-    'https://invest-brands.cdn-tinkoff.ru/{ticker_lower}x160.png',
   ];
 
   static const _requestHeaders = {
@@ -219,6 +213,26 @@ class LogoService {
       }
     }
     final attemptKey = issuerId == null || issuerId.isEmpty ? key : 'issuer_$issuerId';
+    final resolvedIssuerTicker = issuerTicker ?? await MoexService.issuerShareFor(key);
+
+    // Наследование готового логотипа важнее старой отметки о неудаче.
+    // Иначе SNGSP не видел SNGS, если неделю назад уже успел получить
+    // неудачную попытку по тому же эмитенту.
+    if (issuerId != null &&
+        issuerId.isNotEmpty &&
+        resolvedIssuerTicker != null &&
+        resolvedIssuerTicker.toUpperCase() != key) {
+      final proxyPath = getPath(resolvedIssuerTicker);
+      if (proxyPath != null) {
+        await _box.put('$_issuerPrefix$issuerId'.toUpperCase(), proxyPath);
+        await _box.put(key, '$_aliasPrefix$issuerId');
+        await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
+        lastFailures.remove(key);
+        version.value++;
+        return true;
+      }
+    }
+
     // Неудачи запоминаются по эмитенту, а не по отдельному выпуску. Старые
     // отметки по тикерам выпусков намеренно больше не учитываются — это сразу
     // запускает улучшенный поиск для облигаций, которые раньше не находились.
@@ -228,25 +242,44 @@ class LogoService {
     final tried = <String>[];
 
     try {
-      // Пробуем сначала свои идентификаторы, потом эмитента.
-      final resolvedIssuerTicker = issuerTicker ?? await MoexService.issuerShareFor(key);
-      // Если логотип уже был скачан для другой бумаги того же эмитента
-      // (например, SNGS для SNGSP), не идём в сеть повторно. Повышаем
-      // файл до общего логотипа эмитента и даём его всем выпускам.
-      if (issuerId != null &&
-          issuerId.isNotEmpty &&
-          resolvedIssuerTicker != null &&
-          resolvedIssuerTicker.toUpperCase() != key) {
-        final proxyPath = getPath(resolvedIssuerTicker);
-        if (proxyPath != null) {
-          await _box.put('$_issuerPrefix$issuerId'.toUpperCase(), proxyPath);
-          await _box.put(key, '$_aliasPrefix$issuerId');
-          await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
-          lastFailures.remove(key);
-          version.value++;
-          return true;
+      // Сначала ищем самого эмитента. Этот путь работает и для акций,
+      // и для облигаций, и не зависит от того, знает ли брокерский CDN тикер.
+      final officialName = issuer?.isFund == true && issuer!.managementCompany.isNotEmpty
+          ? issuer.managementCompany
+          : issuer?.title ?? issuerName ?? companyName;
+      final aliases = <String>{
+        if (issuer?.managementCompany.isNotEmpty == true) issuer!.managementCompany,
+        if (issuer?.shortName.isNotEmpty == true) issuer!.shortName,
+        if (issuer?.englishName.isNotEmpty == true) issuer!.englishName,
+        if (issuer?.securityName.isNotEmpty == true) issuer!.securityName,
+        if (companyName != null) companyName,
+        if (issuerName != null) issuerName,
+      };
+      for (final name in {if (officialName != null) officialName, ...aliases}) {
+        final url = await WikiLogoService.logoUrl(name, aliases: aliases);
+        if (url == null) {
+          tried.add('в Wikidata нет логотипа · $name');
+          continue;
+        }
+        try {
+          final response = await http
+              .get(Uri.parse(url), headers: _requestHeaders)
+              .timeout(const Duration(seconds: 12));
+          final type = response.headers['content-type'] ?? '';
+          tried.add('${response.statusCode} ${type.split(';').first} · $url');
+          final ext = _imageExtension(response.bodyBytes, type);
+          if (response.statusCode == 200 && ext != null) {
+            await _setFetchedLogo(key, response.bodyBytes, ext, issuerId: issuerId);
+            await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
+            lastFailures.remove(key);
+            return true;
+          }
+        } catch (_) {
+          tried.add('ошибка сети · $url');
         }
       }
+
+      // Старые CDN оставляем только коротким резервом: они могут отвечать 403.
       final resolvedIssuerIsin = issuerIsin ??
           (resolvedIssuerTicker == null ? null : await MoexService.isinOf(resolvedIssuerTicker));
       final variants = <({String? isin, String ticker})>[
@@ -269,7 +302,7 @@ class LogoService {
         try {
           final response = await http
               .get(Uri.parse(url), headers: _requestHeaders)
-              .timeout(const Duration(seconds: 10));
+              .timeout(const Duration(seconds: 3));
           final type = response.headers['content-type'] ?? '';
           tried.add('${response.statusCode} ${type.split(';').first} · $url');
           // Часть CDN на «нет такой картинки» отвечает не 404, а заглушкой
@@ -285,48 +318,6 @@ class LogoService {
           tried.add('ошибка сети · $url');
         }
       }
-      }
-      // CDN брокеров нас не знают — пробуем Викиданные по названию компании.
-      // For a fund, prefer the management company when MOEX publishes it;
-      // otherwise EMITENT_TITLE is normally the fund manager/issuer already.
-      final officialName = issuer?.isFund == true && issuer!.managementCompany.isNotEmpty
-          ? issuer.managementCompany
-          : issuer?.title ?? issuerName ?? companyName;
-      final aliases = <String>{
-        if (issuer?.managementCompany.isNotEmpty == true) issuer!.managementCompany,
-        if (issuer?.shortName.isNotEmpty == true) issuer!.shortName,
-        if (issuer?.englishName.isNotEmpty == true) issuer!.englishName,
-        if (issuer?.securityName.isNotEmpty == true) issuer!.securityName,
-        if (companyName != null) companyName,
-        if (issuerName != null) issuerName,
-      };
-      for (final name in {if (officialName != null) officialName, ...aliases}) {
-        final url = await WikiLogoService.logoUrl(name, aliases: aliases);
-        if (url == null) {
-          tried.add('в Викиданных нет логотипа · $name');
-          continue;
-        }
-        try {
-          final response = await http
-              .get(Uri.parse(url), headers: _requestHeaders)
-              .timeout(const Duration(seconds: 12));
-          final type = response.headers['content-type'] ?? '';
-          tried.add('${response.statusCode} ${type.split(';').first} · $url');
-          final ext = _imageExtension(response.bodyBytes, type);
-          if (response.statusCode == 200 && ext != null) {
-            await _setFetchedLogo(
-              key,
-              response.bodyBytes,
-              ext,
-              issuerId: issuerId,
-            );
-            await _box.delete('$_triedPrefix${attemptKey.toUpperCase()}');
-            lastFailures.remove(key);
-            return true;
-          }
-        } catch (e) {
-          tried.add('ошибка сети · $url');
-        }
       }
 
       await _box.put(

@@ -269,17 +269,24 @@ class MoexSyncService with WidgetsBindingObserver {
         }
       }
 
-      for (final ticker in holdings) {
-        if (LogoService.getPath(ticker) != null || ticker.startsWith('SU')) continue;
-        final quote = marketSnapshot.value[ticker];
-        final isin = quote?.isin.isNotEmpty == true
-            ? quote!.isin
-            : await MoexService.isinOf(ticker);
-        await LogoService.fetchIfMissing(
-          ticker,
-          isin: isin,
-          companyName: quote?.shortName ?? names[ticker],
-        );
+      final missing = holdings
+          .where((ticker) => LogoService.getPath(ticker) == null && !ticker.startsWith('SU'))
+          .toList();
+      // Небольшие группы: один медленный сайт эмитента не блокирует
+      // весь портфель, но и открытые источники не получают десятки запросов сразу.
+      for (var start = 0; start < missing.length; start += 3) {
+        final batch = missing.skip(start).take(3);
+        await Future.wait(batch.map((ticker) async {
+          final quote = marketSnapshot.value[ticker];
+          final isin = quote?.isin.isNotEmpty == true
+              ? quote!.isin
+              : await MoexService.isinOf(ticker);
+          await LogoService.fetchIfMissing(
+            ticker,
+            isin: isin,
+            companyName: names[ticker] ?? quote?.shortName,
+          );
+        }));
       }
     } finally {
       // Успешные логотипы уже закэшированы, а неудачные защищены своим
