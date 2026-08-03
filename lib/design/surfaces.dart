@@ -267,6 +267,7 @@ class StatTile extends StatelessWidget {
   final String Function(double)? formatter;
   final String? text;
   final String? hint;
+  final Color? hintColor;
   final VoidCallback? onTap;
   final bool compact;
 
@@ -279,6 +280,7 @@ class StatTile extends StatelessWidget {
     this.formatter,
     this.text,
     this.hint,
+    this.hintColor,
     this.onTap,
     this.compact = false,
   });
@@ -349,7 +351,7 @@ class StatTile extends StatelessWidget {
                     Expanded(
                       child: MarqueeText(
                         hint!,
-                        style: TextStyle(fontSize: 10.5, color: context.dim),
+                        style: TextStyle(fontSize: 10.5, color: hintColor ?? context.dim),
                       ),
                     )
                   else

@@ -460,7 +460,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
-          _appBar(context, ticker, name, sector, holding, pnlColor),
+          _appBar(context, ticker, name, sector, holding, quote, pnlColor),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
             sliver: SliverList(
@@ -476,6 +476,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             icon: Icons.inventory_2_outlined,
                             text: '${Fmt.qty(holding.qty)} шт',
                             color: AppColors.info,
+                            compact: true,
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -485,6 +486,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             icon: Icons.straighten_rounded,
                             text: Fmt.price(holding.avgCost, type: assetType),
                             color: AppColors.violet,
+                            compact: true,
                           ),
                         ),
                       ],
@@ -513,6 +515,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             icon: holding.pnlRub >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded,
                             text: Fmt.signedMoney(holding.pnlRub),
                             hint: Fmt.pct(holding.pnlPct),
+                            hintColor: pnlColor,
                             color: pnlColor,
                           ),
                         ),
@@ -658,6 +661,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     String name,
     String sector,
     HoldingInfo? holding,
+    MoexQuote? quote,
     Color pnlColor,
   ) {
     final accent = context.accent;
@@ -780,9 +784,40 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                           ),
                         ],
                       )
+                    else if (quote != null)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            child: RollingNumber(
+                              value: quote.price,
+                              formatter: (v) => Fmt.price(
+                                v,
+                                currency: '₽',
+                                isBond: quote.isBond,
+                              ),
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -1,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            'Текущая цена на бирже · нет в портфеле',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: context.dim,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      )
                     else
                       Text(
-                        'Бумаги нет в портфеле',
+                        'Текущая цена временно недоступна',
                         style: TextStyle(fontSize: 13, color: context.dim, fontWeight: FontWeight.w600),
                       ),
                   ],

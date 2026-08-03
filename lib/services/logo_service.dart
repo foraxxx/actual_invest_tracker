@@ -29,7 +29,7 @@ class LogoService {
     // После изменения источников и поиска по эмитенту старые недельные
     // запреты на повтор больше не актуальны. Сбрасываем их один раз.
     const retrySchemaKey = '#retry_schema';
-    const retrySchema = '2';
+    const retrySchema = '3';
     if (_box.get(retrySchemaKey) != retrySchema) {
       final failedKeys = _box.keys.where((key) => '$key'.startsWith(_triedPrefix)).toList();
       await _box.deleteAll(failedKeys);
@@ -158,9 +158,13 @@ class LogoService {
     if (bytes.length >= 12 &&
         String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
         String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP') return 'webp';
+    if (bytes.length >= 6 &&
+        (String.fromCharCodes(bytes.sublist(0, 6)) == 'GIF87a' ||
+            String.fromCharCodes(bytes.sublist(0, 6)) == 'GIF89a')) return 'gif';
     if (contentType.contains('png')) return 'png';
     if (contentType.contains('jpeg') || contentType.contains('jpg')) return 'jpg';
     if (contentType.contains('webp')) return 'webp';
+    if (contentType.contains('gif')) return 'gif';
     return null;
   }
 
@@ -274,6 +278,7 @@ class LogoService {
       final aliases = <String>{
         if (issuer?.managementCompany.isNotEmpty == true) issuer!.managementCompany,
         if (issuer?.shortName.isNotEmpty == true) issuer!.shortName,
+        if (issuer?.englishName.isNotEmpty == true) issuer!.englishName,
         if (issuer?.securityName.isNotEmpty == true) issuer!.securityName,
         if (companyName != null) companyName,
         if (issuerName != null) issuerName,

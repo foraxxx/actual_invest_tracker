@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:xml/xml.dart';
 
 import 'currency_service.dart';
 import 'moex_sync_service.dart';
@@ -99,6 +100,7 @@ class MoexIssuerInfo {
   final String securityName;
   final String securityType;
   final String managementCompany;
+  final String englishName;
 
   const MoexIssuerInfo({
     required this.id,
@@ -107,6 +109,7 @@ class MoexIssuerInfo {
     required this.securityName,
     required this.securityType,
     this.managementCompany = '',
+    this.englishName = '',
   });
 
   bool get isFund {
@@ -412,7 +415,44 @@ class MoexService {
         unavailableCurrencies.add(currency);
       }
     }
+
+    // Торги EUR/RUB на Мосбирже могут быть неактивны: PREVPRICE тогда
+    // содержит давно устаревшую цену. Для евро показываем ежедневный
+    // официальный курс Банка России. USD и CNY по-прежнему идут с Мосбиржи.
+    try {
+      final cbrEur = await _fetchCbrDailyRate('EUR');
+      if (cbrEur != null && cbrEur >= CurrencyService.minPlausibleRate) {
+        result['EUR'] = cbrEur;
+        unavailableCurrencies.remove('EUR');
+      }
+    } catch (_) {
+      // Если ЦБ временно недоступен, оставляем последнее полученное
+      // значение, чтобы сбой EUR не мешал обновлять USD и CNY.
+    }
     return result;
+  }
+
+  static Future<double?> _fetchCbrDailyRate(String currency) async {
+    final response = await http
+        .get(Uri.https('www.cbr.ru', '/scripts/XML_daily.asp'))
+        .timeout(const Duration(seconds: 12));
+    if (response.statusCode != 200) return null;
+
+    final document = XmlDocument.parse(response.body);
+    for (final valute in document.findAllElements('Valute')) {
+      final code = valute.getElement('CharCode')?.innerText.trim().toUpperCase();
+      if (code != currency.toUpperCase()) continue;
+      final nominal = double.tryParse(
+            valute.getElement('Nominal')?.innerText.trim().replaceAll(',', '.') ?? '',
+          ) ??
+          1;
+      final value = double.tryParse(
+        valute.getElement('Value')?.innerText.trim().replaceAll(',', '.') ?? '',
+      );
+      if (value == null || nominal <= 0) return null;
+      return value / nominal;
+    }
+    return null;
   }
 
   /// История закрытий: используется для графиков на вкладке «Биржа».
@@ -597,6 +637,10 @@ class MoexService {
         managementCompany: values['MANAGEMENT_COMPANY'] ??
             values['MANAGEMENTCOMPANY'] ??
             values['ASSET_MANAGER'] ??
+            '',
+        englishName: values['EMITENT_TITLE_EN'] ??
+            values['EMITENT_ENGLISH_NAME'] ??
+            values['LATNAME'] ??
             '',
       );
       _issuerInfoCache[key] = info;
