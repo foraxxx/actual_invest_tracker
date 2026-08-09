@@ -73,6 +73,7 @@ class BackupService {
                 'note': p.note,
                 'sector': p.sector,
                 'isSell': p.isSell,
+                'planId': p.planId,
               })
           .toList(),
       'incomes': StorageService.incomes
@@ -304,6 +305,7 @@ class BackupService {
         note: p['note'],
         sector: p['sector'],
         isSell: p['isSell'] ?? false,
+        planId: p['planId'],
       ));
     }
 

@@ -55,6 +55,13 @@ class Purchase extends HiveObject {
   @HiveField(11)
   bool isSell; // true — это продажа, false — покупка
 
+  /// Если сделка засчитана в план (галка "учитывать в плане" на форме) —
+  /// id этого плана. По нему PlanApplyService/StorageService пересчитывают
+  /// прогресс плана из фактических сделок, а не из отдельного счётчика —
+  /// поэтому удаление или правка сделки не расходится с прогрессом плана.
+  @HiveField(12)
+  String? planId;
+
   Purchase({
     required this.id,
     required this.date,
@@ -68,6 +75,7 @@ class Purchase extends HiveObject {
     this.note,
     this.sector,
     this.isSell = false,
+    this.planId,
   });
 
   /// Знаковое количество: продажа уменьшает позицию

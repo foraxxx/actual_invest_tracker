@@ -746,7 +746,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
       final price = totalPrice / qty;
       final fee = double.tryParse(pos.feeCtrl.text.replaceAll(',', '.')) ?? 0;
       final ticker = pos.tickerCtrl.text.toUpperCase();
-      await StorageService.addPurchase(Purchase(
+      final purchase = Purchase(
         id: const Uuid().v4(),
         date: date,
         ticker: ticker,
@@ -759,12 +759,19 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
         sector: pos.sector,
         isSell: pos.isSell,
         note: pos.noteCtrl.text.isEmpty ? null : pos.noteCtrl.text,
-      ));
+      );
+      await StorageService.addPurchase(purchase);
       // Цена сделки — реальное наблюдение цены на эту дату, поэтому сразу
       // фиксируем её и в истории ручных цен.
       await ManualPriceService.setAt(ticker, date, price);
       if (!pos.isSell && pos.applyToNearestPlan) {
-        await PlanApplyService.applyToNearestPlanThisMonth(ticker, qty, price);
+        final candidates = PlanApplyService.candidatesFor(ticker);
+        final planId = candidates.any((p) => p.id == pos.selectedPlanId)
+            ? pos.selectedPlanId
+            : (candidates.isNotEmpty ? candidates.first.id : null);
+        if (planId != null) {
+          await PlanApplyService.applyToPlan(purchase.id, planId);
+        }
       }
       added++;
     }
@@ -788,6 +795,9 @@ class _PositionDraft {
   String? sector;
   bool isSell = false;
   bool applyToNearestPlan = false;
+  /// Какой именно план из кандидатов выбран (если их несколько). null —
+  /// использовать ближайший по умолчанию.
+  String? selectedPlanId;
   int lotSize = 1;
 
   int get lots => int.tryParse(qtyCtrl.text) ?? 0;
@@ -1028,22 +1038,64 @@ class _PositionCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             AppTextField(controller: draft.noteCtrl, label: 'Заметка (необязательно)'),
-            if (!draft.isSell) ...[
-              const SizedBox(height: 4),
-              AppCheckRow(
-                value: draft.applyToNearestPlan,
-                title: 'Учитывать в ближайшем плане этого месяца',
-                subtitle: 'Запишет количество и среднюю цену в ближайший активный план '
-                    'этого тикера с датой в текущем месяце; при достижении цели план станет выполненным',
-                onChanged: (v) {
-                  draft.applyToNearestPlan = v;
-                  onChanged();
-                },
-              ),
-            ],
+            if (!draft.isSell && draft.tickerCtrl.text.isNotEmpty)
+              _planSection(context),
           ],
         ),
       ),
+    );
+  }
+
+  /// Галка "учитывать в плане" + (если планов-кандидатов несколько) выбор,
+  /// в какой именно план засчитать эту сделку.
+  Widget _planSection(BuildContext context) {
+    final candidates = PlanApplyService.candidatesFor(draft.tickerCtrl.text);
+    if (candidates.isEmpty) return const SizedBox.shrink();
+    final effectiveId = candidates.any((p) => p.id == draft.selectedPlanId)
+        ? draft.selectedPlanId
+        : candidates.first.id;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        AppCheckRow(
+          value: draft.applyToNearestPlan,
+          title: candidates.length > 1
+              ? 'Учитывать в одном из планов по этой бумаге'
+              : 'Учитывать в плане «${Fmt.qty(candidates.first.targetQuantity)} шт.'
+                  '${candidates.first.targetDate != null ? ' к ${Fmt.date(candidates.first.targetDate!)}' : ''}»',
+          subtitle: 'Запишет эту сделку в план; засчитываются планы этой бумаги без срока, '
+              'в этом месяце или уже просроченные. При достижении цели по количеству план '
+              'станет выполненным',
+          onChanged: (v) {
+            draft.applyToNearestPlan = v;
+            if (v) draft.selectedPlanId ??= effectiveId;
+            onChanged();
+          },
+        ),
+        if (candidates.length > 1 && draft.applyToNearestPlan) ...[
+          const SizedBox(height: 8),
+          AppDropdown<String>(
+            value: effectiveId,
+            label: 'В какой план засчитать',
+            items: candidates
+                .map((p) => DropdownMenuItem(
+                      value: p.id,
+                      child: Text(
+                        '${p.targetDate != null ? Fmt.date(p.targetDate!) : 'без срока'} · '
+                        '${Fmt.qty(p.targetQuantity)} шт.'
+                        '${p.targetPrice != null ? ' × ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
+                      ),
+                    ))
+                .toList(),
+            onChanged: (v) {
+              draft.selectedPlanId = v;
+              onChanged();
+            },
+          ),
+        ],
+      ],
     );
   }
 }

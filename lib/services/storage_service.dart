@@ -122,8 +122,52 @@ class StorageService {
   }
 
   static Future<void> deletePurchase(String id) async {
+    // Если удаляемая сделка была засчитана в план — пересчитываем прогресс
+    // плана ПОСЛЕ удаления, иначе он останется завышенным навсегда (старая
+    // версия просто копила счётчик и никогда не откатывала его).
+    final purchase = purchasesBox.get(id);
     await purchasesBox.delete(id);
+    if (purchase?.planId != null) {
+      await _recomputePlanProgress(purchase!.planId!);
+    }
     _bump();
+  }
+
+  /// Привязывает уже сохранённую сделку к плану (см. Purchase.planId) и
+  /// пересчитывает прогресс плана из фактических сделок. Используется вместо
+  /// прежнего ручного накопления счётчика — так удаление/правка сделки не
+  /// расходится с тем, что показывает план.
+  static Future<void> applyPurchaseToPlan(String purchaseId, String planId) async {
+    final purchase = purchasesBox.get(purchaseId);
+    if (purchase == null) return;
+    purchase.planId = planId;
+    await purchase.save();
+    await _recomputePlanProgress(planId);
+    _bump();
+  }
+
+  /// Пересчитывает purchasedQuantity/purchasedAvgPrice плана заново из всех
+  /// сделок с этим planId — а не прибавляет к текущему значению. Так прогресс
+  /// плана всегда соответствует реально существующим сделкам, даже если
+  /// какая-то из них была изменена или удалена позже.
+  static Future<void> _recomputePlanProgress(String planId) async {
+    final plan = plansBox.get(planId);
+    if (plan == null) return;
+    final linked = purchases.where((p) => p.planId == planId && !p.isSell).toList();
+    final qty = linked.fold(0.0, (s, p) => s + p.quantity);
+    final avg = qty > 0 ? linked.fold(0.0, (s, p) => s + p.quantity * p.pricePerUnit) / qty : 0.0;
+    plan.purchasedQuantity = qty;
+    plan.purchasedAvgPrice = avg;
+    if (plan.status == PlanStatus.active && plan.targetQuantity > 0 && qty >= plan.targetQuantity) {
+      plan.status = PlanStatus.done;
+    } else if (plan.status == PlanStatus.done && qty < plan.targetQuantity) {
+      // План был завершён автоматически по количеству — раз одна из сделок
+      // пропала, количество больше не достигнуто. Ручную отметку "Выполнен"
+      // (например, из-за исчерпанного бюджета при выросшей цене) это не
+      // трогает, если только сама отмеченная сделка не была удалена.
+      plan.status = PlanStatus.active;
+    }
+    await plan.save();
   }
 
   // --- Incomes ---

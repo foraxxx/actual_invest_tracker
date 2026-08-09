@@ -693,6 +693,27 @@ class _PlansScreenState extends State<PlansScreen> {
     final progress = p.targetQuantity <= 0 ? 0.0 : (p.purchasedQuantity / p.targetQuantity).clamp(0.0, 1.0);
     final color = _statusColor(p.status);
 
+    // Прогресс по деньгам может обогнать прогресс по штукам, если цена
+    // выросла с момента постановки плана — тогда на тот же бюджет купится
+    // меньше бумаг, чем задумывалось. Оба числа показываем рядом, а решение
+    // "хватит ли этого" оставляем пользователю — авто-порог тут был бы
+    // произвольным.
+    final spent = p.purchasedQuantity * p.purchasedAvgPrice;
+    final budget = p.estimatedTotal;
+    final moneyProgress = (budget != null && budget > 0) ? (spent / budget).clamp(0.0, 1.0) : null;
+    final remainingBudget = budget != null ? (budget - spent) : null;
+    final quote = MoexSyncService.marketSnapshot.value[p.ticker.toUpperCase()];
+    final cached = OnlinePriceService.get(p.ticker);
+    final currentPrice = quote?.price ?? cached?.price;
+    final lotSize = quote?.lotSize ?? cached?.lotSize ?? 1;
+    final cantAffordMore = p.status == PlanStatus.active &&
+        p.purchasedQuantity > 0 &&
+        p.purchasedQuantity < p.targetQuantity &&
+        remainingBudget != null &&
+        currentPrice != null &&
+        currentPrice > 0 &&
+        remainingBudget < currentPrice * lotSize;
+
     return Dismissible(
       key: Key(p.id),
       direction: DismissDirection.endToStart,
@@ -788,6 +809,23 @@ class _PlansScreenState extends State<PlansScreen> {
                     ),
                   ],
                 ),
+                if (moneyProgress != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'по деньгам: ${Fmt.money(spent)} из ~${Fmt.money(budget!)} (${(moneyProgress * 100).round()}%)',
+                    style: TextStyle(fontSize: 10.3, color: context.dim),
+                  ),
+                ],
+                if (cantAffordMore) ...[
+                  const SizedBox(height: 6),
+                  InfoBanner(
+                    icon: Icons.info_outline_rounded,
+                    color: AppColors.warning,
+                    text: 'По текущей цене (${Fmt.price(currentPrice!, type: p.type)}) на оставшийся '
+                        'бюджет плана лот уже не купить — если это устраивает, отметьте план '
+                        'выполненным вручную',
+                  ),
+                ],
               ],
               Padding(
                 padding: const EdgeInsets.only(top: 8),

@@ -11,6 +11,7 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../data/securities.dart';
 import '../models/income.dart';
+import '../models/plan.dart';
 import '../models/purchase.dart';
 import '../services/analytics_service.dart';
 import '../services/currency_service.dart';
@@ -1265,9 +1266,12 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final feeCtrl = TextEditingController(text: '0');
     final noteCtrl = TextEditingController();
     DateTime date = DateTime.now();
-    // Галка появляется только если по бумаге есть план на этот месяц.
-    final hasPlan = !isSell && PlanApplyService.hasPlanThisMonth(ticker);
+    // Галка появляется только если по бумаге есть план-кандидат (без срока,
+    // в этом месяце или просроченный).
+    final planCandidates = isSell ? const <Plan>[] : PlanApplyService.candidatesFor(ticker);
+    final hasPlan = planCandidates.isNotEmpty;
     bool applyToPlan = hasPlan;
+    String? selectedPlanId = planCandidates.isNotEmpty ? planCandidates.first.id : null;
 
     await showAppSheet(
       context: context,
@@ -1392,9 +1396,32 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   const SizedBox(height: 12),
                   AppCheckRow(
                     value: applyToPlan,
-                    title: 'Учитывать в ближайшем плане этого месяца',
+                    title: planCandidates.length > 1
+                        ? 'Учитывать в одном из планов по этой бумаге'
+                        : 'Учитывать в плане «${Fmt.qty(planCandidates.first.targetQuantity)} шт.'
+                            '${planCandidates.first.targetDate != null ? ' к ${Fmt.date(planCandidates.first.targetDate!)}' : ''}»',
                     onChanged: (v) => setSheetState(() => applyToPlan = v),
                   ),
+                  if (planCandidates.length > 1 && applyToPlan) ...[
+                    const SizedBox(height: 8),
+                    AppDropdown<String>(
+                      value: planCandidates.any((p) => p.id == selectedPlanId)
+                          ? selectedPlanId
+                          : planCandidates.first.id,
+                      label: 'В какой план засчитать',
+                      items: planCandidates
+                          .map((p) => DropdownMenuItem(
+                                value: p.id,
+                                child: Text(
+                                  '${p.targetDate != null ? Fmt.date(p.targetDate!) : 'без срока'} · '
+                                  '${Fmt.qty(p.targetQuantity)} шт.'
+                                  '${p.targetPrice != null ? ' × ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setSheetState(() => selectedPlanId = v),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 12),
                 AppTextField(controller: noteCtrl, label: 'Заметка (необязательно)'),
@@ -1412,7 +1439,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     final q = enteredLots * lotSize.toDouble();
                     final pr = enteredTotal / q;
                     final f = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
-                    await StorageService.addPurchase(Purchase(
+                    final purchase = Purchase(
                       id: const Uuid().v4(),
                       date: date,
                       ticker: ticker,
@@ -1425,11 +1452,17 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       sector: sector,
                       isSell: isSell,
                       note: noteCtrl.text.isEmpty ? null : noteCtrl.text,
-                    ));
+                    );
+                    await StorageService.addPurchase(purchase);
                     // Цена сделки — реальное наблюдение цены на эту дату.
                     await ManualPriceService.setAt(ticker, date, pr);
                     if (applyToPlan && !isSell) {
-                      await PlanApplyService.applyToNearestPlanThisMonth(ticker, q, pr);
+                      final planId = planCandidates.any((p) => p.id == selectedPlanId)
+                          ? selectedPlanId
+                          : (planCandidates.isNotEmpty ? planCandidates.first.id : null);
+                      if (planId != null) {
+                        await PlanApplyService.applyToPlan(purchase.id, planId);
+                      }
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
                     if (mounted) setState(() {});
