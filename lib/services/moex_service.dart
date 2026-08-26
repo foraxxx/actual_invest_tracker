@@ -130,12 +130,18 @@ class MoexPayout {
   final String kind;
   final String? extra;
 
+  /// Дату биржа знает не всегда: дивиденд уже рекомендован советом директоров,
+  /// а дата отсечки ещё не назначена. Такие выплаты показываются как
+  /// ожидаемые, но в расчёты по годам не идут — года у них фактически нет.
+  final bool dateKnown;
+
   const MoexPayout({
     required this.date,
     required this.amount,
     required this.currency,
     required this.kind,
     this.extra,
+    this.dateKnown = true,
   });
 
   bool get isFuture => date.isAfter(DateTime.now());
@@ -774,21 +780,53 @@ class MoexService {
       return result;
     }
 
-    final uri = Uri.https(_host, '/iss/securities/$upper/dividends.json', {
-      'iss.meta': 'off',
-      'iss.only': 'dividends',
-      'dividends.columns': 'registryclosedate,value,currencyid',
-    });
-    final result = <MoexPayout>[
-      for (final r in _table(await _getJson(uri), 'dividends'))
-        if (DateTime.tryParse('${r['registryclosedate']}') != null)
-          MoexPayout(
-            date: DateTime.parse('${r['registryclosedate']}'),
-            amount: _toDouble(r['value']) ?? 0,
-            currency: '${r['currencyid'] ?? 'RUB'}',
-            kind: 'Дивиденд',
-          ),
-    ];
+    // Запрос делается дважды. Сначала — с явным списком колонок, он экономит
+    // трафик. Если ответ пустой, повторяем БЕЗ фильтра колонок: биржа время от
+    // времени переименовывает поля, и тогда отфильтрованный запрос возвращает
+    // пустую таблицу вместо данных, а история дивидендов молча исчезает из
+    // карточки. Полный ответ по одной бумаге весит немного.
+    var rows = _table(
+      await _getJson(Uri.https(_host, '/iss/securities/$upper/dividends.json', {
+        'iss.meta': 'off',
+        'iss.only': 'dividends',
+        'dividends.columns': 'registryclosedate,value,currencyid',
+      })),
+      'dividends',
+    );
+    if (rows.isEmpty) {
+      rows = _table(
+        await _getJson(Uri.https(_host, '/iss/securities/$upper/dividends.json', {
+          'iss.meta': 'off',
+          'iss.only': 'dividends',
+        })),
+        'dividends',
+      );
+    }
+
+    final result = <MoexPayout>[];
+    for (final r in rows) {
+      // Колонки читаем без учёта регистра: в разных ответах ISS встречается и
+      // registryclosedate, и REGISTRYCLOSEDATE.
+      final row = <String, dynamic>{
+        for (final e in r.entries) e.key.toLowerCase(): e.value,
+      };
+      final amount = _toDouble(row['value']) ?? 0;
+      final date = DateTime.tryParse('${row['registryclosedate']}');
+      // Совсем пустая строка (ни суммы, ни даты) в списке ни к чему.
+      if (amount <= 0 && date == null) continue;
+      result.add(MoexPayout(
+        // Совет директоров рекомендует дивиденд задолго до того, как биржа
+        // проставит дату отсечки. Раньше такие строки отбрасывались целиком, и
+        // объявленная выплата просто не появлялась. Теперь она показывается
+        // как ожидаемая, с пометкой вместо даты.
+        date: date ?? DateTime.now().add(const Duration(days: 365 * 5)),
+        amount: amount,
+        currency: '${row['currencyid'] ?? 'RUB'}',
+        kind: 'Дивиденд',
+        extra: date == null ? 'дата отсечки не назначена' : null,
+        dateKnown: date != null,
+      ));
+    }
     result.sort((a, b) => b.date.compareTo(a.date));
     return result;
   }

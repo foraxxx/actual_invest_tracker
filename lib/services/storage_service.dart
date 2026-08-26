@@ -85,7 +85,26 @@ class StorageService {
   /// (иначе они оставались бы висеть открытыми до конца жизни приложения).
   /// Используется страницей со списком портфелей, чтобы посчитать
   /// стоимость/прибыль КАЖДОГО портфеля, включая неактивные сейчас.
+  ///
+  /// Чтения выстроены в очередь. Причина: бокс здесь открывается и тут же
+  /// закрывается, а Hive на повторный openBox отдаёт ТОТ ЖЕ экземпляр. Если
+  /// два чтения одного портфеля идут одновременно, первое закрывает бокс,
+  /// пока второе ещё читает, и всё падает на «Box has already been closed».
+  /// Список портфелей и обновление котировок читают данные независимо друг от
+  /// друга, так что пересечение здесь — обычное дело, а не редкий случай.
   static Future<({List<Purchase> purchases, List<Income> incomes})> readDataFor(
+    String portfolioId,
+  ) {
+    final next = _readQueue.then((_) => _readDataForNow(portfolioId));
+    // В очереди держим только факт завершения, без результата и без ошибки:
+    // иначе одно неудачное чтение обрушило бы все последующие.
+    _readQueue = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  static Future<void> _readQueue = Future.value();
+
+  static Future<({List<Purchase> purchases, List<Income> incomes})> _readDataForNow(
     String portfolioId,
   ) async {
     if (portfolioId == PortfolioService.activeId) {
@@ -97,6 +116,24 @@ class StorageService {
     final result = (purchases: pBox.values.toList(), incomes: iBox.values.toList());
     await pBox.close();
     await iBox.close();
+    return result;
+  }
+
+  /// Тикеры из ВСЕХ портфелей сразу, а не только из активного.
+  ///
+  /// Нужно для обновления котировок: стоимость неактивного портфеля на
+  /// стартовом экране считается по кэшу цен, и если бумаги этого портфеля
+  /// никогда не запрашивались у биржи, там навсегда останется цена с того
+  /// момента, когда портфель последний раз был активным.
+  static Future<Set<String>> allPortfolioTickers() async {
+    final result = <String>{};
+    for (final meta in PortfolioService.list) {
+      final data = await readDataFor(meta.id);
+      for (final purchase in data.purchases) {
+        final ticker = purchase.ticker.trim().toUpperCase();
+        if (ticker.isNotEmpty) result.add(ticker);
+      }
+    }
     return result;
   }
 

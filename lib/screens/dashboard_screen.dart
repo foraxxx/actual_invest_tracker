@@ -497,24 +497,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SectionTitle(title: 'Избранное', subtitle: 'Быстрый доступ к бумагам'),
+                // Тикер, а не название: он короткий, одинаковой длины и именно
+                // им бумага называется везде в приложении. Полные названия
+                // расползались на две строки и заставляли держать широкие
+                // карточки ради двух-трёх бумаг в ряду.
                 SizedBox(
-                  height: 84,
+                  height: 62,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
                     itemCount: favs.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
                     itemBuilder: (context, i) {
                       final t = favs[i];
-                      final name = _favoriteName(t);
                       return Pressable(
                         onTap: () => Navigator.push(
                           context,
                           AppPageRoute(builder: (_) => TickerDetailScreen(ticker: t)),
                         ),
                         child: Container(
-                          width: 112,
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                          width: 62,
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                           decoration: BoxDecoration(
                             color: context.isDark ? Colors.white.withOpacity(0.04) : Colors.white,
                             borderRadius: AppRadius.all(AppRadius.md),
@@ -523,14 +526,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              TickerAvatar(ticker: t, size: 30, glow: false),
-                              const SizedBox(height: 5),
-                              Text(
-                                name,
-                                maxLines: 2,
+                              TickerAvatar(ticker: t, size: 26, glow: false),
+                              const SizedBox(height: 4),
+                              // Длинные тикеры облигаций (RU000A...) не режем
+                              // многоточием — шрифт ужимается, но код виден
+                              // целиком, иначе двух бумаг не различить.
+                              AdaptiveSingleLineText(
+                                t.toUpperCase(),
                                 textAlign: TextAlign.center,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
                               ),
                             ],
                           ),
@@ -1209,20 +1213,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
     return ticker;
-  }
-
-  String _favoriteName(String ticker) {
-    final holdingName = _holdingName(ticker);
-    if (holdingName != ticker) return holdingName;
-
-    for (final income in StorageService.incomes.reversed) {
-      if (income.ticker.toUpperCase() == ticker.toUpperCase() && income.name.trim().isNotEmpty) {
-        return income.name.trim();
-      }
-    }
-
-    final onlineName = OnlinePriceService.get(ticker)?.shortName.trim();
-    return onlineName == null || onlineName.isEmpty ? ticker : onlineName;
   }
 
   Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {

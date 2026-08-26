@@ -39,6 +39,8 @@ class MoexSyncService with WidgetsBindingObserver {
   bool _fullMarketLoadedForSession = false;
   bool _fullRefreshPending = false;
   Completer<void>? _activeRefresh;
+  bool _allPortfoliosBusy = false;
+  Completer<void>? _allPortfoliosRefresh;
 
   /// Полный список бумаг с биржи, обновляется тем же циклом. Нужен экрану
   /// «Биржа», чтобы не ходить в сеть отдельно.
@@ -55,6 +57,9 @@ class MoexSyncService with WidgetsBindingObserver {
     _restartTimer();
     // Первое обновление — сразу, чтобы не ждать целый интервал.
     unawaited(refreshNow());
+    // И один полный обход по всем портфелям: иначе стартовый экран покажет
+    // неактивные портфели по ценам с прошлого захода в них.
+    unawaited(refreshAllPortfolios());
   }
 
   void stop() {
@@ -97,6 +102,43 @@ class MoexSyncService with WidgetsBindingObserver {
     }
   }
 
+  /// Обновляет цены бумаг ИЗ ВСЕХ портфелей, а не только из активного.
+  ///
+  /// Обычный цикл обновления намеренно ограничен активным портфелем и
+  /// избранным: запрос идёт по каждой бумаге отдельно, и тянуть все портфели
+  /// каждые несколько секунд означало бы кратный рост трафика. Но тогда
+  /// стоимость неактивных портфелей на стартовом экране остаётся такой, какой
+  /// была при последнем заходе в них. Поэтому полный обход делается точечно:
+  /// при запуске приложения и по жесту обновления на списке портфелей.
+  Future<void> refreshAllPortfolios() async {
+    if (!OnlineSettingsService.enabled) return;
+    if (_allPortfoliosBusy) {
+      // Уже идёт такой же обход — ждём его вместо второго параллельного.
+      await _allPortfoliosRefresh?.future;
+      return;
+    }
+    _allPortfoliosBusy = true;
+    final completer = Completer<void>();
+    _allPortfoliosRefresh = completer;
+    refreshing.value = true;
+    try {
+      final tickers = await StorageService.allPortfolioTickers();
+      if (tickers.isEmpty) return;
+      final quotes = await MoexService.fetchQuotes(tickers: tickers);
+      if (quotes.isEmpty) return;
+      marketSnapshot.value = {...marketSnapshot.value, ...quotes};
+      await OnlinePriceService.saveAll(quotes);
+    } catch (_) {
+      // Нет связи — на экране останутся последние известные цены. Портить
+      // из-за этого запуск приложения ошибкой не стоит.
+    } finally {
+      _allPortfoliosBusy = false;
+      refreshing.value = _busy;
+      completer.complete();
+      _allPortfoliosRefresh = null;
+    }
+  }
+
   /// Точечно получает последнюю доступную котировку выбранной бумаги.
   /// Используется формами, которым цена нужна сразу: запрос разрешён и вне
   /// торгов, поскольку MOEX тогда возвращает последнюю сделку/цену закрытия.
@@ -121,6 +163,9 @@ class MoexSyncService with WidgetsBindingObserver {
       if (OnlineSettingsService.enabled) {
         _restartTimer();
         unawaited(refreshNow());
+        // Возврат из фона — тот же «вход в приложение»: список портфелей
+        // должен показать актуальные суммы, а не те, что были при сворачивании.
+        unawaited(refreshAllPortfolios());
       }
     } else {
       // Свернули приложение — тикать в фоне незачем.

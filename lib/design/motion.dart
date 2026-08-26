@@ -171,6 +171,7 @@ class RollingNumber extends StatelessWidget {
   final TextStyle? style;
   final Duration duration;
   final TextAlign? textAlign;
+  final AlignmentGeometry? alignment;
 
   const RollingNumber({
     super.key,
@@ -179,6 +180,7 @@ class RollingNumber extends StatelessWidget {
     this.style,
     this.duration = const Duration(milliseconds: 850),
     this.textAlign,
+    this.alignment,
   });
 
   @override
@@ -193,6 +195,7 @@ class RollingNumber extends StatelessWidget {
         formatter(animated),
         style: style,
         textAlign: textAlign,
+        alignment: alignment,
       ),
     );
   }
@@ -205,15 +208,36 @@ class AdaptiveSingleLineText extends StatelessWidget {
   final String text;
   final TextStyle? style;
   final TextAlign? textAlign;
-  final AlignmentGeometry alignment;
+
+  /// Куда прижимать текст. Если не задано явно — берётся из [textAlign].
+  ///
+  /// Так сделано потому, что внутри FittedBox сам по себе textAlign ничего не
+  /// решает: текст там имеет собственную ширину по содержимому, и положение
+  /// в отведённой полосе задаёт ТОЛЬКО alignment. Раньше alignment всегда был
+  /// centerLeft, и любое центрированное число (крупные суммы в «Итогах»)
+  /// прижималось к левому краю, сколько бы TextAlign.center ему ни передавали.
+  final AlignmentGeometry? alignment;
 
   const AdaptiveSingleLineText(
     this.text, {
     super.key,
     this.style,
     this.textAlign,
-    this.alignment = Alignment.centerLeft,
+    this.alignment,
   });
+
+  AlignmentGeometry get _effectiveAlignment {
+    if (alignment != null) return alignment!;
+    switch (textAlign) {
+      case TextAlign.center:
+        return Alignment.center;
+      case TextAlign.right:
+      case TextAlign.end:
+        return Alignment.centerRight;
+      default:
+        return Alignment.centerLeft;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,7 +255,7 @@ class AdaptiveSingleLineText extends StatelessWidget {
           width: constraints.maxWidth,
           child: FittedBox(
             fit: BoxFit.scaleDown,
-            alignment: alignment,
+            alignment: _effectiveAlignment,
             child: child,
           ),
         );

@@ -50,6 +50,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
   /// Дивиденды или купоны с биржи и состояние их разворачивания.
   List<MoexPayout> _payouts = const [];
   bool _payoutsLoading = false;
+  String? _payoutsError;
   bool _upcomingExpanded = false;
   bool _pastExpanded = false;
 
@@ -178,7 +179,10 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       MoexSyncService.marketSnapshot.value[widget.ticker.toUpperCase()]?.isBond ?? false;
 
   Future<void> _loadPayouts() async {
-    setState(() => _payoutsLoading = true);
+    setState(() {
+      _payoutsLoading = true;
+      _payoutsError = null;
+    });
     final quote = MoexSyncService.marketSnapshot.value[widget.ticker.toUpperCase()];
     try {
       final list = await MoexService.fetchPayouts(widget.ticker, isBond: quote?.isBond ?? false);
@@ -187,9 +191,15 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         _payouts = list;
         _payoutsLoading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() => _payoutsLoading = false);
+      // Раньше ошибка гасилась молча, и «биржа не ответила» выглядело точно так
+      // же, как «выплат нет» — пустым местом. Отличить одно от другого было
+      // невозможно, а повторить попытку, не выходя из карточки, — тем более.
+      setState(() {
+        _payoutsLoading = false;
+        _payoutsError = e is MoexException ? e.message : 'не удалось загрузить выплаты';
+      });
     }
   }
 
@@ -201,7 +211,43 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
       );
     }
-    if (_payouts.isEmpty) return const SizedBox.shrink();
+    if (_payouts.isEmpty) {
+      final isBondNow = _isBond;
+      return AppCard(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Row(
+          children: [
+            Icon(
+              _payoutsError != null ? Icons.cloud_off_rounded : Icons.info_outline_rounded,
+              size: 18,
+              color: context.dim,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _payoutsError != null
+                    ? '${isBondNow ? "Купоны" : "Дивиденды"} не загрузились: $_payoutsError'
+                    : isBondNow
+                        ? 'Биржа не отдаёт график купонов по этому выпуску'
+                        : 'Биржа не отдаёт историю дивидендов по этой бумаге. '
+                            'Свежие выплаты она вносит с задержкой.',
+                style: TextStyle(fontSize: 11.5, color: context.dim, height: 1.35),
+              ),
+            ),
+            if (_payoutsError != null) ...[
+              const SizedBox(width: 8),
+              Pressable(
+                onTap: _loadPayouts,
+                child: Text(
+                  'Повторить',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: context.accent),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
 
     final upcoming = _payouts.where((p) => p.isFuture).toList().reversed.toList();
     final past = _payouts.where((p) => !p.isFuture).toList();
@@ -334,7 +380,12 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           ),
           SizedBox(
             width: 82,
-            child: Text(Fmt.date(p.date), style: TextStyle(fontSize: 11.5, color: context.dim)),
+            child: Text(
+              // У выплаты без назначенной отсечки внутри лежит служебная дата
+              // далеко в будущем — показывать её нельзя.
+              p.dateKnown ? Fmt.date(p.date) : 'дата ?',
+              style: TextStyle(fontSize: 11.5, color: context.dim),
+            ),
           ),
           Expanded(
             child: Text(

@@ -6,7 +6,11 @@ import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
+import 'dart:async';
+
 import '../services/analytics_service.dart';
+import '../services/moex_sync_service.dart';
+import '../services/online_price_service.dart';
 import '../services/portfolio_service.dart';
 import '../services/storage_service.dart';
 import 'home_screen.dart';
@@ -30,34 +34,66 @@ class _PortfolioStat {
 class _PortfoliosScreenState extends State<PortfoliosScreen> {
   Map<String, _PortfolioStat> _stats = {};
   bool _loading = true;
+  bool _reloading = false;
+  bool _reloadPending = false;
 
   @override
   void initState() {
     super.initState();
     PortfolioService.version.addListener(_onPortfoliosChanged);
+    // Стоимость портфеля считается по кэшу котировок. Пока цены грузятся,
+    // экран должен пересчитаться сам — иначе суммы останутся вчерашними до
+    // тех пор, пока пользователь не зайдёт в портфель и не выйдет обратно.
+    OnlinePriceService.version.addListener(_onPricesChanged);
     _load();
+    // Обновление всех портфелей сразу при входе: цены неактивных портфелей
+    // обычный цикл не запрашивает.
+    unawaited(MoexSyncService.instance.refreshAllPortfolios());
   }
 
   @override
   void dispose() {
     PortfolioService.version.removeListener(_onPortfoliosChanged);
+    OnlinePriceService.version.removeListener(_onPricesChanged);
     super.dispose();
   }
 
   void _onPortfoliosChanged() => _load();
 
+  void _onPricesChanged() => _load();
+
   Future<void> _load() async {
-    final stats = <String, _PortfolioStat>{};
-    for (final p in PortfolioService.list) {
-      final data = await StorageService.readDataFor(p.id);
-      final summary = AnalyticsService.summaryFor(purchases: data.purchases, incomes: data.incomes);
-      stats[p.id] = _PortfolioStat(valueRub: summary.valueRub, profitRub: summary.profitRub);
+    // Пересчёт запускается и по приходу цен, и по изменению списка портфелей —
+    // два одновременных прохода по боксам друг другу мешают.
+    if (_reloading) {
+      _reloadPending = true;
+      return;
     }
-    if (!mounted) return;
-    setState(() {
-      _stats = stats;
-      _loading = false;
-    });
+    _reloading = true;
+    try {
+      final stats = <String, _PortfolioStat>{};
+      for (final p in PortfolioService.list) {
+        final data = await StorageService.readDataFor(p.id);
+        final summary = AnalyticsService.summaryFor(purchases: data.purchases, incomes: data.incomes);
+        stats[p.id] = _PortfolioStat(valueRub: summary.valueRub, profitRub: summary.profitRub);
+      }
+      if (!mounted) return;
+      setState(() {
+        _stats = stats;
+        _loading = false;
+      });
+    } finally {
+      _reloading = false;
+      if (_reloadPending) {
+        _reloadPending = false;
+        unawaited(_load());
+      }
+    }
+  }
+
+  Future<void> _pullToRefresh() async {
+    await MoexSyncService.instance.refreshAllPortfolios();
+    await _load();
   }
 
   Future<void> _openPortfolio(PortfolioMeta p) async {
@@ -125,7 +161,9 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                     onPressed: _createDialog,
                   ),
                 )
-              : ListView(
+              : RefreshIndicator(
+                  onRefresh: _pullToRefresh,
+                  child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                   children: [
@@ -214,6 +252,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
 
                     const SizedBox(height: kListBottomPadding),
                   ],
+                ),
                 ),
         ),
       ),

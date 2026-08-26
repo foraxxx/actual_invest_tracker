@@ -158,6 +158,12 @@ class PayoutForecastService {
     return (value: value, source: 'купоны $perYearLabel');
   }
 
+  /// Тот же расчёт, что используется внутри, но доступный тестам: логика
+  /// денежная, и проверять её хочется без Hive, сети и позиции в портфеле.
+  @visibleForTesting
+  static ({double value, String source}) dividendPerUnit(List<MoexPayout> dividends) =>
+      _sharePerUnit(dividends);
+
   /// Дивиденды: считаем по годовой динамике самой бумаги.
   ///
   /// Раньше бралась сумма за последние 365 дней, а если её не было — среднее
@@ -176,9 +182,26 @@ class PayoutForecastService {
     final byYear = <int, double>{};
     for (final d in dividends) {
       if (d.amount <= 0) continue;
+      // Без даты отсечки год выплаты неизвестен — в годовую статистику такую
+      // строку класть нельзя.
+      if (!d.dateKnown) continue;
+      // Текущий год ещё не закончился: часть выплат за него могла быть, а
+      // часть — нет. Если брать его как полный год, база прогноза окажется
+      // заниженной, и та же неполная сумма ещё раз занизит темп роста —
+      // ошибка складывается дважды. Считаем только по завершённым годам, а
+      // уже объявленное за текущий год учитывается ниже, через announced.
+      if (d.date.year >= now.year) continue;
       byYear[d.date.year] = (byYear[d.date.year] ?? 0) + d.amount;
     }
-    if (byYear.isEmpty) return (value: 0, source: '');
+    if (byYear.isEmpty) {
+      // Единственная известная выплата — в текущем году (бумага платит первый
+      // год). Прогноз строим прямо по ней, без расчёта темпа.
+      final thisYear = dividends
+          .where((d) => d.dateKnown && d.amount > 0 && d.date.year == now.year)
+          .fold(0.0, (sum, d) => sum + d.amount);
+      if (thisYear <= 0) return (value: 0, source: '');
+      return (value: thisYear, source: 'по прошлой выплате');
+    }
 
     final years = byYear.keys.toList()..sort();
     final lastYear = years.last;
