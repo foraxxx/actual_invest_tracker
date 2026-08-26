@@ -289,7 +289,17 @@ class BackupService {
       final quantity = (p['quantity'] as num).toDouble();
       final price = (p['pricePerUnit'] as num).toDouble();
       final fee = (p['fee'] as num?)?.toDouble() ?? 0;
-      if (quantity <= 0 || price < 0 || fee < 0) {
+      // Комиссия здесь — не только расход, а поправка к сумме сделки: при
+      // покупке облигации в неё добавляется уплаченный НКД, при продаже —
+      // ВЫЧИТАЕТСЯ полученный (см. broker_import_service: `commissions - nkd`).
+      // Дальше по коду сделка считается как `qty * price - fee` для продажи и
+      // `qty * price + fee` для покупки, поэтому отрицательное значение здесь
+      // законно и означает, что НКД превысил комиссии.
+      //
+      // Раньше проверка требовала `fee >= 0` и роняла импорт собственного
+      // бэкапа приложения на первой же продаже ОФЗ: экспорт такие сделки
+      // сохранял, а импорт объявлял файл некорректным.
+      if (quantity <= 0 || price < 0 || !quantity.isFinite || !price.isFinite || !fee.isFinite) {
         throw FormatException('Некорректная сделка ${p['ticker'] ?? ''}');
       }
       importedPurchases.add(Purchase(
