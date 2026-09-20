@@ -22,6 +22,7 @@ import '../services/moex_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_settings_service.dart';
 import '../services/plan_apply_service.dart';
+import '../services/price_sanity_service.dart';
 import '../services/payout_forecast_service.dart';
 import '../services/sector_service.dart';
 import '../services/storage_service.dart';
@@ -552,12 +553,15 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       children: [
                         Expanded(
                           child: StatTile(
+                            // Цена больше не редактируется вручную: раньше
+                            // отсюда можно было записать произвольное число,
+                            // и оно становилось рыночной оценкой всей позиции
+                            // в истории портфеля.
                             label: holding.hasManualPrice ? 'Текущая цена' : 'Последняя цена',
-                            icon: Icons.edit_rounded,
+                            icon: Icons.sell_rounded,
                             text: Fmt.price(holding.displayPrice, type: assetType),
-                            hint: 'нажмите, чтобы уточнить',
+                            hint: holding.hasManualPrice ? 'по последней сделке' : 'по данным биржи',
                             color: context.accent,
-                            onTap: () => _showSetPriceDialog(context, ticker, holding),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -1443,6 +1447,17 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     style: TextStyle(fontSize: 11, color: context.dim),
                   ),
                 ],
+                // Предупреждение появляется прямо во время ввода: заметить
+                // опечатку здесь несопоставимо проще, чем потом разбираться,
+                // почему график за прошлый месяц провалился.
+                if (_suspiciousPrice(ticker, qtyCtrl.text, priceCtrl.text, lotSize) != null) ...[
+                  const SizedBox(height: 10),
+                  InfoBanner(
+                    icon: Icons.warning_amber_rounded,
+                    color: AppColors.warning,
+                    text: _suspiciousPrice(ticker, qtyCtrl.text, priceCtrl.text, lotSize)!,
+                  ),
+                ],
                 if (hasPlan) ...[
                   const SizedBox(height: 12),
                   AppCheckRow(
@@ -1505,8 +1520,13 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       note: noteCtrl.text.isEmpty ? null : noteCtrl.text,
                     );
                     await StorageService.addPurchase(purchase);
-                    // Цена сделки — реальное наблюдение цены на эту дату.
-                    await ManualPriceService.setAt(ticker, date, pr);
+                    // Цена сделки — наблюдение рыночной цены на эту дату, но
+                    // только если она правдоподобна. Подозрительная цена
+                    // остаётся внутри сделки и не переоценивает всю позицию
+                    // в истории портфеля.
+                    if (PriceSanityService.canRecordAsMarketPrice(ticker, pr)) {
+                      await ManualPriceService.setAt(ticker, date, pr);
+                    }
                     if (applyToPlan && !isSell) {
                       final planId = planCandidates.any((p) => p.id == selectedPlanId)
                           ? selectedPlanId
@@ -1572,8 +1592,23 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     );
   }
 
-  AssetType _assetTypeFor(String ticker) {
-    for (final purchase in StorageService.purchases.reversed) {
+  /// Текст предупреждения, если введённая цена за одну бумагу слишком далека
+  /// от рыночной. null — когда всё в порядке или сравнивать не с чем.
+  ///
+  /// В поле вводится сумма за лот, поэтому цену за бумагу приходится получать
+  /// делением — как и при сохранении сделки.
+  String? _suspiciousPrice(String ticker, String qtyText, String priceText, int lotSize) {
+    final lots = int.tryParse(qtyText) ?? 0;
+    final qty = lots * lotSize.toDouble();
+    final total = double.tryParse(priceText.replaceAll(',', '.'));
+    if (qty <= 0 || total == null || total <= 0) return null;
+    final perUnit = total / qty;
+    final market = PriceSanityService.knownPrice(ticker);
+    if (!PriceSanityService.isSuspicious(perUnit, market)) return null;
+    return PriceSanityService.warning(perUnit, market!);
+  }
+
+  AssetType _assetTypeFor(String ticker) {    for (final purchase in StorageService.purchases.reversed) {
       if (purchase.ticker.toUpperCase() == ticker.toUpperCase()) {
         return purchase.type;
       }
@@ -1583,58 +1618,4 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         : AssetType.stock;
   }
 
-  Future<void> _showSetPriceDialog(BuildContext context, String ticker, HoldingInfo holding) async {
-    final ctrl = TextEditingController(
-      text: holding.hasManualPrice
-          ? Fmt.priceInput(holding.displayPrice, type: _assetTypeFor(ticker))
-          : '',
-    );
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Текущая цена'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Приложение офлайн и не тянет котировки, поэтому по умолчанию берётся цена последней '
-              'сделки. Укажите актуальную цену вручную — стоимость портфеля и графики будут пересчитаны.',
-              style: TextStyle(color: context.dim, fontSize: 12, height: 1.4),
-            ),
-            const SizedBox(height: 14),
-            AppTextField(
-              controller: ctrl,
-              label: 'Цена, ${holding.currency}',
-              number: true,
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          if (holding.hasManualPrice)
-            TextButton(
-              onPressed: () async {
-                await ManualPriceService.clear(ticker);
-                if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) setState(() {});
-              },
-              child: const Text('Сбросить'),
-            ),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () async {
-              final price = double.tryParse(ctrl.text.replaceAll(',', '.'));
-              if (price == null || price <= 0) return;
-              await ManualPriceService.set(ticker, price);
-              if (ctx.mounted) Navigator.pop(ctx);
-              if (mounted) setState(() {});
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-  }
 }

@@ -16,7 +16,16 @@ import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import 'home_screen.dart';
 
-enum _DatePreset { all, thisMonth, next3Months, overdue, custom }
+/// Период, за который показываются планы. Отсчитывается от сегодняшнего дня
+/// вперёд: планы — это будущие покупки, поэтому «месяц» здесь означает
+/// «ближайший месяц», а не «прошедший».
+enum _DatePreset { month, threeMonths, year, all, custom }
+
+/// Отбор по состоянию плана.
+///
+/// «Просрочено» — не поле модели, а вычисление: срок прошёл, а план всё ещё
+/// активен. Поэтому фильтр отдельный от [PlanStatus], а не его продолжение.
+enum _StatusFilter { all, overdue, pending, done }
 
 /// Сумма планов по одному тикеру за выбранный период — для сводной карточки
 /// сверху экрана: объединяет планы с разными датами, если они об одной бумаге.
@@ -29,6 +38,10 @@ class _TickerPlanSummary {
   final int planCount;
   final bool allHavePrice;
 
+  /// Сколько бумаг уже куплено в счёт этих планов и на какую сумму.
+  final double purchasedQty;
+  final double purchasedMoney;
+
   _TickerPlanSummary({
     required this.ticker,
     required this.name,
@@ -37,7 +50,11 @@ class _TickerPlanSummary {
     required this.totalEstimated,
     required this.planCount,
     required this.allHavePrice,
+    this.purchasedQty = 0,
+    this.purchasedMoney = 0,
   });
+
+  double get progress => totalQty <= 0 ? 0 : (purchasedQty / totalQty).clamp(0.0, 1.0);
 }
 
 /// Планы, объединённые по общему сроку. Планы без срока попадают в отдельную
@@ -54,6 +71,13 @@ class _PlanGroup {
   double get totalEstimated => plans.fold(0.0, (s, p) => s + (p.estimatedTotal ?? 0));
   bool get allHavePrice => plans.every((p) => p.targetPrice != null);
   int get doneCount => plans.where((p) => p.status == PlanStatus.done).length;
+
+  /// Сколько бумаг запланировано и сколько из них уже куплено.
+  ///
+  /// purchasedQuantity пересчитывается из сделок, отмеченных как «учитывать
+  /// в плане», поэтому это факт, а не ручной счётчик.
+  double get targetQty => plans.fold(0.0, (s, p) => s + p.targetQuantity);
+  double get purchasedQty => plans.fold(0.0, (s, p) => s + p.purchasedQuantity);
 
   PlanStatus get status {
     if (plans.every((p) => p.status == PlanStatus.done)) return PlanStatus.done;
@@ -73,7 +97,12 @@ class _PlansScreenState extends State<PlansScreen> {
   final Set<String> _expanded = {};
   bool _summaryExpanded = false;
   _DatePreset _preset = _DatePreset.all;
+  _StatusFilter _status = _StatusFilter.all;
   DateTimeRange? _customRange;
+
+  /// Сколько условий отличается от «показывать всё» — для счётчика на кнопке.
+  int get _activeFilterCount =>
+      (_preset == _DatePreset.all ? 0 : 1) + (_status == _StatusFilter.all ? 0 : 1);
 
   @override
   void initState() {
@@ -123,40 +152,79 @@ class _PlansScreenState extends State<PlansScreen> {
     return groups;
   }
 
-  bool _matchesFilter(_PlanGroup g) {
-    if (g.date == null) return true; // «без срока» фильтром по дате не скрываем
+  bool _matchesFilter(_PlanGroup g) => _matchesDate(g) && _matchesStatus(g);
+
+  bool _matchesDate(_PlanGroup g) {
+    // «Без срока» фильтром по дате не скрываем: такой план не привязан ни к
+    // какому периоду, и спрятать его значило бы потерять из виду насовсем.
+    if (g.date == null) return true;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     switch (_preset) {
       case _DatePreset.all:
         return true;
-      case _DatePreset.thisMonth:
-        return g.date!.year == now.year && g.date!.month == now.month;
-      case _DatePreset.next3Months:
-        final end = DateTime(now.year, now.month + 3, now.day);
-        return !g.date!.isBefore(today) && !g.date!.isAfter(end);
-      case _DatePreset.overdue:
-        return g.date!.isBefore(today) && g.status != PlanStatus.done;
+      case _DatePreset.month:
+        return !g.date!.isAfter(DateTime(now.year, now.month + 1, now.day));
+      case _DatePreset.threeMonths:
+        return !g.date!.isAfter(DateTime(now.year, now.month + 3, now.day));
+      case _DatePreset.year:
+        return !g.date!.isAfter(DateTime(now.year + 1, now.month, now.day));
       case _DatePreset.custom:
         if (_customRange == null) return true;
         return !g.date!.isBefore(_customRange!.start) && !g.date!.isAfter(_customRange!.end);
     }
   }
 
+  bool _matchesStatus(_PlanGroup g) {
+    switch (_status) {
+      case _StatusFilter.all:
+        return true;
+      case _StatusFilter.overdue:
+        return _isOverdue(g);
+      case _StatusFilter.pending:
+        // Ожидающие — активные, но ещё не просроченные: иначе просроченный
+        // план попадал бы сразу в два фильтра и «ожидающие» переставали
+        // отвечать на вопрос «что впереди».
+        return g.status == PlanStatus.active && !_isOverdue(g);
+      case _StatusFilter.done:
+        return g.status == PlanStatus.done;
+    }
+  }
+
+  bool _isOverdue(_PlanGroup g) {
+    if (g.date == null) return false;
+    final now = DateTime.now();
+    return g.date!.isBefore(DateTime(now.year, now.month, now.day)) &&
+        g.status == PlanStatus.active;
+  }
+
   String _presetLabel(_DatePreset p) {
     switch (p) {
       case _DatePreset.all:
-        return 'Все';
-      case _DatePreset.thisMonth:
-        return 'Этот месяц';
-      case _DatePreset.next3Months:
-        return 'Ближайшие 3 мес';
-      case _DatePreset.overdue:
-        return 'Просрочено';
+        return 'Всё время';
+      case _DatePreset.month:
+        return 'Месяц';
+      case _DatePreset.threeMonths:
+        return '3 месяца';
+      case _DatePreset.year:
+        return 'Год';
       case _DatePreset.custom:
         return _customRange == null
-            ? 'Диапазон'
+            ? 'Свой период'
             : '${Fmt.date(_customRange!.start)} – ${Fmt.date(_customRange!.end)}';
+    }
+  }
+
+  String _statusLabel(_StatusFilter s) {
+    switch (s) {
+      case _StatusFilter.all:
+        return 'Все';
+      case _StatusFilter.overdue:
+        return 'Просроченные';
+      case _StatusFilter.pending:
+        return 'Ожидающие';
+      case _StatusFilter.done:
+        return 'Завершённые';
     }
   }
 
@@ -164,12 +232,12 @@ class _PlansScreenState extends State<PlansScreen> {
     switch (_preset) {
       case _DatePreset.all:
         return 'за всё время';
-      case _DatePreset.thisMonth:
-        return 'в этом месяце';
-      case _DatePreset.next3Months:
-        return 'в ближайшие 3 месяца';
-      case _DatePreset.overdue:
-        return 'по просроченным';
+      case _DatePreset.month:
+        return 'на ближайший месяц';
+      case _DatePreset.threeMonths:
+        return 'на 3 месяца';
+      case _DatePreset.year:
+        return 'на год';
       case _DatePreset.custom:
         return _customRange != null
             ? 'за ${Fmt.date(_customRange!.start)} – ${Fmt.date(_customRange!.end)}'
@@ -194,6 +262,13 @@ class _PlansScreenState extends State<PlansScreen> {
     final allHavePrice = periodPlans.isNotEmpty && periodPlans.every((p) => p.targetPrice != null);
     final byTicker = _summarizeByTicker(periodPlans);
     final doneCount = periodPlans.where((p) => p.status == PlanStatus.done).length;
+    // Прогресс считается по бумагам и деньгам, а не по числу завершённых
+    // планов: план на 100 акций, из которых куплено 99, при подсчёте «по
+    // планам» давал ровно 0% и выглядел как несделанный.
+    final targetQty = periodPlans.fold(0.0, (s, p) => s + p.targetQuantity);
+    final purchasedQty = periodPlans.fold(0.0, (s, p) => s + p.purchasedQuantity);
+    final purchasedMoney =
+        periodPlans.fold(0.0, (s, p) => s + p.purchasedQuantity * p.purchasedAvgPrice);
 
     return PageTour(
       pageId: 'plans',
@@ -256,7 +331,15 @@ class _PlansScreenState extends State<PlansScreen> {
                               if (periodPlans.isNotEmpty)
                                 FadeSlideIn(
                                   child: _summaryCard(
-                                      periodPlans.length, doneCount, periodTotal, allHavePrice, byTicker),
+                                    planCount: periodPlans.length,
+                                    doneCount: doneCount,
+                                    total: periodTotal,
+                                    allHavePrice: allHavePrice,
+                                    byTicker: byTicker,
+                                    targetQty: targetQty,
+                                    purchasedQty: purchasedQty,
+                                    purchasedMoney: purchasedMoney,
+                                  ),
                                 ),
                               if (active.isNotEmpty) ...[
                                 const SizedBox(height: 18),
@@ -306,48 +389,179 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
+  /// Кнопка фильтров плюс ряд снятых одним касанием условий.
+  ///
+  /// Раньше здесь была горизонтальная лента пилюль. Она занимала строку под
+  /// заголовком на каждом экране и вмещала только отбор по дате — добавить
+  /// второе измерение (статус) было некуда. Один вход в лист, как на бирже,
+  /// освобождает место и снимает это ограничение.
   Widget _filterBar() {
-    return SizedBox(
-      height: 38,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        children: [
-          for (final p in [
-            _DatePreset.all,
-            _DatePreset.thisMonth,
-            _DatePreset.next3Months,
-            _DatePreset.overdue,
-          ])
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _filterPill(
-                label: _presetLabel(p),
-                selected: _preset == p,
-                onTap: () => setState(() => _preset = p),
+    final active = _activeFilterCount;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            active == 0
+                ? 'Показаны все планы'
+                : [
+                    if (_preset != _DatePreset.all) _presetLabel(_preset),
+                    if (_status != _StatusFilter.all) _statusLabel(_status),
+                  ].join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12.5, color: context.dim, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Pressable(
+          onTap: _openFilterSheet,
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              borderRadius: AppRadius.all(AppRadius.sm),
+              color: active > 0
+                  ? context.accent.withOpacity(0.16)
+                  : (context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh),
+              border: Border.all(
+                color: active > 0 ? context.accent.withOpacity(0.5) : context.hairline,
+                width: active > 0 ? 1.4 : 1.2,
               ),
             ),
-          _filterPill(
-            label: _presetLabel(_DatePreset.custom),
-            icon: Icons.date_range_rounded,
-            selected: _preset == _DatePreset.custom,
-            onTap: () async {
-              final now = DateTime.now();
-              final picked = await showDateRangePicker(
-                context: context,
-                firstDate: DateTime(now.year - 2),
-                lastDate: DateTime(now.year + 5),
-                initialDateRange: _customRange,
-              );
-              if (picked != null) {
-                setState(() {
-                  _customRange = picked;
-                  _preset = _DatePreset.custom;
-                });
-              }
-            },
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(Icons.tune_rounded, size: 20, color: active > 0 ? context.accent : context.dim),
+                if (active > 0)
+                  Positioned(
+                    top: 5,
+                    right: 5,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: context.accent,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(
+                        '$active',
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openFilterSheet() async {
+    await showAppSheet(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Фильтры',
+                      style: Theme.of(ctx).textTheme.titleLarge,
+                    ),
+                  ),
+                  if (_activeFilterCount > 0)
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _preset = _DatePreset.all;
+                          _status = _StatusFilter.all;
+                          _customRange = null;
+                        });
+                        setSheetState(() {});
+                      },
+                      child: const Text('Сбросить'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text('Срок', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final preset in [
+                    _DatePreset.month,
+                    _DatePreset.threeMonths,
+                    _DatePreset.year,
+                    _DatePreset.all,
+                  ])
+                    _filterPill(
+                      label: _presetLabel(preset),
+                      selected: _preset == preset,
+                      onTap: () {
+                        setState(() => _preset = preset);
+                        setSheetState(() {});
+                      },
+                    ),
+                  _filterPill(
+                    label: _presetLabel(_DatePreset.custom),
+                    icon: Icons.date_range_rounded,
+                    selected: _preset == _DatePreset.custom,
+                    onTap: () async {
+                      final now = DateTime.now();
+                      final picked = await showDateRangePicker(
+                        context: ctx,
+                        firstDate: DateTime(now.year - 2),
+                        lastDate: DateTime(now.year + 5),
+                        initialDateRange: _customRange,
+                      );
+                      if (picked == null) return;
+                      setState(() {
+                        _customRange = picked;
+                        _preset = _DatePreset.custom;
+                      });
+                      setSheetState(() {});
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Text('Статус', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final status in _StatusFilter.values)
+                    _filterPill(
+                      label: _statusLabel(status),
+                      selected: _status == status,
+                      onTap: () {
+                        setState(() => _status = status);
+                        setSheetState(() {});
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              GradientButton(
+                label: 'Показать',
+                icon: Icons.check_rounded,
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -408,6 +622,8 @@ class _PlansScreenState extends State<PlansScreen> {
           totalEstimated: estimated,
           planCount: 1,
           allHavePrice: p.targetPrice != null,
+          purchasedQty: p.purchasedQuantity,
+          purchasedMoney: p.purchasedQuantity * p.purchasedAvgPrice,
         );
       } else {
         map[p.ticker] = _TickerPlanSummary(
@@ -418,6 +634,8 @@ class _PlansScreenState extends State<PlansScreen> {
           totalEstimated: existing.totalEstimated + estimated,
           planCount: existing.planCount + 1,
           allHavePrice: existing.allHavePrice && p.targetPrice != null,
+          purchasedQty: existing.purchasedQty + p.purchasedQuantity,
+          purchasedMoney: existing.purchasedMoney + p.purchasedQuantity * p.purchasedAvgPrice,
         );
       }
     }
@@ -446,15 +664,21 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
-  Widget _summaryCard(
-    int planCount,
-    int doneCount,
-    double total,
-    bool allHavePrice,
-    List<_TickerPlanSummary> byTicker,
-  ) {
+  Widget _summaryCard({
+    required int planCount,
+    required int doneCount,
+    required double total,
+    required bool allHavePrice,
+    required List<_TickerPlanSummary> byTicker,
+    required double targetQty,
+    required double purchasedQty,
+    required double purchasedMoney,
+  }) {
     final accent = context.accent;
-    final progress = planCount == 0 ? 0.0 : doneCount / planCount;
+    // Прогресс — доля уже купленных бумаг. Ограничение сверху нужно на случай,
+    // когда куплено больше запланированного: кольцо не должно уезжать за круг.
+    final progress = targetQty <= 0 ? 0.0 : (purchasedQty / targetQty).clamp(0.0, 1.0);
+    final moneyProgress = total <= 0 ? 0.0 : (purchasedMoney / total).clamp(0.0, 1.0);
 
     return AppCard(
       padding: EdgeInsets.zero,
@@ -493,6 +717,17 @@ class _PlansScreenState extends State<PlansScreen> {
                           '${byTicker.length} ${Fmt.papers(byTicker.length)} · выполнено $doneCount',
                           style: TextStyle(fontSize: 11.5, color: context.dim),
                         ),
+                        if (targetQty > 0) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            'Куплено ${Fmt.qty(purchasedQty)} из ${Fmt.qty(targetQty)} шт',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: purchasedQty > 0 ? AppColors.positive : context.dim,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -504,7 +739,19 @@ class _PlansScreenState extends State<PlansScreen> {
                         total > 0 ? '≈${Fmt.money(total)}' : '—',
                         style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: accent),
                       ),
-                      if (total > 0 && !allHavePrice)
+                      // Потраченное считается по средней цене засчитанных
+                      // сделок, поэтому это факт, а не оценка — в отличие от
+                      // суммы плана выше.
+                      if (purchasedMoney > 0)
+                        Text(
+                          'внесено ${Fmt.money(purchasedMoney)}',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.positive,
+                          ),
+                        )
+                      else if (total > 0 && !allHavePrice)
                         Text('цена не у всех', style: TextStyle(fontSize: 10, color: context.dim)),
                     ],
                   ),
@@ -524,6 +771,36 @@ class _PlansScreenState extends State<PlansScreen> {
               child: Column(
                 children: [
                   Divider(color: accent.withOpacity(0.2), height: 1),
+                  if (total > 0 && purchasedMoney > 0) ...[
+                    const SizedBox(height: 12),
+                    // Полоса по деньгам дополняет кольцо по количеству: бумаги
+                    // в плане разной цены, и «половина бумаг» редко означает
+                    // «половина денег».
+                    Row(
+                      children: [
+                        Text(
+                          'По сумме',
+                          style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${Fmt.money(purchasedMoney)} из ≈${Fmt.money(total)} · '
+                          '${(moneyProgress * 100).round()}%',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: moneyProgress,
+                        minHeight: 7,
+                        backgroundColor: accent.withOpacity(0.15),
+                        valueColor: const AlwaysStoppedAnimation(AppColors.positive),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   ...byTicker.map((t) => _summaryRow(t, accent)),
                 ],
@@ -556,17 +833,46 @@ class _PlansScreenState extends State<PlansScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
                 ),
                 Text(
-                  '${Fmt.assetType(t.type)} · ${Fmt.qty(t.totalQty)} шт'
-                  '${t.planCount > 1 ? ' · ${t.planCount} план.' : ''}',
+                  t.purchasedQty > 0
+                      ? '${Fmt.assetType(t.type)} · куплено ${Fmt.qty(t.purchasedQty)} из ${Fmt.qty(t.totalQty)} шт'
+                        '${t.planCount > 1 ? ' · ${t.planCount} план.' : ''}'
+                      : '${Fmt.assetType(t.type)} · ${Fmt.qty(t.totalQty)} шт'
+                        '${t.planCount > 1 ? ' · ${t.planCount} план.' : ''}',
                   style: TextStyle(fontSize: 11, color: context.dim),
                 ),
+                if (t.purchasedQty > 0) ...[
+                  const SizedBox(height: 5),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: t.progress,
+                      minHeight: 4,
+                      backgroundColor: accent.withOpacity(0.15),
+                      valueColor: const AlwaysStoppedAnimation(AppColors.positive),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            t.totalEstimated > 0 ? '≈${Fmt.money(t.totalEstimated)}' : '—',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: accent),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                t.totalEstimated > 0 ? '≈${Fmt.money(t.totalEstimated)}' : '—',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: accent),
+              ),
+              if (t.purchasedQty > 0)
+                Text(
+                  '${(t.progress * 100).round()}%',
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.positive,
+                  ),
+                ),
+            ],
           ),
         ],
       ),

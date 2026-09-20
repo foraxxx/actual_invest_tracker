@@ -10,6 +10,7 @@ import '../models/purchase.dart';
 import '../services/analytics_service.dart';
 import '../services/manual_price_service.dart';
 import '../services/plan_apply_service.dart';
+import '../services/price_sanity_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../services/moex_sync_service.dart';
@@ -761,9 +762,12 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
         note: pos.noteCtrl.text.isEmpty ? null : pos.noteCtrl.text,
       );
       await StorageService.addPurchase(purchase);
-      // Цена сделки — реальное наблюдение цены на эту дату, поэтому сразу
-      // фиксируем её и в истории ручных цен.
-      await ManualPriceService.setAt(ticker, date, price);
+      // Цена сделки фиксируется в истории цен только если она правдоподобна:
+      // иначе опечатка переоценит всю позицию в графике портфеля, а не
+      // только эту сделку.
+      if (PriceSanityService.canRecordAsMarketPrice(ticker, price)) {
+        await ManualPriceService.setAt(ticker, date, price);
+      }
       if (!pos.isSell && pos.applyToNearestPlan) {
         final candidates = PlanApplyService.candidatesFor(ticker);
         final planId = candidates.any((p) => p.id == pos.selectedPlanId)

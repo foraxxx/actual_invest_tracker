@@ -17,6 +17,7 @@ import '../services/moex_sync_service.dart';
 import '../services/moex_trading_schedule_service.dart';
 import '../services/online_price_service.dart';
 import '../services/online_settings_service.dart';
+import '../services/storage_service.dart';
 import '../widgets/ticker_avatar.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
@@ -50,13 +51,21 @@ class _MarketScreenState extends State<MarketScreen> {
   /// Окно просмотра внутри загруженного отрезка. Дробное — за счёт этого
   /// линия едет плавно, а не прыгает от точки к точке. Данные при листании не
   /// перезапрашиваются: график грузится с запасом вокруг выбранного периода.
-  double _viewStart = 0;
+  ///
+  /// Хранится в ValueNotifier, а не в обычном поле: палец на графике двигает
+  /// окно десятки раз в секунду, и setState на каждое движение перестраивал
+  /// ВЕСЬ экран биржи вместе со списком бумаг. Теперь на смещение
+  /// перерисовывается только сам график.
+  final ValueNotifier<double> _viewStartN = ValueNotifier<double>(0);
   int _viewSize = 0;
+
+  double get _viewStart => _viewStartN.value;
+  set _viewStart(double v) => _viewStartN.value = v;
 
   void _panChart(double deltaPoints) {
     final maxStart = (_chartPoints.length - _viewSize).toDouble();
     if (maxStart <= 0) return;
-    setState(() => _viewStart = (_viewStart + deltaPoints).clamp(0.0, maxStart).toDouble());
+    _viewStartN.value = (_viewStartN.value + deltaPoints).clamp(0.0, maxStart).toDouble();
   }
 
   Future<List<MapEntry<DateTime, double>>> _fetchChartSegment(
@@ -128,7 +137,26 @@ class _MarketScreenState extends State<MarketScreen> {
   void dispose() {
     OnlineSettingsService.version.removeListener(_onOnlineChanged);
     _searchCtrl.dispose();
+    _viewStartN.dispose();
     super.dispose();
+  }
+
+  /// Тикеры бумаг, которые сейчас в портфеле.
+  ///
+  /// currentHoldings() проходит по всем сделкам целиком, поэтому результат
+  /// держится до следующего изменения данных: экран биржи перестраивается
+  /// часто (приход котировок, ввод в поиске), а состав портфеля от этого не
+  /// меняется.
+  Set<String> _ownedCache = const {};
+  int _ownedCacheVersion = -1;
+
+  Set<String> _ownedTickers() {
+    final version = StorageService.dataVersion.value;
+    if (version != _ownedCacheVersion) {
+      _ownedCacheVersion = version;
+      _ownedCache = AnalyticsService.currentHoldings().keys.toSet();
+    }
+    return _ownedCache;
   }
 
   /// История для графика грузится отдельно от котировок и редко: она меняется
@@ -339,10 +367,14 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
+  /// Сколько элементов списка занимают карточки над перечнем бумаг.
+  static const int _headerCount = 4;
+
   Widget _body(List<MoexQuote> quotes) {
     // Именно текущие позиции: полностью проданная бумага в портфеле больше
-    // не числится.
-    final owned = AnalyticsService.currentHoldings().keys.toSet();
+    // не числится. Считается через кэш — обход всех сделок на каждую
+    // перерисовку экрана биржи заметно тормозил прокрутку.
+    final owned = _ownedTickers();
     final q = _query.trim().toUpperCase();
 
     final list = quotes.where((e) {
@@ -422,28 +454,46 @@ class _MarketScreenState extends State<MarketScreen> {
           ),
         ),
         Expanded(
-          child: ListView(
+          // ListView.builder, а не ListView(children: [...]): строк в списке
+          // бумаг тысячи, и обычный ListView создаёт их ВСЕ сразу, даже те,
+          // что за экраном. Здесь строятся только видимые.
+          child: ListView.builder(
             padding: const EdgeInsets.only(bottom: kListBottomPadding),
             physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-            children: [
-              TourSpot(id: 'rates', child: _ratesCard()),
-              TourSpot(id: 'chart', child: _chartCard()),
-              const SizedBox(height: 6),
-              _listHeader(list.length),
-              for (int i = 0; i < list.length; i++)
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, i == list.length - 1 ? 0 : 8),
-                  child: _row(list[i], owned.contains(list[i].ticker)),
-                ),
-              if (list.isEmpty)
-                EmptyState(
+            // Четыре шапки сверху, дальше строки бумаг (или заглушка).
+            itemCount: _headerCount + (list.isEmpty ? 1 : list.length),
+            itemBuilder: (context, index) {
+              switch (index) {
+                case 0:
+                  return TourSpot(id: 'rates', child: _ratesCard());
+                case 1:
+                  return TourSpot(id: 'chart', child: _chartCard());
+                case 2:
+                  return _favoritesBlock();
+                case 3:
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 6),
+                      _listHeader(list.length),
+                    ],
+                  );
+              }
+              if (list.isEmpty) {
+                return EmptyState(
                   icon: quotes.isEmpty ? Icons.cloud_sync_outlined : Icons.search_off_rounded,
                   title: quotes.isEmpty ? 'Жду первую загрузку' : 'Ничего не нашлось',
                   subtitle: quotes.isEmpty
                       ? 'Котировки подтянутся через несколько секунд после запуска.'
                       : 'Попробуйте другой запрос или снимите фильтр.',
-                ),
-            ],
+                );
+              }
+              final i = index - _headerCount;
+              return Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, i == list.length - 1 ? 0 : 8),
+                child: _row(list[i], owned.contains(list[i].ticker)),
+              );
+            },
           ),
         ),
       ],
@@ -489,15 +539,39 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
+  /// Значения графика отдельным списком.
+  ///
+  /// Пересобирается только когда меняется сам набор точек: во время листания
+  /// этот список не меняется, а перестраивать его на каждый кадр означало бы
+  /// проход по всем загруженным точкам шестьдесят раз в секунду.
+  List<double> _chartValues = const [];
+  List<MapEntry<DateTime, double>>? _chartValuesSource;
+
+  List<double> _valuesOf(List<MapEntry<DateTime, double>> points) {
+    if (identical(_chartValuesSource, points)) return _chartValues;
+    _chartValuesSource = points;
+    _chartValues = points.map((e) => e.value).toList();
+    return _chartValues;
+  }
+
   Widget _chartCard() {
+    // Перерисовка при листании ограничена этой карточкой: окно просмотра
+    // живёт в отдельном notifier, а не в состоянии всего экрана.
+    return ValueListenableBuilder<double>(
+      valueListenable: _viewStartN,
+      builder: (context, viewStart, __) => _chartCardBody(viewStart),
+    );
+  }
+
+  Widget _chartCardBody(double viewStart) {
     final all = _chartPoints;
     final size = _viewSize == 0 ? all.length : _viewSize;
-    final int startIndex = _viewStart.round().clamp(0, all.isEmpty ? 0 : all.length - 1).toInt();
+    final int startIndex = viewStart.round().clamp(0, all.isEmpty ? 0 : all.length - 1).toInt();
     final int endIndex = math.min<int>(all.length, startIndex + size);
     // Видимый отрезок нужен для заголовка и подписей по краям, а сама линия
     // получает весь загруженный набор и своё окно.
     final points = all.isEmpty ? all : all.sublist(startIndex, endIndex);
-    final values = all.map((e) => e.value).toList();
+    final values = _valuesOf(all);
     final visibleValues = points.map((e) => e.value).toList();
     final change = visibleValues.length > 1 ? visibleValues.last - visibleValues.first : 0.0;
     final changePct = visibleValues.length > 1 && visibleValues.first != 0
@@ -565,7 +639,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           : Sparkline(
                               values: values,
                               windowSize: _viewSize == 0 ? null : _viewSize,
-                              windowStart: _viewStart,
+                              windowStart: viewStart,
                               color: AppColors.pnl(change),
                               height: 140,
                               // Сверху дата и время, снизу значение — один и
@@ -595,6 +669,71 @@ class _MarketScreenState extends State<MarketScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Избранное. Живёт на бирже, а не на главной: отсюда до карточки бумаги
+  /// один шаг, и рядом лежит список, из которого бумаги в избранное и
+  /// попадают. На главной этот блок отделял сводку портфеля от его состава.
+  Widget _favoritesBlock() {
+    return ValueListenableBuilder<int>(
+      valueListenable: FavoritesService.version,
+      builder: (context, _, __) {
+        final favs = FavoritesService.all;
+        if (favs.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SectionTitle(title: 'Избранное', subtitle: 'Быстрый доступ к бумагам'),
+              SizedBox(
+                height: 62,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: favs.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final t = favs[i];
+                    return Pressable(
+                      onTap: () => Navigator.push(
+                        context,
+                        AppPageRoute(builder: (_) => TickerDetailScreen(ticker: t)),
+                      ),
+                      child: Container(
+                        width: 62,
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: context.isDark ? Colors.white.withOpacity(0.04) : Colors.white,
+                          borderRadius: AppRadius.all(AppRadius.md),
+                          border: Border.all(color: context.hairline),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TickerAvatar(ticker: t, size: 26, glow: false),
+                            const SizedBox(height: 4),
+                            // Длинные тикеры облигаций (RU000A...) не режем
+                            // многоточием — шрифт ужимается, но код виден
+                            // целиком, иначе двух бумаг не различить.
+                            AdaptiveSingleLineText(
+                              t.toUpperCase(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

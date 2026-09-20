@@ -458,6 +458,10 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
               clipBehavior: Clip.none,
               children: [
                 Positioned.fill(
+                  // RepaintBoundary даёт линии собственный слой: при листании
+                  // перерисовывается только он, а не карточка с заголовком,
+                  // вкладками и подписями вокруг.
+                  child: RepaintBoundary(
                   child: AnimatedBuilder(
                     animation: _c,
                     builder: (context, _) => CustomPaint(
@@ -475,6 +479,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                         selectedMarker: _marker,
                       ),
                     ),
+                  ),
                   ),
                 ),
                 if (_touch != null && !_measuring)
