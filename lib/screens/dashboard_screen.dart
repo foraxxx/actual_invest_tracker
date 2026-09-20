@@ -43,6 +43,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   PeriodFilter _incomePeriod = PeriodFilter.year1;
   _AllocationMode _alloc = _AllocationMode.sectors;
 
+  /// Какой метод расчёта доходности показан: 0 — XIRR, 1 — TWR.
+  ///
+  /// Живёт только в состоянии экрана: выбор метода — это взгляд на одни и те
+  /// же деньги под другим углом, а не настройка, которую стоит помнить между
+  /// запусками.
+  int _returnSegment = 0;
+
   @override
   void initState() {
     super.initState();
@@ -109,17 +116,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           text: 'Сколько сейчас стоят бумаги и сколько Вы на них заработали. График показывает, '
               'как менялась стоимость. Проведите по нему пальцем — он покажет дату и сумму.',
         ),
+        // Один шаг на обе величины: они теперь в одной карточке. Шаг с
+        // якорем 'cash' указывал на плитку, которой в разметке не было, —
+        // экскурсия на нём спотыкалась.
         PageTourStep(
           anchor: 'invested',
-          title: 'Вложено своих',
-          text: 'Только Ваши деньги, поступившие извне. Пополнения приложение считает автоматически по '
-              'сделкам: продажа и новая покупка не увеличивают вложенную сумму. Нажмите, чтобы открыть счёт.',
-        ),
-        PageTourStep(
-          anchor: 'cash',
-          title: 'Свободные деньги',
-          text: 'Деньги на счёте, ещё не вложенные в бумаги. Если Вы сняли их у брокера — запишите '
-              'вывод, иначе следующая покупка спишется с них и вложения окажутся занижены.',
+          title: 'Вложено и свободно',
+          text: 'Сверху — только Ваши деньги, поступившие извне: продажа и новая покупка вложенную '
+              'сумму не увеличивают. Снизу — то, что лежит на счёте и ещё не вложено в бумаги. Если Вы '
+              'сняли деньги у брокера, запишите вывод, иначе следующая покупка спишется с них и '
+              'вложения окажутся занижены. Нажмите, чтобы открыть счёт.',
         ),
         PageTourStep(
           anchor: 'holdings',
@@ -328,6 +334,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const SizedBox(height: 14),
 
       // --- Показатели ---
+      // Парные величины живут в одной карточке: «вложено» со «свободно»,
+      // «прибыль» с входящими в неё выплатами. Шесть плиток превращаются в
+      // четыре, а сетка теряет целый ряд — при этом ни одно число не
+      // спрятано за жестом, который пришлось бы сначала обнаружить.
       FadeSlideIn(
         delay: Duration(milliseconds: 40 * step++),
         child: Row(
@@ -337,14 +347,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: TourSpot(
                 id: 'invested',
                 child: StatTile(
-                label: 'Вложено за период',
-                icon: Icons.account_balance_wallet_outlined,
-                value: periodCash.invested,
-                formatter: (v) => Fmt.money(v),
-                hint: 'пополнения − выводы',
-                color: AppColors.info,
-                onTap: () => _cashSheet(cash),
-              ),
+                  label: 'Вложено за период',
+                  icon: Icons.account_balance_wallet_outlined,
+                  value: periodCash.invested,
+                  formatter: (v) => Fmt.money(v),
+                  hint: 'пополнения − выводы',
+                  color: AppColors.info,
+                  // Свободные деньги подсвечены золотым: карточка ведётся
+                  // «вложено», но привычный акцент на остатке сохраняется.
+                  secondLabel: 'свободно',
+                  secondText: Fmt.money(cash.cash),
+                  secondColor: AppColors.gold,
+                  onTap: () => _cashSheet(cash),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -356,41 +371,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 formatter: (v) => Fmt.money(v),
                 hint: 'рост + продажи + выплаты',
                 color: AppColors.pnl(periodProfit),
+                // «Из них»: выплаты — часть прибыли, а не добавка к ней.
+                // Без предлога два числа рядом читаются как слагаемые.
+                secondLabel: 'из них выплаты',
+                secondText: Fmt.money(periodCash.payouts),
+                secondColor: AppColors.positive,
               ),
             ),
           ],
-        ),
-      ),
-
-      const SizedBox(height: 10),
-      FadeSlideIn(
-        delay: Duration(milliseconds: 40 * step++),
-        child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: StatTile(
-                    label: 'Свободные деньги',
-                    icon: Icons.savings_outlined,
-                    value: cash.cash,
-                    formatter: (v) => Fmt.money(v),
-                    hint: 'на счёте, не в бумагах',
-                    color: AppColors.gold,
-                    onTap: () => _cashSheet(cash),
-                  ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: StatTile(
-                  label: 'Выплаты за период',
-                  icon: Icons.card_giftcard_rounded,
-                  value: periodCash.payouts,
-                  formatter: (v) => Fmt.money(v),
-                  hint: 'дивиденды и купоны',
-                  color: AppColors.positive,
-                ),
-              ),
-            ],
         ),
       ),
 
@@ -400,26 +388,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
           delay: Duration(milliseconds: 40 * step++),
           child: LayoutBuilder(
             builder: (context, _) {
+              // XIRR и TWR — не две разные величины, а два способа посчитать
+              // одно и то же. Поэтому они делят одну карточку с явным
+              // переключателем: подпись сама говорит, какой метод сейчас
+              // показан. Если доступен только один — переключателя нет.
+              final hasBoth = xirr != null && twr != null;
+              final showXirr = !hasBoth ? xirr != null : _returnSegment == 0;
+              final shownReturn = showXirr ? xirr : twr;
+
               final tiles = <Widget>[
-                if (xirr != null)
+                if (shownReturn != null)
                   StatTile(
-                    label: 'Доходность (XIRR)',
-                    icon: Icons.percent_rounded,
-                    text: '${Fmt.pct(xirr)} год.',
-                    hint: 'с учётом дат вложений',
-                    color: AppColors.pnl(xirr),
-                    onTap: () => _showReturnInfo(context, xirr: true),
-                  ),
-                if (twr != null)
-                  StatTile(
-                    label: 'Доходность (TWR)',
-                    icon: Icons.query_stats_rounded,
-                    text: Fmt.pct(twr),
-                    hint: benchmark == null
-                        ? (benchmarkError ?? 'без влияния пополнений')
-                        : 'IMOEX ${Fmt.pct(benchmark)}',
-                    color: AppColors.pnl(twr),
-                    onTap: () => _showReturnInfo(context, xirr: false),
+                    label: 'Доходность',
+                    icon: showXirr ? Icons.percent_rounded : Icons.query_stats_rounded,
+                    text: showXirr ? '${Fmt.pct(shownReturn)} год.' : Fmt.pct(shownReturn),
+                    hint: showXirr
+                        ? 'с учётом дат вложений'
+                        : (benchmark == null
+                            ? (benchmarkError ?? 'без влияния пополнений')
+                            : 'IMOEX ${Fmt.pct(benchmark)}'),
+                    color: AppColors.pnl(shownReturn),
+                    segments: hasBoth ? const ['XIRR', 'TWR'] : null,
+                    selectedSegment: _returnSegment,
+                    onSegmentChanged: (i) => setState(() => _returnSegment = i),
+                    onTap: () => _showReturnInfo(context, xirr: showXirr),
                   ),
                 if (payoutForecast > 0)
                   StatTile(
@@ -438,8 +430,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   for (int i = 0; i < tiles.length; i += 2) ...[
                     if (i > 0) const SizedBox(height: 10),
-                    Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    // IntrinsicHeight, чтобы соседние карточки были одной
+                    // высоты: у доходности снизу переключатель, и без этого
+                    // рядом с ней оставался бы уступ. Голый stretch тут не
+                    // годится — высота строки ничем не ограничена.
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(child: tiles[i]),
                           const SizedBox(width: 10),
@@ -449,6 +446,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 : const SizedBox.shrink(),
                           ),
                         ],
+                      ),
                     ),
                   ],
                 ],

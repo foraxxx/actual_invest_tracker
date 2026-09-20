@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import '../design/charts.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -152,7 +153,6 @@ class _PlansScreenState extends State<PlansScreen> {
     // какому периоду, и спрятать его значило бы потерять из виду насовсем.
     if (g.date == null) return true;
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
     switch (_preset) {
       case _DatePreset.all:
         return true;
@@ -1067,10 +1067,13 @@ class _PlansScreenState extends State<PlansScreen> {
                     ),
                   ],
                 ),
-                if (moneyProgress != null) ...[
+                // budget проверяется здесь же, чтобы анализатор увидел его
+                // не-null: moneyProgress считается из него, но вывести это
+                // сам он не может.
+                if (moneyProgress != null && budget != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'по деньгам: ${Fmt.money(spent)} из ~${Fmt.money(budget!)} (${(moneyProgress * 100).round()}%)',
+                    'по деньгам: ${Fmt.money(spent)} из ~${Fmt.money(budget)} (${(moneyProgress * 100).round()}%)',
                     style: TextStyle(fontSize: 10.3, color: context.dim),
                   ),
                 ],

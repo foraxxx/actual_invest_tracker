@@ -60,7 +60,7 @@ class PriceSanityService {
   static String warning(double price, double market) {
     final times = price > market ? price / market : market / price;
     final direction = price > market ? 'выше' : 'ниже';
-    return 'Цена ${direction} рыночной примерно в ${times.toStringAsFixed(times >= 10 ? 0 : 1)} раза '
+    return 'Цена $direction рыночной примерно в ${times.toStringAsFixed(times >= 10 ? 0 : 1)} раза '
         '(на бирже около ${market.toStringAsFixed(2)}). Проверьте, не введена ли сумма сделки '
         'вместо цены за одну бумагу.';
   }

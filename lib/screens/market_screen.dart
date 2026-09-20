@@ -686,7 +686,13 @@ class _MarketScreenState extends State<MarketScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SectionTitle(title: 'Избранное', subtitle: 'Быстрый доступ к бумагам'),
+              // Заголовок отступает на те же 16, что и остальные блоки
+              // экрана: без этого он прижимался к самому краю, а карточки
+              // под ним стояли с отступом — блок выглядел съехавшим.
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: SectionTitle(title: 'Избранное', subtitle: 'Быстрый доступ к бумагам'),
+              ),
               SizedBox(
                 height: 62,
                 child: ListView.separated(

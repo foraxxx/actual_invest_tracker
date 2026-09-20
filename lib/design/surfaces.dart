@@ -271,6 +271,24 @@ class StatTile extends StatelessWidget {
   final VoidCallback? onTap;
   final bool compact;
 
+  /// Вторая величина в той же плитке: подпись, значение и цвет значения.
+  ///
+  /// Нужна, чтобы парные показатели («вложено» и «свободно», «прибыль» и
+  /// «из них выплаты») жили в одной карточке вместо двух. Оба числа видны
+  /// сразу — без жеста, который пришлось бы сначала обнаружить.
+  final String? secondLabel;
+  final String? secondText;
+  final Color? secondColor;
+
+  /// Ряд переключателей под значением: подписи и индекс выбранной.
+  ///
+  /// В отличие от точек под свайпом, подписи сами говорят, что именно
+  /// переключается — для XIRR и TWR это важно, потому что это два способа
+  /// посчитать одно и то же, а не две разные величины.
+  final List<String>? segments;
+  final int selectedSegment;
+  final ValueChanged<int>? onSegmentChanged;
+
   const StatTile({
     super.key,
     required this.label,
@@ -283,6 +301,12 @@ class StatTile extends StatelessWidget {
     this.hintColor,
     this.onTap,
     this.compact = false,
+    this.secondLabel,
+    this.secondText,
+    this.secondColor,
+    this.segments,
+    this.selectedSegment = 0,
+    this.onSegmentChanged,
   });
 
   @override
@@ -339,6 +363,67 @@ class StatTile extends StatelessWidget {
               text ?? '—',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
             ),
+          if (secondLabel != null && secondText != null) ...[
+            const SizedBox(height: 9),
+            Divider(height: 1, color: context.hairline),
+            const SizedBox(height: 7),
+            Row(
+              children: [
+                Expanded(
+                  child: AdaptiveSingleLineText(
+                    secondLabel!,
+                    style: TextStyle(fontSize: 10.5, color: context.dim),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  secondText!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: secondColor ?? context.dim,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (segments != null && segments!.length > 1) ...[
+            const SizedBox(height: 9),
+            Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: context.isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04),
+              ),
+              child: Row(
+                children: [
+                  for (int i = 0; i < segments!.length; i++)
+                    Expanded(
+                      child: Pressable(
+                        onTap: () => onSegmentChanged?.call(i),
+                        child: AnimatedContainer(
+                          duration: AppDuration.fast,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(6),
+                            color: i == selectedSegment ? c.withOpacity(0.22) : Colors.transparent,
+                          ),
+                          child: Text(
+                            segments![i],
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: i == selectedSegment ? FontWeight.w800 : FontWeight.w600,
+                              color: i == selectedSegment ? c : context.dim,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
           if (!compact) ...[
             const SizedBox(height: 5),
             // Одинаковая нижняя строка не даёт плиткам без подписи или стрелки
