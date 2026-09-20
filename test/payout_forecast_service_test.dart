@@ -82,4 +82,58 @@ void main() {
       expect(result.value, closeTo(15, 0.001));
     });
   });
+
+  group('остаток текущего месяца', () {
+    // Фиксированная «сегодня»: 15 сентября.
+    final now = DateTime(2026, 9, 15, 12);
+
+    MoexPayout at(DateTime date, {double amount = 10, String kind = 'Дивиденд'}) =>
+        MoexPayout(date: date, amount: amount, currency: 'SUR', kind: kind);
+
+    test('отсечка позже сегодняшнего дня в этом же месяце попадает', () {
+      expect(PayoutForecastService.isRestOfMonth(at(DateTime(2026, 9, 28)), now), isTrue);
+    });
+
+    test('отсечка сегодня попадает', () {
+      // Граница включающая: деньги за сегодняшнюю отсечку ещё впереди.
+      expect(PayoutForecastService.isRestOfMonth(at(DateTime(2026, 9, 15)), now), isTrue);
+    });
+
+    test('прошедшая отсечка не попадает', () {
+      // Эти деньги либо получены, либо вот-вот придут и учтутся как факт.
+      expect(PayoutForecastService.isRestOfMonth(at(DateTime(2026, 9, 3)), now), isFalse);
+    });
+
+    test('следующий месяц не попадает — он уже в годовом прогнозе', () {
+      expect(PayoutForecastService.isRestOfMonth(at(DateTime(2026, 10, 1)), now), isFalse);
+    });
+
+    test('декабрь на границе года обрабатывается верно', () {
+      final december = DateTime(2026, 12, 15, 12);
+      expect(PayoutForecastService.isRestOfMonth(at(DateTime(2026, 12, 30)), december), isTrue);
+      expect(PayoutForecastService.isRestOfMonth(at(DateTime(2027, 1, 3)), december), isFalse);
+    });
+
+    test('выплата без назначенной отсечки не попадает', () {
+      final announced = MoexPayout(
+        date: DateTime(2026, 9, 20),
+        amount: 10,
+        currency: 'SUR',
+        kind: 'Дивиденд',
+        dateKnown: false,
+      );
+      expect(PayoutForecastService.isRestOfMonth(announced, now), isFalse);
+    });
+
+    test('купоны учитываются наравне с дивидендами', () {
+      expect(
+        PayoutForecastService.isRestOfMonth(at(DateTime(2026, 9, 20), kind: 'Купон'), now),
+        isTrue,
+      );
+    });
+
+    test('нулевая сумма не попадает', () {
+      expect(PayoutForecastService.isRestOfMonth(at(DateTime(2026, 9, 20), amount: 0), now), isFalse);
+    });
+  });
 }

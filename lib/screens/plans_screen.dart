@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
-import '../design/charts.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -72,12 +71,6 @@ class _PlanGroup {
   bool get allHavePrice => plans.every((p) => p.targetPrice != null);
   int get doneCount => plans.where((p) => p.status == PlanStatus.done).length;
 
-  /// Сколько бумаг запланировано и сколько из них уже куплено.
-  ///
-  /// purchasedQuantity пересчитывается из сделок, отмеченных как «учитывать
-  /// в плане», поэтому это факт, а не ручной счётчик.
-  double get targetQty => plans.fold(0.0, (s, p) => s + p.targetQuantity);
-  double get purchasedQty => plans.fold(0.0, (s, p) => s + p.purchasedQuantity);
 
   PlanStatus get status {
     if (plans.every((p) => p.status == PlanStatus.done)) return PlanStatus.done;
@@ -261,12 +254,10 @@ class _PlansScreenState extends State<PlansScreen> {
     final periodTotal = periodPlans.fold(0.0, (s, p) => s + (p.estimatedTotal ?? 0));
     final allHavePrice = periodPlans.isNotEmpty && periodPlans.every((p) => p.targetPrice != null);
     final byTicker = _summarizeByTicker(periodPlans);
-    final doneCount = periodPlans.where((p) => p.status == PlanStatus.done).length;
-    // Прогресс считается по бумагам и деньгам, а не по числу завершённых
-    // планов: план на 100 акций, из которых куплено 99, при подсчёте «по
-    // планам» давал ровно 0% и выглядел как несделанный.
-    final targetQty = periodPlans.fold(0.0, (s, p) => s + p.targetQuantity);
-    final purchasedQty = periodPlans.fold(0.0, (s, p) => s + p.purchasedQuantity);
+    // Прогресс считается по деньгам, а не по числу завершённых планов: план
+    // на 100 акций, из которых куплено 99, при подсчёте «по планам» давал
+    // ровно 0% и выглядел как несделанный. Сумма берётся по средней цене
+    // засчитанных сделок, то есть это факт, а не оценка.
     final purchasedMoney =
         periodPlans.fold(0.0, (s, p) => s + p.purchasedQuantity * p.purchasedAvgPrice);
 
@@ -331,13 +322,9 @@ class _PlansScreenState extends State<PlansScreen> {
                               if (periodPlans.isNotEmpty)
                                 FadeSlideIn(
                                   child: _summaryCard(
-                                    planCount: periodPlans.length,
-                                    doneCount: doneCount,
                                     total: periodTotal,
                                     allHavePrice: allHavePrice,
                                     byTicker: byTicker,
-                                    targetQty: targetQty,
-                                    purchasedQty: purchasedQty,
                                     purchasedMoney: purchasedMoney,
                                   ),
                                 ),
@@ -665,19 +652,14 @@ class _PlansScreenState extends State<PlansScreen> {
   }
 
   Widget _summaryCard({
-    required int planCount,
-    required int doneCount,
     required double total,
     required bool allHavePrice,
     required List<_TickerPlanSummary> byTicker,
-    required double targetQty,
-    required double purchasedQty,
     required double purchasedMoney,
   }) {
     final accent = context.accent;
-    // Прогресс — доля уже купленных бумаг. Ограничение сверху нужно на случай,
-    // когда куплено больше запланированного: кольцо не должно уезжать за круг.
-    final progress = targetQty <= 0 ? 0.0 : (purchasedQty / targetQty).clamp(0.0, 1.0);
+    // Ограничение сверху — на случай, когда куплено больше запланированного:
+    // полоса не должна уезжать за край.
     final moneyProgress = total <= 0 ? 0.0 : (purchasedMoney / total).clamp(0.0, 1.0);
 
     return AppCard(
@@ -691,75 +673,75 @@ class _PlansScreenState extends State<PlansScreen> {
             onTap: () => setState(() => _summaryExpanded = !_summaryExpanded),
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ProgressRing(
-                    progress: progress,
-                    color: accent,
-                    size: 52,
-                    child: Text(
-                      '${(progress * 100).round()}%',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                  // Заголовок занимает всю ширину карточки. Раньше он делил
+                  // строку с кольцом и суммой и переносился уже на третьем
+                  // слове — «Итого по плану / на год» в две строки.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
                           'Итого по плану ${_periodPhrase()}',
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: accent),
+                          style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: accent),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '$planCount ${Fmt.purchases(planCount)} · '
-                          '${byTicker.length} ${Fmt.papers(byTicker.length)} · выполнено $doneCount',
-                          style: TextStyle(fontSize: 11.5, color: context.dim),
-                        ),
-                        if (targetQty > 0) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            'Куплено ${Fmt.qty(purchasedQty)} из ${Fmt.qty(targetQty)} шт',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: purchasedQty > 0 ? AppColors.positive : context.dim,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                      ),
+                      AnimatedRotation(
+                        turns: _summaryExpanded ? 0.5 : 0,
+                        duration: AppDuration.fast,
+                        child: Icon(Icons.expand_more_rounded, color: accent),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  const SizedBox(height: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
                         total > 0 ? '≈${Fmt.money(total)}' : '—',
-                        style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: accent),
+                        style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: accent),
                       ),
-                      // Потраченное считается по средней цене засчитанных
-                      // сделок, поэтому это факт, а не оценка — в отличие от
-                      // суммы плана выше.
-                      if (purchasedMoney > 0)
+                      const Spacer(),
+                      if (total > 0 && purchasedMoney > 0)
                         Text(
-                          'внесено ${Fmt.money(purchasedMoney)}',
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.positive,
-                          ),
-                        )
-                      else if (total > 0 && !allHavePrice)
-                        Text('цена не у всех', style: TextStyle(fontSize: 10, color: context.dim)),
+                          '${(moneyProgress * 100).round()}%',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
+                        ),
                     ],
                   ),
-                  AnimatedRotation(
-                    turns: _summaryExpanded ? 0.5 : 0,
-                    duration: AppDuration.fast,
-                    child: Icon(Icons.expand_more_rounded, color: accent),
-                  ),
+                  if (total > 0 && purchasedMoney > 0) ...[
+                    const SizedBox(height: 10),
+                    // Процент считается по деньгам, а не по количеству бумаг:
+                    // рядом стоят рублёвые суммы, и процент должен сходиться
+                    // именно с ними. Бумаги в плане разной цены, поэтому доля
+                    // штук и доля денег заметно расходятся.
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: moneyProgress,
+                        minHeight: 6,
+                        backgroundColor: accent.withOpacity(0.15),
+                        valueColor: const AlwaysStoppedAnimation(AppColors.positive),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    // Потраченное считается по средней цене засчитанных
+                    // сделок, поэтому это факт, а не оценка — в отличие от
+                    // суммы плана выше.
+                    Text(
+                      'внесено ${Fmt.money(purchasedMoney)}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.positive,
+                      ),
+                    ),
+                  ] else if (total > 0 && !allHavePrice) ...[
+                    const SizedBox(height: 6),
+                    Text('цена не у всех', style: TextStyle(fontSize: 11, color: context.dim)),
+                  ],
                 ],
               ),
             ),
@@ -771,36 +753,6 @@ class _PlansScreenState extends State<PlansScreen> {
               child: Column(
                 children: [
                   Divider(color: accent.withOpacity(0.2), height: 1),
-                  if (total > 0 && purchasedMoney > 0) ...[
-                    const SizedBox(height: 12),
-                    // Полоса по деньгам дополняет кольцо по количеству: бумаги
-                    // в плане разной цены, и «половина бумаг» редко означает
-                    // «половина денег».
-                    Row(
-                      children: [
-                        Text(
-                          'По сумме',
-                          style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '${Fmt.money(purchasedMoney)} из ≈${Fmt.money(total)} · '
-                          '${(moneyProgress * 100).round()}%',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: moneyProgress,
-                        minHeight: 7,
-                        backgroundColor: accent.withOpacity(0.15),
-                        valueColor: const AlwaysStoppedAnimation(AppColors.positive),
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 8),
                   ...byTicker.map((t) => _summaryRow(t, accent)),
                 ],
@@ -833,11 +785,11 @@ class _PlansScreenState extends State<PlansScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
                 ),
                 Text(
+                  // Без упоминания числа планов: сколько раз бумага
+                  // встречается в планах, при взгляде на прогресс не помогает.
                   t.purchasedQty > 0
                       ? '${Fmt.assetType(t.type)} · куплено ${Fmt.qty(t.purchasedQty)} из ${Fmt.qty(t.totalQty)} шт'
-                        '${t.planCount > 1 ? ' · ${t.planCount} план.' : ''}'
-                      : '${Fmt.assetType(t.type)} · ${Fmt.qty(t.totalQty)} шт'
-                        '${t.planCount > 1 ? ' · ${t.planCount} план.' : ''}',
+                      : '${Fmt.assetType(t.type)} · ${Fmt.qty(t.totalQty)} шт',
                   style: TextStyle(fontSize: 11, color: context.dim),
                 ),
                 if (t.purchasedQty > 0) ...[

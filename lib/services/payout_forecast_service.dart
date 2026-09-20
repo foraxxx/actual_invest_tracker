@@ -389,6 +389,23 @@ class PayoutForecastService {
   static int _monthIndex(List<DateTime> months, DateTime date) =>
       months.indexWhere((month) => month.year == date.year && month.month == date.month);
 
+  /// Попадает ли выплата в остаток текущего месяца.
+  ///
+  /// Отдельной функцией, чтобы правило можно было проверить тестами без Hive,
+  /// сети и позиции в портфеле — оно решает, какие деньги пользователь увидит
+  /// как «ближайшие».
+  @visibleForTesting
+  static bool isRestOfMonth(MoexPayout payout, DateTime now) {
+    if (!_isForecastPayout(payout) || payout.amount <= 0) return false;
+    // Без назначенной даты отсечки месяц выплаты неизвестен.
+    if (!payout.dateKnown) return false;
+    final today = DateTime(now.year, now.month, now.day);
+    // Отсечка уже прошла — эти деньги либо получены, либо вот-вот придут и
+    // учитываются как факт в доходах, а не как ожидание.
+    if (payout.date.isBefore(today)) return false;
+    return payout.date.isBefore(DateTime(now.year, now.month + 1));
+  }
+
   static bool _isForecastPayout(MoexPayout payout) =>
       payout.kind == 'Купон' || payout.kind == 'Дивиденд';
 
@@ -397,6 +414,38 @@ class PayoutForecastService {
 
   static double _sum(List<double> values) =>
       values.fold(0.0, (sum, value) => sum + value);
+
+  /// Сколько ещё ожидается получить до конца текущего месяца.
+  ///
+  /// Зачем это нужно отдельно. Прогноз намеренно считается за 12 ПОЛНЫХ
+  /// месяцев, начиная со следующего: иначе итог сползал бы вниз по ходу
+  /// месяца сам по себе, а доходность «в процентах годовых» считалась бы уже
+  /// не от года. Но из-за этого выплата с отсечкой, скажем, послезавтра не
+  /// попадает никуда: в полученные доходы ещё не попала, в прогноз уже не
+  /// входит. Самое близкое событие оказывается невидимым — его и показывает
+  /// это число.
+  ///
+  /// Считается ТОЛЬКО по объявленным биржей выплатам, без экстраполяции:
+  /// ближайшие деньги должны быть фактом, а не оценкой. Поэтому сумма здесь
+  /// не складывается с годовым прогнозом и не является его частью.
+  static ({double rub, int payouts}) restOfCurrentMonth({DateTime? from}) {
+    final now = from ?? DateTime.now();
+
+    double total = 0;
+    int count = 0;
+    for (final entry in AnalyticsService.currentHoldings().entries) {
+      final holding = entry.value;
+      if (holding.qty <= 0) continue;
+      final list = _payouts[entry.key] ?? const <MoexPayout>[];
+      final currency = _payoutCurrency(list);
+      for (final payout in list) {
+        if (!isRestOfMonth(payout, now)) continue;
+        total += CurrencyService.toRub(payout.amount * holding.qty, currency);
+        count++;
+      }
+    }
+    return (rub: total, payouts: count);
+  }
 
   /// Прогнозная доходность портфеля: ожидаемые выплаты к текущей стоимости.
   static double yieldPct() {

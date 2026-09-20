@@ -62,6 +62,7 @@ class _IncomesScreenState extends State<IncomesScreen> {
     final forecastSummary = PayoutForecastService.portfolioForecast();
     final forecast = forecastSummary.total;
     final forecastYield = PayoutForecastService.yieldPct();
+    final restOfMonth = PayoutForecastService.restOfCurrentMonth();
     final taxTotal = all.fold<double>(0, (s, i) => s + i.taxPaid);
 
     return PageTour(
@@ -172,6 +173,24 @@ class _IncomesScreenState extends State<IncomesScreen> {
                       ),
                     ),
                   ),
+
+                  // Отдельно от годового прогноза: это ближайшие деньги по
+                  // уже объявленным выплатам, а не оценка. Складывать их с
+                  // прогнозом нельзя — у них разная природа и разный горизонт.
+                  if (restOfMonth.rub > 0) ...[
+                    const SizedBox(height: 12),
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 40),
+                      child: InfoBanner(
+                        icon: Icons.event_available_rounded,
+                        color: AppColors.positive,
+                        text: 'В этом месяце ожидается ещё ~${Fmt.money(restOfMonth.rub)} '
+                            'по ${restOfMonth.payouts} '
+                            '${Fmt.plural(restOfMonth.payouts, "выплате", "выплатам", "выплатам")} '
+                            '— по объявленным датам, в годовой прогноз ниже они не входят.',
+                      ),
+                    ),
+                  ],
 
                   if (forecast > 0) ...[
                     const SizedBox(height: 12),
