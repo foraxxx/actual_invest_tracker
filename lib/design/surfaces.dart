@@ -349,6 +349,21 @@ class StatTile extends StatelessWidget {
                   style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                 ),
               ),
+              // Признак «открывается» стоит в строке заголовка: высоту она
+              // задаёт иконкой слева, поэтому значок здесь бесплатен по
+              // месту, в отличие от прежней отдельной строки со стрелкой.
+              if (interactive) ...[
+                const SizedBox(width: 6),
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: c.withOpacity(context.isDark ? 0.18 : 0.12),
+                  ),
+                  child: Icon(Icons.chevron_right_rounded, size: 16, color: c),
+                ),
+              ],
             ],
           ),
           SizedBox(height: compact ? 8 : 10),
@@ -363,25 +378,49 @@ class StatTile extends StatelessWidget {
               text ?? '—',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
             ),
+          // Подсказка идёт сразу под числом мелким кеглем.
+          //
+          // Раньше она жила в нижней строке фиксированной высоты вместе со
+          // стрелкой: строка съедала 33 пикселя в каждой карточке, текст в
+          // ней не помещался и ехал бегущей строкой под стрелку.
+          //
+          // Строка рисуется и без подсказки — пустой: прежняя нижняя строка
+          // фиксированной высоты выравнивала соседние карточки, и без замены
+          // плитка с подсказкой стала бы выше плитки без неё в том же ряду.
+          // Цена вопроса теперь 13 пикселей вместо 33.
+          if (!compact) ...[
+            const SizedBox(height: 3),
+            AdaptiveSingleLineText(
+              hint ?? ' ',
+              style: TextStyle(fontSize: 9.5, color: hintColor ?? context.dim),
+            ),
+          ],
           if (secondLabel != null && secondText != null) ...[
             const SizedBox(height: 9),
             Divider(height: 1, color: context.hairline),
             const SizedBox(height: 7),
+            // Подпись ужимается первой, число — только если иначе никак.
+            // Обе части обязаны сжиматься: суммы в миллионах вместе с
+            // подписью вроде «из них выплаты» не влезают в половину экрана,
+            // и жёсткий Text рвал бы разметку полосатой заплаткой.
             Row(
               children: [
-                Expanded(
+                Flexible(
                   child: AdaptiveSingleLineText(
                     secondLabel!,
                     style: TextStyle(fontSize: 10.5, color: context.dim),
                   ),
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  secondText!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: secondColor ?? context.dim,
+                Flexible(
+                  child: AdaptiveSingleLineText(
+                    secondText!,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: secondColor ?? context.dim,
+                    ),
                   ),
                 ),
               ],
@@ -420,31 +459,6 @@ class StatTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                ],
-              ),
-            ),
-          ],
-          if (!compact) ...[
-            const SizedBox(height: 5),
-            // Одинаковая нижняя строка не даёт плиткам без подписи или стрелки
-            // менять высоту соседних карточек и всей сетки.
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 28),
-              child: Row(
-                children: [
-                  if (hint != null)
-                    Expanded(
-                      child: MarqueeText(
-                        hint!,
-                        style: TextStyle(fontSize: 10.5, color: hintColor ?? context.dim),
-                      ),
-                    )
-                  else
-                    const Spacer(),
-                  if (interactive) ...[
-                    if (hint != null) const SizedBox(width: 7),
-                    InteractiveArrow(color: c),
-                  ],
                 ],
               ),
             ),
