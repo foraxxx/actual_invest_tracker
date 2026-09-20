@@ -347,7 +347,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: TourSpot(
                 id: 'invested',
                 child: StatTile(
-                  label: 'Вложено за период',
+                  label: 'Вложено',
                   icon: Icons.account_balance_wallet_outlined,
                   value: periodCash.invested,
                   formatter: (v) => Fmt.money(v),
@@ -365,11 +365,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: StatTile(
-                label: 'Прибыль за период',
+                label: 'Прибыль',
                 icon: Icons.payments_outlined,
                 value: periodProfit,
                 formatter: (v) => Fmt.money(v),
-                hint: 'рост + продажи + выплаты',
+                hint: 'рост + продажи',
                 color: AppColors.pnl(periodProfit),
                 // «Из них»: выплаты — часть прибыли, а не добавка к ней.
                 // Без предлога два числа рядом читаются как слагаемые.
@@ -415,13 +415,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 if (payoutForecast > 0)
                   StatTile(
-                    label: 'Прогноз выплат',
+                    // Заголовок короткий, потому что рядом с ним стоит
+                    // шеврон: «Прогноз выплат» в половину ширины экрана уже
+                    // не помещался и ужимался до нечитаемого кегля. Слово
+                    // «выплат» переехало в подсказку, где места хватает.
+                    label: 'Прогноз',
                     icon: Icons.auto_graph_rounded,
                     value: payoutForecast,
                     formatter: (v) => '~${Fmt.money(v)}',
                     hint: payoutYield > 0
-                        ? '${Fmt.pct(payoutYield)} годовых'
-                        : 'по прошлым выплатам',
+                        ? 'выплат · ${Fmt.pct(payoutYield)} годовых'
+                        : 'выплат по прошлым годам',
                     color: AppColors.violet,
                     onTap: () => showPayoutForecastSheet(context),
                   ),
@@ -430,13 +434,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   for (int i = 0; i < tiles.length; i += 2) ...[
                     if (i > 0) const SizedBox(height: 10),
-                    // IntrinsicHeight, чтобы соседние карточки были одной
-                    // высоты: у доходности снизу переключатель, и без этого
-                    // рядом с ней оставался бы уступ. Голый stretch тут не
-                    // годится — высота строки ничем не ограничена.
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                    // Выравнивание по верху, без IntrinsicHeight.
+                    //
+                    // IntrinsicHeight здесь применять нельзя: внутри плитки
+                    // сидит AdaptiveSingleLineText на LayoutBuilder, а тот не
+                    // умеет сообщать высоту до разметки и отдаёт ноль. Карточка
+                    // доходности получала высоту меньше своего содержимого, и
+                    // переключатель XIRR/TWR вываливался за нижний край.
+                    Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(child: tiles[i]),
                           const SizedBox(width: 10),
@@ -446,7 +452,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 : const SizedBox.shrink(),
                           ),
                         ],
-                      ),
                     ),
                   ],
                 ],

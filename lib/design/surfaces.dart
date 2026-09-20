@@ -353,15 +353,19 @@ class StatTile extends StatelessWidget {
               // задаёт иконкой слева, поэтому значок здесь бесплатен по
               // месту, в отличие от прежней отдельной строки со стрелкой.
               if (interactive) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
+                // 20 пикселей, а не 22: в половину ширины экрана каждый
+                // пиксель отнимается у заголовка, а тот при нехватке места
+                // не обрезается, а ужимается в кегле — и карточка с шевроном
+                // начинает выглядеть мельче соседней без него.
                 Container(
-                  width: 22,
-                  height: 22,
+                  width: 20,
+                  height: 20,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: c.withOpacity(context.isDark ? 0.18 : 0.12),
                   ),
-                  child: Icon(Icons.chevron_right_rounded, size: 16, color: c),
+                  child: Icon(Icons.chevron_right_rounded, size: 15, color: c),
                 ),
               ],
             ],
@@ -399,31 +403,25 @@ class StatTile extends StatelessWidget {
             const SizedBox(height: 9),
             Divider(height: 1, color: context.hairline),
             const SizedBox(height: 7),
-            // Подпись ужимается первой, число — только если иначе никак.
-            // Обе части обязаны сжиматься: суммы в миллионах вместе с
-            // подписью вроде «из них выплаты» не влезают в половину экрана,
-            // и жёсткий Text рвал бы разметку полосатой заплаткой.
-            Row(
-              children: [
-                Flexible(
-                  child: AdaptiveSingleLineText(
-                    secondLabel!,
-                    style: TextStyle(fontSize: 10.5, color: context.dim),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: AdaptiveSingleLineText(
-                    secondText!,
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: secondColor ?? context.dim,
-                    ),
-                  ),
-                ),
-              ],
+            // Подпись сверху, сумма под ней во всю ширину.
+            //
+            // В одну строку подпись и сумма делили место поровну и ужимали
+            // друг друга: «из них выплаты 42 932 ₽» уже на этих числах
+            // читалось мельче соседей, а на миллионах стало бы совсем мелким.
+            // Здесь сумме конкурировать не с кем.
+            AdaptiveSingleLineText(
+              secondLabel!,
+              style: TextStyle(fontSize: 9.5, color: context.dim),
+            ),
+            const SizedBox(height: 1),
+            AdaptiveSingleLineText(
+              secondText!,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+                color: secondColor ?? context.dim,
+              ),
             ),
           ],
           if (segments != null && segments!.length > 1) ...[
