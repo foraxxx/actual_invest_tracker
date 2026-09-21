@@ -22,8 +22,10 @@ import '../services/portfolio_service.dart';
 import '../services/tax_service.dart';
 import '../services/benchmark_service.dart';
 import '../services/portfolio_history_service.dart';
+import '../services/value_forecast_service.dart';
 import '../widgets/ticker_avatar.dart';
 import '../widgets/payout_forecast_sheet.dart';
+import '../widgets/value_forecast_sheet.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
 import 'wrapped_screen.dart';
@@ -50,6 +52,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// запусками.
   int _returnSegment = 0;
 
+  /// Что показывает карточка прогноза: 0 — выплаты, 1 — стоимость портфеля.
+  int _forecastSegment = 0;
+
+  void _onForecastSegment(int i) {
+    setState(() => _forecastSegment = i);
+    // История индекса нужна только прогнозу стоимости — грузим её, когда
+    // человек впервые на него переключился, а не при каждом входе на главную.
+    if (i == 1) ValueForecastService.loadMarketHistory();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +77,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     BenchmarkService.error.addListener(_onDataChanged);
     PortfolioHistoryService.timeline.addListener(_onDataChanged);
     PortfolioHistoryService.error.addListener(_onDataChanged);
+    // Уточнённые по истории индекса допущения меняют итог в карточке прогноза.
+    ValueForecastService.version.addListener(_onDataChanged);
   }
 
   @override
@@ -76,6 +90,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     BenchmarkService.error.removeListener(_onDataChanged);
     PortfolioHistoryService.timeline.removeListener(_onDataChanged);
     PortfolioHistoryService.error.removeListener(_onDataChanged);
+    ValueForecastService.version.removeListener(_onDataChanged);
     super.dispose();
   }
 
@@ -169,6 +184,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final payoutSummary = PayoutForecastService.portfolioForecast();
     final payoutForecast = payoutSummary.total;
     final payoutYield = PayoutForecastService.yieldPct();
+    final hasPayouts = payoutForecast > 0;
+    final hasHoldings = holdings.isNotEmpty;
     final periodProfit = AnalyticsService.profitForPeriod(_period);
     final totalIncome = AnalyticsService.totalIncome(f: PeriodFilter.all);
     final totalProfit = unrealizedPnl + realizedPnl + totalIncome;
@@ -382,7 +399,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
 
-      if (xirr != null || twr != null || payoutForecast > 0) ...[
+      if (xirr != null || twr != null || hasHoldings) ...[
         const SizedBox(height: 10),
         FadeSlideIn(
           delay: Duration(milliseconds: 40 * step++),
@@ -413,22 +430,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onSegmentChanged: (i) => setState(() => _returnSegment = i),
                     onTap: () => _showReturnInfo(context, xirr: showXirr),
                   ),
-                if (payoutForecast > 0)
-                  StatTile(
-                    // Заголовок короткий, потому что рядом с ним стоит
-                    // шеврон: «Прогноз выплат» в половину ширины экрана уже
-                    // не помещался и ужимался до нечитаемого кегля. Слово
-                    // «выплат» переехало в подсказку, где места хватает.
-                    label: 'Прогноз',
-                    icon: Icons.auto_graph_rounded,
-                    value: payoutForecast,
-                    formatter: (v) => '~${Fmt.money(v)}',
-                    hint: payoutYield > 0
-                        ? 'выплат · ${Fmt.pct(payoutYield)} годовых'
-                        : 'выплат по прошлым годам',
-                    color: AppColors.violet,
-                    onTap: () => showPayoutForecastSheet(context),
-                  ),
+                if (hasHoldings)
+                  // Прогноз выплат и прогноз стоимости делят одну карточку с
+                  // переключателем — как XIRR и TWR. Если выплат не ожидается,
+                  // переключателя нет и карточка сразу показывает стоимость:
+                  // иначе в режиме «Выплаты» стоял бы бессмысленный ноль.
+                  Builder(builder: (context) {
+                    final showValue = !hasPayouts || _forecastSegment == 1;
+                    if (!showValue) {
+                      return StatTile(
+                        // Заголовок короткий, потому что рядом с ним стоит
+                        // шеврон: «Прогноз выплат» в половину ширины экрана
+                        // уже не помещался и ужимался до нечитаемого кегля.
+                        label: 'Прогноз',
+                        icon: Icons.auto_graph_rounded,
+                        value: payoutForecast,
+                        formatter: (v) => '~${Fmt.money(v)}',
+                        hint: payoutYield > 0
+                            ? 'выплат · ${Fmt.pct(payoutYield)} годовых'
+                            : 'выплат по прошлым годам',
+                        color: AppColors.violet,
+                        segments: const ['Выплаты', 'Стоимость'],
+                        selectedSegment: _forecastSegment,
+                        onSegmentChanged: _onForecastSegment,
+                        onTap: () => showPayoutForecastSheet(context),
+                      );
+                    }
+                    final value = ValueForecastService.realistic(ValueForecastService.defaultHorizon);
+                    return StatTile(
+                      label: 'Прогноз',
+                      icon: Icons.stacked_line_chart_rounded,
+                      value: value.breakdown.end,
+                      formatter: (v) => '~${Fmt.money(v)}',
+                      hint: 'через ${ValueForecastService.defaultHorizon} года · реалистично',
+                      color: AppColors.info,
+                      segments: hasPayouts ? const ['Выплаты', 'Стоимость'] : null,
+                      selectedSegment: _forecastSegment,
+                      onSegmentChanged: _onForecastSegment,
+                      onTap: () => showValueForecastSheet(context),
+                    );
+                  }),
               ];
               return Column(
                 children: [
