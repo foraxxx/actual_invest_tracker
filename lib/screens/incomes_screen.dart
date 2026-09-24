@@ -6,8 +6,11 @@ import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/page_tour.dart';
 import '../design/surfaces.dart';
+import '../data/securities.dart';
+import '../data/security_info.dart';
 import '../design/tokens.dart';
 import '../models/income.dart';
+import '../models/purchase.dart';
 import '../services/analytics_service.dart';
 import '../services/payout_forecast_service.dart';
 import '../services/storage_service.dart';
@@ -405,6 +408,15 @@ class _IncomesScreenState extends State<IncomesScreen> {
   // Форма новой выплаты
   // ---------------------------------------------------------------------------
 
+  /// Какие бумаги подходят к типу выплаты.
+  ///
+  /// Купон бывает только у облигаций. Дивиденды — у акций, а к ним же отнесены
+  /// фонды: выплаты БПИФ по сути распределение дохода фонда, а купонов у
+  /// фондов не бывает. Валюта выплат не приносит вовсе.
+  static bool _fitsIncomeType(SecurityInfo s, IncomeType t) => t == IncomeType.coupon
+      ? s.type == AssetType.bond
+      : s.type == AssetType.stock || s.type == AssetType.etf;
+
   void _showAddSheet(BuildContext context) {
     final tickerCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
@@ -441,10 +453,26 @@ class _IncomesScreenState extends State<IncomesScreen> {
                       ? Icons.trending_up_rounded
                       : Icons.receipt_long_rounded,
                   colorOf: (t) => t == IncomeType.dividend ? AppColors.positive : AppColors.info,
-                  onChanged: (t) => setSheetState(() => type = t),
+                  onChanged: (t) => setSheetState(() {
+                    type = t;
+                    // Бумага, выбранная под прежний тип, под новый не годится:
+                    // акция с купоном — заведомо ошибка. Тикер, набранный
+                    // руками и отсутствующий в справочнике, не трогаем —
+                    // проверить его не с чем.
+                    final known = SecuritiesDatabase.byTicker(tickerCtrl.text);
+                    if (known != null && !_fitsIncomeType(known, t)) {
+                      tickerCtrl.clear();
+                      nameCtrl.clear();
+                    }
+                  }),
                 ),
                 const SizedBox(height: 14),
                 SecurityPickerField(
+                  // Ключ по типу пересоздаёт поле при переключении: иначе в нём
+                  // остался бы текст бумаги, которую мы только что сбросили.
+                  key: ValueKey(type),
+                  filter: (s) => _fitsIncomeType(s, type),
+                  hintText: type == IncomeType.coupon ? 'Найти облигацию' : 'Найти акцию или фонд',
                   onSelected: (s) {
                     tickerCtrl.text = s.ticker;
                     nameCtrl.text = s.name;

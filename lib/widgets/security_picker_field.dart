@@ -13,10 +13,14 @@ class SecurityPickerField extends StatelessWidget {
   final void Function(SecurityInfo) onSelected;
   final String hintText;
 
+  /// Какие бумаги показывать. Не задан — все.
+  final bool Function(SecurityInfo)? filter;
+
   const SecurityPickerField({
     super.key,
     required this.onSelected,
     this.hintText = 'Найти бумагу по тикеру или названию',
+    this.filter,
   });
 
   @override
@@ -33,18 +37,22 @@ class SecurityPickerField extends StatelessWidget {
     return Autocomplete<SecurityInfo>(
       displayStringForOption: (s) => '${s.ticker} — ${s.name}',
       optionsBuilder: (textEditingValue) {
+        final fits = filter;
         if (textEditingValue.text.isEmpty) {
           // Пустой запрос — показываем избранное: чаще всего покупают именно
           // то, что уже отслеживается.
-          final favTickers = FavoritesService.all;
-          if (favTickers.isEmpty) return SecuritiesDatabase.search('');
-          final favs = favTickers
+          final favs = FavoritesService.all
               .map((t) => SecuritiesDatabase.byTicker(t))
               .whereType<SecurityInfo>()
+              .where((s) => fits == null || fits(s))
               .toList();
+          // Если из избранного под фильтр ничего не подошло — показываем
+          // начало справочника, а не пустой список: пустота выглядела бы
+          // как «таких бумаг нет».
+          if (favs.isEmpty) return SecuritiesDatabase.search('', where: fits);
           return favs;
         }
-        return SecuritiesDatabase.search(textEditingValue.text);
+        return SecuritiesDatabase.search(textEditingValue.text, where: fits);
       },
       onSelected: onSelected,
       fieldViewBuilder: (context, controller, focusNode, onSubmit) {

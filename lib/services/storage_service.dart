@@ -174,10 +174,17 @@ class StorageService {
   /// пересчитывает прогресс плана из фактических сделок. Используется вместо
   /// прежнего ручного накопления счётчика — так удаление/правка сделки не
   /// расходится с тем, что показывает план.
-  static Future<void> applyPurchaseToPlan(String purchaseId, String planId) async {
+  ///
+  /// [quantity] — сколько бумаг засчитать. Не задано — вся сделка. Лишнее
+  /// сверх нужного плану остаётся обычной покупкой без плана.
+  static Future<void> applyPurchaseToPlan(String purchaseId, String planId, {double? quantity}) async {
     final purchase = purchasesBox.get(purchaseId);
     if (purchase == null) return;
     purchase.planId = planId;
+    // Пустое значение хранится, когда в план идёт вся сделка: тогда запись
+    // ничем не отличается от сделок, созданных до появления этого поля.
+    purchase.planQuantity =
+        quantity == null || quantity >= purchase.quantity ? null : quantity;
     await purchase.save();
     await _recomputePlanProgress(planId);
     _bump();
@@ -191,8 +198,10 @@ class StorageService {
     final plan = plansBox.get(planId);
     if (plan == null) return;
     final linked = purchases.where((p) => p.planId == planId && !p.isSell).toList();
-    final qty = linked.fold(0.0, (s, p) => s + p.quantity);
-    final avg = qty > 0 ? linked.fold(0.0, (s, p) => s + p.quantity * p.pricePerUnit) / qty : 0.0;
+    // Считается засчитанная часть сделки, а не вся: иначе покупка на 10 штук
+    // в план, которому не хватало пяти, опять перевыполнила бы его.
+    final qty = linked.fold(0.0, (s, p) => s + p.quantityInPlan);
+    final avg = qty > 0 ? linked.fold(0.0, (s, p) => s + p.quantityInPlan * p.pricePerUnit) / qty : 0.0;
     plan.purchasedQuantity = qty;
     plan.purchasedAvgPrice = avg;
     if (plan.status == PlanStatus.active && plan.targetQuantity > 0 && qty >= plan.targetQuantity) {

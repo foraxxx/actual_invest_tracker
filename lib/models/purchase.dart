@@ -62,6 +62,26 @@ class Purchase extends HiveObject {
   @HiveField(12)
   String? planId;
 
+  /// Сколько бумаг из сделки засчитано в план [planId]. null — вся сделка.
+  ///
+  /// Нужно, когда покупка больше, чем плану осталось добрать: в план идёт
+  /// ровно недостающее, а остаток остаётся обычной покупкой без плана.
+  /// Раньше план в таком случае становился перевыполненным — 25 из 20.
+  ///
+  /// Поле необязательное намеренно: у всех прежних сделок оно пустое и
+  /// означает «вся сделка», как и было. Переносить данные не нужно, старые
+  /// бэкапы читаются без изменений.
+  @HiveField(13)
+  double? planQuantity;
+
+  /// Сколько бумаг сделки фактически идёт в план: не больше самой сделки,
+  /// даже если её потом отредактировали и уменьшили.
+  double get quantityInPlan {
+    if (planId == null) return 0;
+    final q = planQuantity;
+    return q == null ? quantity : q.clamp(0, quantity).toDouble();
+  }
+
   Purchase({
     required this.id,
     required this.date,
@@ -76,6 +96,7 @@ class Purchase extends HiveObject {
     this.sector,
     this.isSell = false,
     this.planId,
+    this.planQuantity,
   });
 
   /// Знаковое количество: продажа уменьшает позицию

@@ -11,38 +11,64 @@ import 'storage_service.dart';
 class PlanApplyService {
   PlanApplyService._();
 
-  /// Планы-кандидаты для покупки этой бумаги сегодня: активные, и при этом
-  /// либо без срока, либо с сроком в этом месяце или раньше (включая уже
-  /// просроченные — план не перестаёт быть актуальным только из-за того, что
-  /// дедлайн прошёл). Планы с датой в будущих месяцах не предлагаем — покупка
-  /// сегодня не должна тихо закрывать план на следующий месяц.
+  /// Все активные планы по бумаге, от раннего срока к позднему; планы без
+  /// срока — в конце.
   ///
-  /// Отсортированы по дате: сначала те, чей срок ближе всего к сегодня,
-  /// затем просроченные, план без даты — в конце. Так "ближайший" кандидат
-  /// (первый в списке) можно использовать как значение по умолчанию.
+  /// Раньше сюда попадали только планы не дальше текущего месяца: покупка не
+  /// должна была тихо закрывать план на будущее. Но планы пишутся и на год
+  /// вперёд, и засчитать сделку в такой план должно быть можно. Защиту от
+  /// тихого закрытия теперь даёт [defaultFor]: будущий план никогда не
+  /// выбирается сам, только касанием.
+  ///
+  /// Завершённые и отменённые планы не предлагаются: засчитать покупку в уже
+  /// выполненный план почти всегда ошибка.
   static List<Plan> candidatesFor(String ticker) {
-    final now = DateTime.now();
-    final endOfThisMonth = DateTime(now.year, now.month + 1, 0);
     final list = StorageService.plans
-        .where((p) =>
-            p.ticker.toUpperCase() == ticker.toUpperCase() &&
-            p.status == PlanStatus.active &&
-            (p.targetDate == null || !p.targetDate!.isAfter(endOfThisMonth)))
+        .where((p) => p.ticker.toUpperCase() == ticker.toUpperCase() && p.status == PlanStatus.active)
         .toList();
     list.sort((a, b) {
       if (a.targetDate == null && b.targetDate == null) return 0;
-      if (a.targetDate == null) return 1; // без даты — в конец
+      if (a.targetDate == null) return 1;
       if (b.targetDate == null) return -1;
-      return (a.targetDate!.difference(now)).abs().compareTo((b.targetDate!.difference(now)).abs());
+      return a.targetDate!.compareTo(b.targetDate!);
     });
     return list;
   }
 
-  /// Есть ли хоть один план-кандидат — от этого зависит, показывать ли
-  /// галку «учитывать в плане» на форме покупки.
+  /// План, выбранный по умолчанию: ближайший к сегодня среди планов этого
+  /// месяца, просроченных и планов без срока. Если есть только будущие —
+  /// null, то есть «не учитывать»: засчитать покупку в план на март человек
+  /// должен решить сам.
+  static Plan? defaultFor(String ticker) {
+    final now = DateTime.now();
+    final endOfThisMonth = DateTime(now.year, now.month + 1, 0);
+    final eligible = candidatesFor(ticker)
+        .where((p) => p.targetDate == null || !p.targetDate!.isAfter(endOfThisMonth))
+        .toList();
+    if (eligible.isEmpty) return null;
+    eligible.sort((a, b) {
+      if (a.targetDate == null && b.targetDate == null) return 0;
+      if (a.targetDate == null) return 1;
+      if (b.targetDate == null) return -1;
+      return a.targetDate!.difference(now).abs().compareTo(b.targetDate!.difference(now).abs());
+    });
+    return eligible.first;
+  }
+
+  /// Есть ли хоть один активный план по бумаге — от этого зависит, показывать
+  /// ли на форме покупки блок выбора плана.
   static bool hasEligiblePlan(String ticker) => candidatesFor(ticker).isNotEmpty;
 
+  /// Сколько плану ещё осталось добрать.
+  static double remaining(Plan plan) => (plan.targetQuantity - plan.purchasedQuantity).clamp(0, double.infinity).toDouble();
+
+  /// Сколько бумаг из покупки на [quantity] штук пойдёт в план: не больше,
+  /// чем ему осталось. Остальное — обычная покупка без плана.
+  static double allocation(Plan plan, double quantity) => quantity <= 0 ? 0 : quantity.clamp(0, remaining(plan)).toDouble();
+
   /// Засчитывает уже сохранённую сделку в конкретный план.
-  static Future<void> applyToPlan(String purchaseId, String planId) =>
-      StorageService.applyPurchaseToPlan(purchaseId, planId);
+  ///
+  /// [quantity] — сколько бумаг засчитать, см. [allocation].
+  static Future<void> applyToPlan(String purchaseId, String planId, {double? quantity}) =>
+      StorageService.applyPurchaseToPlan(purchaseId, planId, quantity: quantity);
 }

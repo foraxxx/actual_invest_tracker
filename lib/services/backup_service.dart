@@ -74,6 +74,9 @@ class BackupService {
                 'sector': p.sector,
                 'isSell': p.isSell,
                 'planId': p.planId,
+                // Пишется только когда в план засчитана часть сделки: у
+                // остальных ключа нет, и файл читается и старыми версиями.
+                if (p.planQuantity != null) 'planQuantity': p.planQuantity,
               })
           .toList(),
       'incomes': StorageService.incomes
@@ -316,6 +319,8 @@ class BackupService {
         sector: p['sector'],
         isSell: p['isSell'] ?? false,
         planId: p['planId'],
+        // Бэкапы до появления поля его не содержат — это «вся сделка».
+        planQuantity: (p['planQuantity'] as num?)?.toDouble(),
       ));
     }
 

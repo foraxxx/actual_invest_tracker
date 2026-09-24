@@ -103,10 +103,17 @@ class SecuritiesDatabase {
     return result;
   }
 
-  static List<SecurityInfo> search(String query) {
-    if (query.isEmpty) return all.take(30).toList();
+  /// [where] сужает круг бумаг ДО того, как выдача обрезается до 50.
+  ///
+  /// Фильтровать уже обрезанный список нельзя: облигаций в справочнике больше
+  /// трёх тысяч против четырёх сотен акций, и по запросу вроде «Сбер» все 50
+  /// мест занимали бы выпуски облигаций — после фильтра по акциям не осталось
+  /// бы ничего, хотя подходящие бумаги есть.
+  static List<SecurityInfo> search(String query, {bool Function(SecurityInfo)? where}) {
+    final pool = where == null ? all : all.where(where);
+    if (query.isEmpty) return pool.take(30).toList();
     final q = query.toLowerCase();
-    final matches = all
+    final matches = pool
         .where((s) => s.ticker.toLowerCase().contains(q) || s.name.toLowerCase().contains(q))
         .toList();
     // сначала точные/близкие совпадения по тикеру, потом остальные

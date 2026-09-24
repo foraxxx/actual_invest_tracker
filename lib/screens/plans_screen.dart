@@ -12,6 +12,7 @@ import '../models/purchase.dart';
 import '../services/storage_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_price_service.dart';
+import '../services/plan_filter_service.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import 'home_screen.dart';
@@ -19,7 +20,9 @@ import 'home_screen.dart';
 /// Период, за который показываются планы. Отсчитывается от сегодняшнего дня
 /// вперёд: планы — это будущие покупки, поэтому «месяц» здесь означает
 /// «ближайший месяц», а не «прошедший».
-enum _DatePreset { month, threeMonths, year, all, custom }
+/// [calendarYear] — календарный год из [_PlansScreenState._year]; в отличие
+/// от [year], это «весь 2027», а не «ближайшие 12 месяцев».
+enum _DatePreset { month, threeMonths, year, all, custom, calendarYear }
 
 /// Отбор по состоянию плана.
 ///
@@ -94,6 +97,12 @@ class _PlansScreenState extends State<PlansScreen> {
   _StatusFilter _status = _StatusFilter.all;
   DateTimeRange? _customRange;
 
+  /// Выбранный календарный год, если [_preset] — [_DatePreset.calendarYear].
+  int? _year;
+
+  /// Галка «Сохранить фильтры»: пока стоит, фильтры переживают закрытие экрана.
+  bool _rememberFilters = false;
+
   /// Сколько условий отличается от «показывать всё» — для счётчика на кнопке.
   int get _activeFilterCount =>
       (_preset == _DatePreset.all ? 0 : 1) + (_status == _StatusFilter.all ? 0 : 1);
@@ -102,6 +111,60 @@ class _PlansScreenState extends State<PlansScreen> {
   void initState() {
     super.initState();
     StorageService.dataVersion.addListener(_onDataChanged);
+    _restoreFilters();
+  }
+
+  void _restoreFilters() {
+    final saved = PlanFilterService.saved;
+    if (saved == null) return;
+    _rememberFilters = true;
+    _preset = _DatePreset.values.firstWhere(
+      (p) => p.name == saved['preset'],
+      orElse: () => _DatePreset.all,
+    );
+    _status = _StatusFilter.values.firstWhere(
+      (st) => st.name == saved['status'],
+      orElse: () => _StatusFilter.all,
+    );
+    _year = (saved['year'] as num?)?.toInt();
+    final from = DateTime.tryParse('${saved['from'] ?? ''}');
+    final to = DateTime.tryParse('${saved['to'] ?? ''}');
+    _customRange = from != null && to != null ? DateTimeRange(start: from, end: to) : null;
+    // Запись могла оказаться неполной — тогда не оставляем фильтр, который
+    // нечем применить.
+    if (_preset == _DatePreset.calendarYear && _year == null) _preset = _DatePreset.all;
+    if (_preset == _DatePreset.custom && _customRange == null) _preset = _DatePreset.all;
+  }
+
+  /// Записывает фильтры, если стоит галка, и стирает запись, если снята.
+  ///
+  /// «Месяц» и «3 месяца» хранятся как пресет, а не как даты: при следующем
+  /// открытии они снова отсчитываются от сегодняшнего дня.
+  void _persistFilters() {
+    if (!_rememberFilters) {
+      PlanFilterService.clear();
+      return;
+    }
+    PlanFilterService.save({
+      'preset': _preset.name,
+      'status': _status.name,
+      if (_year != null) 'year': _year,
+      if (_customRange != null) 'from': _customRange!.start.toIso8601String(),
+      if (_customRange != null) 'to': _customRange!.end.toIso8601String(),
+    });
+  }
+
+  /// Годы, на которые есть планы, по возрастанию.
+  ///
+  /// Сохранённый год остаётся в списке, даже если его планы уже удалены:
+  /// иначе фильтр висел бы невидимым и снять его было бы нечем.
+  List<int> get _planYears {
+    final years = <int>{
+      for (final p in StorageService.plans)
+        if (p.targetDate != null) p.targetDate!.year,
+    };
+    if (_year != null) years.add(_year!);
+    return years.toList()..sort();
   }
 
   @override
@@ -165,6 +228,8 @@ class _PlansScreenState extends State<PlansScreen> {
       case _DatePreset.custom:
         if (_customRange == null) return true;
         return !g.date!.isBefore(_customRange!.start) && !g.date!.isAfter(_customRange!.end);
+      case _DatePreset.calendarYear:
+        return _year == null || g.date!.year == _year;
     }
   }
 
@@ -205,6 +270,8 @@ class _PlansScreenState extends State<PlansScreen> {
         return _customRange == null
             ? 'Свой период'
             : '${Fmt.date(_customRange!.start)} – ${Fmt.date(_customRange!.end)}';
+      case _DatePreset.calendarYear:
+        return _year == null ? 'Год' : '$_year год';
     }
   }
 
@@ -235,6 +302,8 @@ class _PlansScreenState extends State<PlansScreen> {
         return _customRange != null
             ? 'за ${Fmt.date(_customRange!.start)} – ${Fmt.date(_customRange!.end)}'
             : 'за выбранный период';
+      case _DatePreset.calendarYear:
+        return _year == null ? 'за всё время' : 'на $_year год';
     }
   }
 
@@ -448,6 +517,7 @@ class _PlansScreenState extends State<PlansScreen> {
   }
 
   Future<void> _openFilterSheet() async {
+    final years = _planYears;
     await showAppSheet(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -472,6 +542,7 @@ class _PlansScreenState extends State<PlansScreen> {
                           _preset = _DatePreset.all;
                           _status = _StatusFilter.all;
                           _customRange = null;
+                          _year = null;
                         });
                         setSheetState(() {});
                       },
@@ -496,7 +567,10 @@ class _PlansScreenState extends State<PlansScreen> {
                       label: _presetLabel(preset),
                       selected: _preset == preset,
                       onTap: () {
-                        setState(() => _preset = preset);
+                        setState(() {
+                          _preset = preset;
+                          _year = null;
+                        });
                         setSheetState(() {});
                       },
                     ),
@@ -516,12 +590,49 @@ class _PlansScreenState extends State<PlansScreen> {
                       setState(() {
                         _customRange = picked;
                         _preset = _DatePreset.custom;
+                        _year = null;
                       });
                       setSheetState(() {});
                     },
                   ),
                 ],
               ),
+              // Годы — одной прокручиваемой строкой: сколько бы их ни было,
+              // они занимают одну высоту и не раздувают лист. Год и пресеты
+              // выше исключают друг друга: оба фильтруют по дате, и вместе
+              // («Месяц» плюс «2028») давали бы заведомо пустой список.
+              if (years.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('Или год', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 40,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: years.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) {
+                      final y = years[i];
+                      final isOn = _preset == _DatePreset.calendarYear && _year == y;
+                      return Center(
+                        child: _filterPill(
+                          label: '$y',
+                          selected: isOn,
+                          onTap: () {
+                            // Повторное касание снимает год.
+                            setState(() {
+                              _preset = isOn ? _DatePreset.all : _DatePreset.calendarYear;
+                              _year = isOn ? null : y;
+                            });
+                            setSheetState(() {});
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
               const SizedBox(height: 18),
               Text('Статус', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim)),
               const SizedBox(height: 8),
@@ -540,7 +651,17 @@ class _PlansScreenState extends State<PlansScreen> {
                     ),
                 ],
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 16),
+              AppCheckRow(
+                value: _rememberFilters,
+                title: 'Сохранить фильтры',
+                subtitle: 'Применять их при каждом открытии планов',
+                onChanged: (v) {
+                  setState(() => _rememberFilters = v);
+                  setSheetState(() {});
+                },
+              ),
+              const SizedBox(height: 18),
               GradientButton(
                 label: 'Показать',
                 icon: Icons.check_rounded,
@@ -551,6 +672,9 @@ class _PlansScreenState extends State<PlansScreen> {
         ),
       ),
     );
+    // Фильтры меняются только внутри листа, поэтому сохраняем один раз —
+    // когда он закрылся, а не на каждое нажатие.
+    _persistFilters();
   }
 
   Widget _filterPill({
@@ -1092,13 +1216,18 @@ class _PlansScreenState extends State<PlansScreen> {
                 padding: const EdgeInsets.only(top: 8),
                 child: Row(
                   children: [
+                    // Без комментария место остаётся пустым: заглушка на
+                    // каждом плане только добавляла шума. Сама строка нужна
+                    // ради суммы справа, поэтому не убирается.
                     Expanded(
-                      child: Text(
-                        p.note?.isNotEmpty == true ? p.note! : 'Без комментария',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.2, fontStyle: FontStyle.italic, color: context.dim),
-                      ),
+                      child: p.note?.trim().isNotEmpty == true
+                          ? Text(
+                              p.note!.trim(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11.2, fontStyle: FontStyle.italic, color: context.dim),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                     const SizedBox(width: 8),
                     Text(

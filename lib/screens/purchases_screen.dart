@@ -6,6 +6,7 @@ import '../design/motion.dart';
 import '../design/page_tour.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
+import '../models/plan.dart';
 import '../models/purchase.dart';
 import '../services/analytics_service.dart';
 import '../services/manual_price_service.dart';
@@ -14,6 +15,7 @@ import '../services/price_sanity_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../services/moex_sync_service.dart';
+import '../widgets/plan_picker.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import 'home_screen.dart';
@@ -768,13 +770,18 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
       if (PriceSanityService.canRecordAsMarketPrice(ticker, price)) {
         await ManualPriceService.setAt(ticker, date, price);
       }
-      if (!pos.isSell && pos.applyToNearestPlan) {
-        final candidates = PlanApplyService.candidatesFor(ticker);
-        final planId = candidates.any((p) => p.id == pos.selectedPlanId)
-            ? pos.selectedPlanId
-            : (candidates.isNotEmpty ? candidates.first.id : null);
-        if (planId != null) {
-          await PlanApplyService.applyToPlan(purchase.id, planId);
+      if (!pos.isSell && pos.selectedPlanId != null) {
+        Plan? plan;
+        for (final p in PlanApplyService.candidatesFor(ticker)) {
+          if (p.id == pos.selectedPlanId) plan = p;
+        }
+        if (plan != null) {
+          // В план — только недостающее, остальное остаётся покупкой без
+          // плана, а не перевыполняет его.
+          final inPlan = PlanApplyService.allocation(plan, purchase.quantity);
+          if (inPlan > 0) {
+            await PlanApplyService.applyToPlan(purchase.id, plan.id, quantity: inPlan);
+          }
         }
       }
       added++;
@@ -798,9 +805,11 @@ class _PositionDraft {
   String currency = 'RUB';
   String? sector;
   bool isSell = false;
-  bool applyToNearestPlan = false;
-  /// Какой именно план из кандидатов выбран (если их несколько). null —
-  /// использовать ближайший по умолчанию.
+  /// В какой план засчитать позицию; null — не учитывать.
+  ///
+  /// В этой форме по умолчанию план не выбран: позиции тут часто вносят
+  /// пачкой, и не каждая покупка относится к плану. Выбранная карточка при
+  /// этом видна сразу, так что решение всё равно явное.
   String? selectedPlanId;
   int lotSize = 1;
 
@@ -1050,56 +1059,25 @@ class _PositionCard extends StatelessWidget {
     );
   }
 
-  /// Галка "учитывать в плане" + (если планов-кандидатов несколько) выбор,
-  /// в какой именно план засчитать эту сделку.
+  /// Выбор плана для позиции — те же карточки, что в карточке бумаги.
   Widget _planSection(BuildContext context) {
+    if (draft.isSell) return const SizedBox.shrink();
     final candidates = PlanApplyService.candidatesFor(draft.tickerCtrl.text);
     if (candidates.isEmpty) return const SizedBox.shrink();
-    final effectiveId = candidates.any((p) => p.id == draft.selectedPlanId)
-        ? draft.selectedPlanId
-        : candidates.first.id;
+    // Сменили бумагу — прежний выбор к её планам не относится.
+    final selected = candidates.any((p) => p.id == draft.selectedPlanId) ? draft.selectedPlanId : null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 4),
-        AppCheckRow(
-          value: draft.applyToNearestPlan,
-          title: candidates.length > 1
-              ? 'Учитывать в одном из планов по этой бумаге'
-              : 'Учитывать в плане «${Fmt.qty(candidates.first.targetQuantity)} шт.'
-                  '${candidates.first.targetDate != null ? ' к ${Fmt.date(candidates.first.targetDate!)}' : ''}»',
-          subtitle: 'Запишет эту сделку в план; засчитываются планы этой бумаги без срока, '
-              'в этом месяце или уже просроченные. При достижении цели по количеству план '
-              'станет выполненным',
-          onChanged: (v) {
-            draft.applyToNearestPlan = v;
-            if (v) draft.selectedPlanId ??= effectiveId;
-            onChanged();
-          },
-        ),
-        if (candidates.length > 1 && draft.applyToNearestPlan) ...[
-          const SizedBox(height: 8),
-          AppDropdown<String>(
-            value: effectiveId,
-            label: 'В какой план засчитать',
-            items: candidates
-                .map((p) => DropdownMenuItem(
-                      value: p.id,
-                      child: Text(
-                        '${p.targetDate != null ? Fmt.date(p.targetDate!) : 'без срока'} · '
-                        '${Fmt.qty(p.targetQuantity)} шт.'
-                        '${p.targetPrice != null ? ' × ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
-                      ),
-                    ))
-                .toList(),
-            onChanged: (v) {
-              draft.selectedPlanId = v;
-              onChanged();
-            },
-          ),
-        ],
-      ],
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: PlanPicker(
+        plans: candidates,
+        selectedId: selected,
+        quantity: draft.securityQuantity,
+        onChanged: (id) {
+          draft.selectedPlanId = id;
+          onChanged();
+        },
+      ),
     );
   }
 }

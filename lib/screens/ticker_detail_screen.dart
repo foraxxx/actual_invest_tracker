@@ -27,6 +27,7 @@ import '../services/payout_forecast_service.dart';
 import '../services/sector_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
+import '../widgets/plan_picker.dart';
 import '../widgets/ticker_avatar.dart';
 
 /// Карточка одной бумаги: сводка позиции, история цены, льгота ЛДВ,
@@ -1325,8 +1326,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     // в этом месяце или просроченный).
     final planCandidates = isSell ? const <Plan>[] : PlanApplyService.candidatesFor(ticker);
     final hasPlan = planCandidates.isNotEmpty;
-    bool applyToPlan = hasPlan;
-    String? selectedPlanId = planCandidates.isNotEmpty ? planCandidates.first.id : null;
+    // По умолчанию — ближайший текущий план. План на будущее сам не
+    // выбирается никогда: засчитать в него покупку человек решает касанием.
+    String? selectedPlanId = isSell ? null : PlanApplyService.defaultFor(ticker)?.id;
 
     await showAppSheet(
       context: context,
@@ -1459,35 +1461,13 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   ),
                 ],
                 if (hasPlan) ...[
-                  const SizedBox(height: 12),
-                  AppCheckRow(
-                    value: applyToPlan,
-                    title: planCandidates.length > 1
-                        ? 'Учитывать в одном из планов по этой бумаге'
-                        : 'Учитывать в плане «${Fmt.qty(planCandidates.first.targetQuantity)} шт.'
-                            '${planCandidates.first.targetDate != null ? ' к ${Fmt.date(planCandidates.first.targetDate!)}' : ''}»',
-                    onChanged: (v) => setSheetState(() => applyToPlan = v),
+                  const SizedBox(height: 14),
+                  PlanPicker(
+                    plans: planCandidates,
+                    selectedId: selectedPlanId,
+                    quantity: (int.tryParse(qtyCtrl.text) ?? 0) * lotSize.toDouble(),
+                    onChanged: (id) => setSheetState(() => selectedPlanId = id),
                   ),
-                  if (planCandidates.length > 1 && applyToPlan) ...[
-                    const SizedBox(height: 8),
-                    AppDropdown<String>(
-                      value: planCandidates.any((p) => p.id == selectedPlanId)
-                          ? selectedPlanId
-                          : planCandidates.first.id,
-                      label: 'В какой план засчитать',
-                      items: planCandidates
-                          .map((p) => DropdownMenuItem(
-                                value: p.id,
-                                child: Text(
-                                  '${p.targetDate != null ? Fmt.date(p.targetDate!) : 'без срока'} · '
-                                  '${Fmt.qty(p.targetQuantity)} шт.'
-                                  '${p.targetPrice != null ? ' × ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
-                                ),
-                              ))
-                          .toList(),
-                      onChanged: (v) => setSheetState(() => selectedPlanId = v),
-                    ),
-                  ],
                 ],
                 const SizedBox(height: 12),
                 AppTextField(controller: noteCtrl, label: 'Заметка (необязательно)'),
@@ -1527,12 +1507,18 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     if (PriceSanityService.canRecordAsMarketPrice(ticker, pr)) {
                       await ManualPriceService.setAt(ticker, date, pr);
                     }
-                    if (applyToPlan && !isSell) {
-                      final planId = planCandidates.any((p) => p.id == selectedPlanId)
-                          ? selectedPlanId
-                          : (planCandidates.isNotEmpty ? planCandidates.first.id : null);
-                      if (planId != null) {
-                        await PlanApplyService.applyToPlan(purchase.id, planId);
+                    if (!isSell) {
+                      Plan? plan;
+                      for (final p in planCandidates) {
+                        if (p.id == selectedPlanId) plan = p;
+                      }
+                      if (plan != null) {
+                        // В план — только недостающее, остальное остаётся
+                        // покупкой без плана, а не перевыполняет его.
+                        final inPlan = PlanApplyService.allocation(plan, purchase.quantity);
+                        if (inPlan > 0) {
+                          await PlanApplyService.applyToPlan(purchase.id, plan.id, quantity: inPlan);
+                        }
                       }
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
