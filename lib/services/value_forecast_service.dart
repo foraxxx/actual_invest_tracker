@@ -3,13 +3,17 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../models/income.dart';
+import '../models/plan.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'appearance_service.dart';
 import 'cash_service.dart';
 import 'currency_service.dart';
 import 'moex_service.dart';
 import 'moex_sync_service.dart';
+import 'online_price_service.dart';
 import 'online_settings_service.dart';
+import 'plan_apply_service.dart';
 import 'payout_forecast_service.dart';
 import 'storage_service.dart';
 import 'value_forecast_engine.dart';
@@ -244,37 +248,211 @@ class ValueForecastService {
 
   static double get _freeCash => math.max(0.0, CashService.summary().cash);
 
-  /// Все три сценария на заданный срок.
-  static Map<ForecastScenario, ForecastResult> compute(int years) {
-    final now = DateTime.now();
-    final assets = currentAssets(now: now);
-    final market = assumptions;
-    final cash = _freeCash;
-    return {
-      for (final s in ForecastScenario.values)
-        s: ValueForecastEngine.simulate(
-          assets: assets,
-          market: market,
-          scenario: s,
-          start: now,
-          months: years * 12,
-          freeCash: cash,
-        ),
-    };
+  /// Учитывать ли плановые покупки. Хранится между запусками, и карточка на
+  /// главной следует тому же значению, что и форма: иначе число на карточке и
+  /// в форме расходились бы.
+  static bool get withPlans => AppearanceService.forecastWithPlans;
+
+  static Future<void> setWithPlans(bool value) async {
+    await AppearanceService.setForecastWithPlans(value);
+    version.value++;
   }
 
-  /// Только реалистичный сценарий — для карточки на главной, где нужен один
-  /// итог, а считать остальные два незачем.
-  static ForecastResult realistic(int years) => ValueForecastEngine.simulate(
-        assets: currentAssets(),
+  /// Плановые покупки, разложенные по бумагам, и сводка о том, что вошло.
+  ///
+  /// Правила отбора:
+  /// - берутся только активные планы, по которым что-то осталось докупить;
+  /// - план без срока не учитывается: месяц покупки у него неизвестен;
+  /// - план позже горизонта прогноза не учитывается;
+  /// - просроченный план покупается в первый месяц — он ещё активен;
+  /// - бумага, по которой нет ни цены, ни данных, пропускается, и это видно в
+  ///   сводке, а не теряется молча.
+  static ({List<ForecastAsset> assets, PlanCoverage coverage}) _withPlans(
+    List<ForecastAsset> held,
+    int months,
+    DateTime now,
+  ) {
+    final byTicker = <String, ForecastAsset>{for (final a in held) a.ticker.toUpperCase(): a};
+    final fresh = <String, ForecastAsset>{};
+    final buys = <String, List<PlannedBuy>>{};
+    int included = 0, undated = 0, beyond = 0, noData = 0;
+    DateTime? last;
+
+    for (final plan in StorageService.plans) {
+      if (plan.status != PlanStatus.active) continue;
+      final qty = PlanApplyService.remaining(plan);
+      if (qty <= 0) continue;
+      final date = plan.targetDate;
+      if (date == null) {
+        undated++;
+        continue;
+      }
+      if (ValueForecastEngine.stepOf(date, now) >= months) {
+        beyond++;
+        continue;
+      }
+      final key = plan.ticker.toUpperCase();
+      var asset = byTicker[key] ?? fresh[key];
+      if (asset == null) {
+        asset = _freshAsset(plan, now);
+        if (asset == null) {
+          noData++;
+          continue;
+        }
+        fresh[key] = asset;
+      }
+      (buys[key] ??= []).add(PlannedBuy(date, qty));
+      included++;
+      // Просроченный план покупается сейчас, поэтому «до какого месяца» для
+      // него считается от сегодняшней даты, а не от давно прошедшей.
+      final effective = date.isBefore(now) ? now : date;
+      if (last == null || effective.isAfter(last)) last = effective;
+    }
+
+    final assets = <ForecastAsset>[
+      for (final a in held) a.withPlannedBuys(buys[a.ticker.toUpperCase()] ?? const []),
+      for (final e in fresh.entries) e.value.withPlannedBuys(buys[e.key] ?? const []),
+    ];
+    return (
+      assets: assets,
+      coverage: PlanCoverage(
+        included: included,
+        undated: undated,
+        beyond: beyond,
+        noData: noData,
+        lastDate: last,
+      ),
+    );
+  }
+
+  /// Бумага из плана, которой ещё нет в портфеле: позиция с нулевым
+  /// количеством, на которую придут плановые покупки.
+  ///
+  /// Цена — котировка, затем сохранённая цена, затем цена из самого плана.
+  /// Для облигации без графика выплат и без даты погашения позицию не
+  /// заводим: купленная «пустой», она молча не приносила бы дохода и занижала
+  /// прогноз. Пока график не подгрузился, такой план числится в «без данных».
+  static ForecastAsset? _freshAsset(Plan plan, DateTime now) {
+    final key = plan.ticker.toUpperCase();
+    final quote = MoexSyncService.marketSnapshot.value[key];
+    double? price;
+    if (quote != null && quote.price > 0) {
+      price = plan.type == AssetType.bond ? CurrencyService.toRub(quote.price, quote.faceUnit) : quote.price;
+    }
+    price ??= OnlinePriceService.get(key)?.price;
+    if (price == null || price <= 0) price = plan.targetPrice;
+    if (price == null || price <= 0) return null;
+
+    switch (plan.type) {
+      case AssetType.bond:
+        final bond = _bond(key, 0, price, now);
+        if (bond.coupons.isEmpty && bond.maturity == null) return null;
+        return bond;
+      case AssetType.currency:
+        return ForecastAsset(ticker: key, kind: ForecastAssetKind.flat, qty: 0, price: price);
+      default:
+        // Дивидендов у новой акции в прогнозе нет: свои выплаты по ней ещё не
+        // записаны, а биржевая история дивидендов закрыта подпиской.
+        return ForecastAsset(ticker: key, kind: ForecastAssetKind.equity, qty: 0, price: price);
+    }
+  }
+
+  /// Всё, что нужно форме прогноза, за один проход: три сценария, даты
+  /// погашения для пометок и сводка по планам.
+  ///
+  /// Сводка считается и при выключенной галке — форме нужно сказать, сколько
+  /// планов она могла бы учесть, чтобы галку имело смысл включать.
+  static ForecastBundle build(int years) {
+    final now = DateTime.now();
+    final months = years * 12;
+    final held = currentAssets(now: now);
+    final planned = _withPlans(held, months, now);
+    final assets = withPlans ? planned.assets : held;
+    final market = assumptions;
+    final cash = _freeCash;
+    return ForecastBundle(
+      results: {
+        for (final s in ForecastScenario.values)
+          s: ValueForecastEngine.simulate(
+            assets: assets,
+            market: market,
+            scenario: s,
+            start: now,
+            months: months,
+            freeCash: cash,
+          ),
+      },
+      maturities: ValueForecastEngine.maturitiesWithin(assets, now, months),
+      coverage: planned.coverage,
+    );
+  }
+
+  /// Реалистичный сценарий для карточки на главной, где нужен один итог, а
+  /// считать остальные два незачем. [plansApplied] — вошли ли в него плановые
+  /// покупки: галка может стоять, а учитывать нечего.
+  static ({ForecastResult result, bool plansApplied}) realistic(int years) {
+    final now = DateTime.now();
+    final held = currentAssets(now: now);
+    var assets = held;
+    var applied = false;
+    if (withPlans) {
+      final planned = _withPlans(held, years * 12, now);
+      assets = planned.assets;
+      applied = planned.coverage.included > 0;
+    }
+    return (
+      result: ValueForecastEngine.simulate(
+        assets: assets,
         market: assumptions,
         scenario: ForecastScenario.realistic,
-        start: DateTime.now(),
+        start: now,
         months: years * 12,
         freeCash: _freeCash,
-      );
+      ),
+      plansApplied: applied,
+    );
+  }
+}
 
-  /// Даты погашения облигаций в пределах срока — для пометок на графике.
-  static List<DateTime> maturities(int years) =>
-      ValueForecastEngine.maturitiesWithin(currentAssets(), DateTime.now(), years * 12);
+/// Что из планов вошло в прогноз и что нет.
+class PlanCoverage {
+  /// Планов в расчёте.
+  final int included;
+
+  /// Без срока — не учтены.
+  final int undated;
+
+  /// Позже горизонта прогноза — не учтены.
+  final int beyond;
+
+  /// Без цены или без данных по бумаге — не учтены.
+  final int noData;
+
+  /// Месяц последней учтённой покупки.
+  final DateTime? lastDate;
+
+  const PlanCoverage({
+    required this.included,
+    required this.undated,
+    required this.beyond,
+    required this.noData,
+    required this.lastDate,
+  });
+
+  int get skipped => undated + beyond + noData;
+
+  /// Есть ли вообще планы, о которых стоит говорить в форме.
+  bool get hasAny => included + skipped > 0;
+}
+
+class ForecastBundle {
+  final Map<ForecastScenario, ForecastResult> results;
+  final List<DateTime> maturities;
+  final PlanCoverage coverage;
+
+  const ForecastBundle({
+    required this.results,
+    required this.maturities,
+    required this.coverage,
+  });
 }

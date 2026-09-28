@@ -63,7 +63,10 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
     // облигаций. Пока их нет, прогноз строится по тому, что есть, и сам
     // пересчитается, когда данные приедут.
     ValueForecastService.loadMarketHistory();
-    if (!PayoutForecastService.hasData) PayoutForecastService.refresh();
+    // Без условия «кэш пуст»: облигации из планов могли остаться без графика
+    // выплат, даже когда для позиций портфеля он уже загружен. Свежие записи
+    // refresh пропускает, так что лишнего трафика это не даёт.
+    PayoutForecastService.refresh();
   }
 
   @override
@@ -79,8 +82,11 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final results = ValueForecastService.compute(_years);
-    final maturities = ValueForecastService.maturities(_years);
+    final bundle = ValueForecastService.build(_years);
+    final results = bundle.results;
+    final maturities = bundle.maturities;
+    final coverage = bundle.coverage;
+    final withPlans = ValueForecastService.withPlans;
     final selected = results[_scenario]!;
     final b = selected.breakdown;
     final market = ValueForecastService.assumptions;
@@ -108,6 +114,22 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
               labelOf: _yearsLabel,
               onChanged: (v) => setState(() => _years = v),
             ),
+            if (coverage.hasAny) ...[
+              const SizedBox(height: 12),
+              AppCheckRow(
+                value: withPlans,
+                title: 'Учесть плановые покупки',
+                subtitle: _plansSubtitle(coverage, results[ForecastScenario.realistic]!.plannedSpent),
+                onChanged: (v) => ValueForecastService.setWithPlans(v),
+              ),
+              if (withPlans && coverage.skipped > 0) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _skippedText(coverage),
+                  style: TextStyle(fontSize: 11, color: context.dim, height: 1.3),
+                ),
+              ],
+            ],
             const SizedBox(height: 14),
             AppCard(
               padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
@@ -137,6 +159,15 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
                       ),
                     ],
                   ),
+                  if (withPlans && selected.breakdown.plannedInvested > 0) ...[
+                    const SizedBox(height: 6),
+                    // Ступенька вверх в месяц плановой покупки — это внесённые
+                    // деньги, а не рост, и без подписи её легко принять за него.
+                    Text(
+                      'Ступеньки вверх — месяцы плановых покупок: это внесённые деньги, а не рост.',
+                      style: TextStyle(fontSize: 10.5, color: context.dim, height: 1.3),
+                    ),
+                  ],
                   if (maturities.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     // Пунктир — граница, после которой облигация больше не
@@ -165,11 +196,17 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
               child: Column(
                 children: [
                   _row(context, 'Сейчас', Fmt.money(b.start)),
+                  // Новые деньги идут сразу под «Сейчас»: это взнос, а не
+                  // результат вложений, и от строк доходности его отделяет
+                  // цвет.
+                  if (b.plannedInvested.abs() >= 1)
+                    _delta(context, 'Вложено по планам', b.plannedInvested, color: AppColors.info),
                   if (b.coupons.abs() >= 1) _delta(context, 'Купоны', b.coupons),
                   if (b.bondsToPar.abs() >= 1) _delta(context, 'Облигации к номиналу', b.bondsToPar),
                   if (b.stockGrowth.abs() >= 1) _delta(context, 'Рост акций', b.stockGrowth),
                   if (b.dividends.abs() >= 1) _delta(context, 'Дивиденды', b.dividends),
                   if (b.reinvestment.abs() >= 1) _delta(context, 'Эффект реинвестирования', b.reinvestment),
+                  if (b.plannedIncome.abs() >= 1) _delta(context, 'Доход с плановых покупок', b.plannedIncome),
                   const SizedBox(height: 6),
                   Divider(height: 1, color: context.hairline),
                   const SizedBox(height: 8),
@@ -243,7 +280,7 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
         ),
       );
 
-  Widget _delta(BuildContext context, String label, double value) => Padding(
+  Widget _delta(BuildContext context, String label, double value, {Color? color}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
@@ -253,12 +290,31 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: value >= 0 ? AppColors.positive : AppColors.negative,
+                color: color ?? (value >= 0 ? AppColors.positive : AppColors.negative),
               ),
             ),
           ],
         ),
       );
+
+  /// Подпись под галкой: что будет учтено, если её включить.
+  static String _plansSubtitle(PlanCoverage c, double spent) {
+    if (c.included == 0) return 'В пределах выбранного срока планов нет';
+    final n = c.included;
+    final word = Fmt.plural(n, 'план', 'плана', 'планов');
+    final until = c.lastDate == null ? '' : ' до ${Fmt.monthShort(c.lastDate!.month)} ${c.lastDate!.year}';
+    return '$n $word, ≈${Fmt.money(spent)}$until';
+  }
+
+  /// Что из планов не попало в расчёт и почему.
+  static String _skippedText(PlanCoverage c) {
+    final parts = <String>[
+      if (c.undated > 0) '${c.undated} без срока',
+      if (c.beyond > 0) '${c.beyond} позже срока прогноза',
+      if (c.noData > 0) '${c.noData} без данных по бумаге',
+    ];
+    return 'Не учтены: ${parts.join(', ')}.';
+  }
 }
 
 class _ForecastChartPainter extends CustomPainter {

@@ -28,6 +28,20 @@ import 'dart:math' as math;
 /// Купоны и дивиденды реинвестируются в ту же бумагу целыми штуками; остаток,
 /// которого не хватило на штуку, копится до следующей выплаты. Суммы — до
 /// налогов.
+///
+/// Плановые покупки
+/// ----------------
+/// Покупка выполняется в конце месяца срока плана по РЫНОЧНОЙ цене этого
+/// месяца в сценарии, а не по цене из плана: цена плана ниже рынка дала бы
+/// мгновенную прибыль в момент покупки, выше — мгновенный убыток. Деньги
+/// берутся сначала из свободных, затем из копилки после погашения облигаций,
+/// и только недостающее считается новым вложением.
+///
+/// Прогон делается дважды — без планов и с ними. Строки разбивки по
+/// текущему портфелю берутся из первого прогона, поэтому включение планов не
+/// меняет их ни на копейку. Разница итогов делится на «вложено по планам»
+/// (деньги, внесённые извне) и «доход с плановых покупок» (всё остальное), и
+/// сумма статей равна итогу по построению.
 
 enum ForecastScenario { pessimistic, realistic, optimistic }
 
@@ -39,6 +53,18 @@ class CashEvent {
   final double perUnit;
 
   const CashEvent(this.date, this.perUnit);
+}
+
+/// Плановая покупка: сколько бумаг и в каком месяце.
+///
+/// Точная дата внутри месяца движку не нужна — покупка происходит в конце
+/// месяца, на который назначена. Дата в прошлом означает «просрочено»: такая
+/// покупка выполняется в первый же месяц прогноза.
+class PlannedBuy {
+  final DateTime date;
+  final double qty;
+
+  const PlannedBuy(this.date, this.qty);
 }
 
 class ForecastAsset {
@@ -66,6 +92,10 @@ class ForecastAsset {
   /// Акции: дивиденды на одну бумагу за последние 12 месяцев.
   final List<CashEvent> dividendsLastYear;
 
+  /// Будущие плановые покупки этой бумаги. У бумаги, которой в портфеле ещё
+  /// нет, [qty] равно нулю, а покупки лежат здесь.
+  final List<PlannedBuy> plannedBuys;
+
   const ForecastAsset({
     required this.ticker,
     required this.kind,
@@ -76,7 +106,22 @@ class ForecastAsset {
     this.coupons = const [],
     this.amortizations = const [],
     this.dividendsLastYear = const [],
+    this.plannedBuys = const [],
   });
+
+  /// Та же бумага с другим набором плановых покупок.
+  ForecastAsset withPlannedBuys(List<PlannedBuy> buys) => ForecastAsset(
+        ticker: ticker,
+        kind: kind,
+        qty: qty,
+        price: price,
+        face: face,
+        maturity: maturity,
+        coupons: coupons,
+        amortizations: amortizations,
+        dividendsLastYear: dividendsLastYear,
+        plannedBuys: buys,
+      );
 }
 
 class MarketAssumptions {
@@ -132,6 +177,17 @@ class ForecastBreakdown {
   /// бумаг, изменение их цены и доход на деньги после погашения облигаций.
   final double reinvestment;
 
+  /// Новые деньги, которые пришлось внести ради плановых покупок: то, что не
+  /// покрылось свободными деньгами и деньгами от погашённых облигаций. Это не
+  /// доход, а взнос, и показывается отдельно, чтобы рост от собственных денег
+  /// не выдавался за доходность.
+  final double plannedInvested;
+
+  /// Всё, что плановые покупки принесли сверх вложенного: рост, купоны,
+  /// дивиденды и реинвестирование. Считается как разница прогонов с планами и
+  /// без них, за вычетом внесённых денег.
+  final double plannedIncome;
+
   final double end;
 
   const ForecastBreakdown({
@@ -142,6 +198,8 @@ class ForecastBreakdown {
     required this.stockGrowth,
     required this.reinvestment,
     required this.end,
+    this.plannedInvested = 0,
+    this.plannedIncome = 0,
   });
 }
 
@@ -150,10 +208,16 @@ class ForecastResult {
   final List<ForecastPoint> points;
   final ForecastBreakdown breakdown;
 
+  /// Сколько всего потрачено на плановые покупки в этом сценарии. Отличается
+  /// от [ForecastBreakdown.plannedInvested]: сюда входят и деньги, которые уже
+  /// лежали в портфеле.
+  final double plannedSpent;
+
   const ForecastResult({
     required this.scenario,
     required this.points,
     required this.breakdown,
+    this.plannedSpent = 0,
   });
 }
 
@@ -198,8 +262,76 @@ class ValueForecastEngine {
     double freeCash = 0,
     bool reinvest = true,
   }) {
+    final base = _run(
+      assets: assets,
+      market: market,
+      scenario: scenario,
+      start: start,
+      months: months,
+      freeCash: freeCash,
+      reinvest: reinvest,
+      withPlans: false,
+    );
+    if (!assets.any((a) => a.plannedBuys.isNotEmpty)) {
+      return ForecastResult(scenario: scenario, points: base.points, breakdown: base.breakdown);
+    }
+
+    // Прогон с плановыми покупками. Строки разбивки по текущему портфелю
+    // берутся из прогона БЕЗ планов: так включение галки не меняет их ни на
+    // копейку, а вся разница целиком относится к двум новым строкам. Сумма
+    // статей при этом равна итогу по построению, а не по совпадению.
+    final full = _run(
+      assets: assets,
+      market: market,
+      scenario: scenario,
+      start: start,
+      months: months,
+      freeCash: freeCash,
+      reinvest: reinvest,
+      withPlans: true,
+    );
+    final b = base.breakdown;
+    return ForecastResult(
+      scenario: scenario,
+      points: full.points,
+      plannedSpent: full.spent,
+      breakdown: ForecastBreakdown(
+        start: b.start,
+        coupons: b.coupons,
+        dividends: b.dividends,
+        bondsToPar: b.bondsToPar,
+        stockGrowth: b.stockGrowth,
+        reinvestment: b.reinvestment,
+        plannedInvested: full.newMoney,
+        plannedIncome: full.breakdown.end - b.end - full.newMoney,
+        end: full.breakdown.end,
+      ),
+    );
+  }
+
+  /// Месяц, в который выполняется плановая покупка, считая от сегодняшнего:
+  /// 0 — текущий. Просроченные покупки попадают в 0.
+  ///
+  /// Считается по номеру месяца, а не по сравнению дат: в последний день
+  /// месяца первый шаг прогноза пуст, и покупка, попавшая «на сегодня», иначе
+  /// не выполнилась бы никогда.
+  static int stepOf(DateTime date, DateTime today) {
+    final k = (date.year - today.year) * 12 + (date.month - today.month);
+    return k < 0 ? 0 : k;
+  }
+
+  static _RawRun _run({
+    required List<ForecastAsset> assets,
+    required MarketAssumptions market,
+    required ForecastScenario scenario,
+    required DateTime start,
+    required int months,
+    required double freeCash,
+    required bool reinvest,
+    required bool withPlans,
+  }) {
     final today = DateTime(start.year, start.month, start.day);
-    final states = [for (final a in assets) _AssetState(a, today)];
+    final states = [for (final a in assets) _AssetState(a, today, usePlans: withPlans)];
     final poolMonthly = reinvest
         ? math.pow(1 + (market.reinvestYield[scenario] ?? 0), 1 / 12).toDouble() - 1
         : 0.0;
@@ -208,6 +340,12 @@ class ValueForecastEngine {
     double origCoupons = 0;
     double origDividends = 0;
     double bondsToPar = 0;
+
+    // Свободные деньги расходуются на плановые покупки первыми, поэтому это
+    // уже не константа. Без планов они не меняются, и результат тот же.
+    double cashLeft = freeCash;
+    double spent = 0;
+    double newMoney = 0;
 
     double startValue = freeCash;
     for (final s in states) {
@@ -256,7 +394,29 @@ class ValueForecastEngine {
         }
       }
 
-      points.add(ForecastPoint(date, _value(states, date, factor) + pool + freeCash));
+      // Плановые покупки — в конце месяца, после выплат: бумаги, купленные
+      // сегодня, купон и дивиденд этого месяца уже не получают.
+      for (final s in states) {
+        final qty = s.plannedQtyAt(k);
+        if (qty <= 0 || !s.canBuyPlanned) continue;
+        final price = s.plannedPrice(date, factor);
+        if (price <= 0) continue;
+        final cost = qty * price;
+
+        // Сначала деньги, уже лежащие в портфеле, и только потом — новые. Так
+        // взнос извне не превышает того, чего действительно не хватило.
+        final fromCash = math.min(cashLeft, cost);
+        cashLeft -= fromCash;
+        var rest = cost - fromCash;
+        final fromPool = math.min(pool, rest);
+        pool -= fromPool;
+        rest -= fromPool;
+        newMoney += rest;
+        spent += cost;
+        s.units += qty;
+      }
+
+      points.add(ForecastPoint(date, _value(states, date, factor) + pool + cashLeft));
       prev = date;
     }
 
@@ -273,16 +433,17 @@ class ValueForecastEngine {
       }
     }
 
-    return ForecastResult(
-      scenario: scenario,
+    return _RawRun(
       points: points,
+      spent: spent,
+      newMoney: newMoney,
       breakdown: ForecastBreakdown(
         start: startValue,
         coupons: origCoupons,
         dividends: origDividends,
         bondsToPar: bondsToPar,
         stockGrowth: stockGrowth,
-        reinvestment: end - startValue - origCoupons - origDividends - bondsToPar - stockGrowth,
+        reinvestment: end - startValue - newMoney - origCoupons - origDividends - bondsToPar - stockGrowth,
         end: end,
       ),
     );
@@ -321,6 +482,21 @@ class ValueForecastEngine {
   }
 }
 
+/// Итог одного прогона до склейки прогонов с планами и без них.
+class _RawRun {
+  final List<ForecastPoint> points;
+  final ForecastBreakdown breakdown;
+  final double spent;
+  final double newMoney;
+
+  const _RawRun({
+    required this.points,
+    required this.breakdown,
+    required this.spent,
+    required this.newMoney,
+  });
+}
+
 class _AssetState {
   final ForecastAsset asset;
   final DateTime today;
@@ -355,12 +531,42 @@ class _AssetState {
   final List<CashEvent> _coupons;
   final List<CashEvent> _amortizations;
 
-  _AssetState(this.asset, this.today)
+  /// Сколько бумаг докупается в каждом месяце прогноза (номер месяца от 0).
+  /// Несколько планов на один месяц складываются: цена у них одна.
+  final Map<int, double> _plannedByStep = {};
+
+  _AssetState(this.asset, this.today, {required bool usePlans})
       : units = asset.qty,
         origUnits = asset.qty,
         remainingFace = asset.face ?? 0,
         _coupons = [...asset.coupons]..sort((a, b) => a.date.compareTo(b.date)),
-        _amortizations = [...asset.amortizations]..sort((a, b) => a.date.compareTo(b.date));
+        _amortizations = [...asset.amortizations]..sort((a, b) => a.date.compareTo(b.date)) {
+    if (!usePlans) return;
+    for (final b in asset.plannedBuys) {
+      if (b.qty <= 0) continue;
+      final k = ValueForecastEngine.stepOf(b.date, today);
+      _plannedByStep[k] = (_plannedByStep[k] ?? 0) + b.qty;
+    }
+  }
+
+  double plannedQtyAt(int step) => _plannedByStep[step] ?? 0;
+
+  /// Облигацию, которая уже погашена, докупить нельзя. Остальное — можно.
+  bool get canBuyPlanned => asset.kind != ForecastAssetKind.bond || alive;
+
+  /// Цена покупки в месяце [date]: рыночная в этом сценарии, а не цена из
+  /// плана. Цена плана ниже рынка дала бы мгновенную прибыль в момент
+  /// покупки, выше рынка — мгновенный убыток; обе выдуманные.
+  double plannedPrice(DateTime date, double factor) {
+    switch (asset.kind) {
+      case ForecastAssetKind.bond:
+        return bondPrice(date);
+      case ForecastAssetKind.equity:
+        return asset.price * factor;
+      case ForecastAssetKind.flat:
+        return asset.price;
+    }
+  }
 
   bool get _hasBondModel =>
       asset.face != null && asset.face! > 0 && asset.maturity != null && asset.maturity!.isAfter(today);

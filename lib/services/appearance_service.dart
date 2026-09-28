@@ -114,6 +114,16 @@ class AppearanceService {
     version.value++;
   }
 
+  /// Учитывать ли плановые покупки в прогнозе стоимости портфеля.
+  ///
+  /// Пишется мимо [_setFlag] намеренно: тот увеличивает [version], а на неё
+  /// подписан корень приложения — переключение галки в форме прогноза
+  /// перестраивало бы весь интерфейс. Обновление карточки на главной идёт
+  /// через собственный уведомитель прогноза.
+  static bool get forecastWithPlans => _flag('forecastWithPlans');
+
+  static Future<void> setForecastWithPlans(bool value) => _box.put('forecastWithPlans', value ? '1' : '0');
+
   // --- Внешний вид ---
 
   static bool get monoDigits => _flag('monoDigits');

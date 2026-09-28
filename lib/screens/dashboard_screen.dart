@@ -456,13 +456,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         onTap: () => showPayoutForecastSheet(context),
                       );
                     }
-                    final value = ValueForecastService.realistic(ValueForecastService.defaultHorizon);
+                    final forecast = ValueForecastService.realistic(ValueForecastService.defaultHorizon);
                     return StatTile(
                       label: 'Прогноз',
                       icon: Icons.stacked_line_chart_rounded,
-                      value: value.breakdown.end,
+                      value: forecast.result.breakdown.end,
                       formatter: (v) => '~${Fmt.money(v)}',
-                      hint: 'через ${ValueForecastService.defaultHorizon} года · реалистично',
+                      // «С планами» вместо «реалистично»: в узкую карточку
+                      // длинная подпись не помещается, а сценарий в ней всегда
+                      // один и назван в форме.
+                      hint: forecast.plansApplied
+                          ? 'через ${ValueForecastService.defaultHorizon} года · с планами'
+                          : 'через ${ValueForecastService.defaultHorizon} года · реалистично',
                       color: AppColors.info,
                       segments: hasPayouts ? const ['Выплаты', 'Стоимость'] : null,
                       selectedSegment: _forecastSegment,

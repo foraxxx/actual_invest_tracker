@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import '../models/plan.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
@@ -33,18 +34,35 @@ class PayoutForecastService {
 
   static List<MoexPayout> payoutsFor(String ticker) => _payouts[ticker] ?? const [];
 
-  /// Загружает графики выплат для бумаг портфеля.
+  /// Загружает графики выплат для бумаг портфеля и для облигаций из активных
+  /// планов.
+  ///
+  /// Облигации из планов нужны прогнозу стоимости: если план предполагает
+  /// купить выпуск, которого в портфеле ещё нет, без его графика нельзя
+  /// посчитать ни купоны, ни погашение. Эти записи лежат в том же кэше, но
+  /// прогноз выплат на главной их не видит — он обходит только позиции.
   static Future<void> refresh({bool force = false}) async {
     if (!OnlineSettingsService.enabled || loading.value) return;
     loading.value = true;
     try {
       final holdings = AnalyticsService.currentHoldings();
       final snapshot = MoexSyncService.marketSnapshot.value;
+      final planBonds = <String>{
+        for (final plan in StorageService.plans)
+          if (plan.status == PlanStatus.active && plan.type == AssetType.bond) plan.ticker.toUpperCase(),
+      };
       final portfolioBonds = <String>{
         for (final trade in StorageService.purchases)
           if (trade.type == AssetType.bond) trade.ticker.toUpperCase(),
+        ...planBonds,
       };
-      for (final ticker in holdings.keys) {
+      final heldUpper = {for (final t in holdings.keys) t.toUpperCase()};
+      final tickers = <String>[
+        ...holdings.keys,
+        for (final t in planBonds)
+          if (!heldUpper.contains(t)) t,
+      ];
+      for (final ticker in tickers) {
         final upper = ticker.toUpperCase();
         // Тип бумаги известен из сделки ещё до первой загрузки котировок.
         // Снимок MOEX остаётся дополнительным источником для старых данных,
