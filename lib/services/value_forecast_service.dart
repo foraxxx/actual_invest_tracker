@@ -41,9 +41,9 @@ class ValueForecastService {
   /// данных: будущую ставку по облигациям взять неоткуда. Поэтому оно
   /// показывается в форме рядом с графиком, а не прячется.
   static const Map<ForecastScenario, double> _reinvestYield = {
-    ForecastScenario.pessimistic: 0.08,
-    ForecastScenario.realistic: 0.12,
-    ForecastScenario.optimistic: 0.16,
+    ForecastScenario.pessimistic: 0.06,
+    ForecastScenario.realistic: 0.10,
+    ForecastScenario.optimistic: 0.14,
   };
 
   /// Запасные допущения, пока история индекса не загружена или недоступна.

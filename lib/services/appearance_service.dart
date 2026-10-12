@@ -36,6 +36,32 @@ extension CardStyleX on CardStyle {
       };
 }
 
+/// Как разбит состав портфеля на группы по типу бумаг.
+enum HoldingsGrouping { headers, collapsible }
+
+extension HoldingsGroupingX on HoldingsGrouping {
+  String get title => switch (this) {
+        HoldingsGrouping.headers => 'Заголовки',
+        HoldingsGrouping.collapsible => 'Сворачиваемые',
+      };
+}
+
+/// Где показывать значения, когда палец лежит на графике.
+enum ChartHints {
+  /// На месте суммы над графиком — сам график ничем не закрыт.
+  above,
+
+  /// Тонкая строка поверх графика и подписи дат у линий.
+  inline,
+}
+
+extension ChartHintsX on ChartHints {
+  String get title => switch (this) {
+        ChartHints.above => 'Над графиком',
+        ChartHints.inline => 'На графике',
+      };
+}
+
 /// Настройки внешнего вида, которые не про цвет: что показывать, насколько
 /// плотно и что прятать от посторонних глаз.
 class AppearanceService {
@@ -140,4 +166,44 @@ class AppearanceService {
     version.value++;
   }
 
+  // --- Состав портфеля и графики ---
+
+  static HoldingsGrouping get holdingsGrouping => HoldingsGrouping.values.firstWhere(
+        (g) => g.name == _box.get('holdingsGrouping'),
+        orElse: () => HoldingsGrouping.headers,
+      );
+
+  static Future<void> setHoldingsGrouping(HoldingsGrouping value) async {
+    await _box.put('holdingsGrouping', value.name);
+    version.value++;
+  }
+
+  /// Свёрнутые группы состава портфеля (имена типов бумаг).
+  ///
+  /// Пишется мимо [version], как и [forecastWithPlans]: сворачивание группы
+  /// перерисовывает только главную, а не всё приложение.
+  static Set<String> get collapsedGroups {
+    final raw = _box.get('collapsedGroups') ?? '';
+    return raw.split(',').where((e) => e.isNotEmpty).toSet();
+  }
+
+  static Future<void> setGroupCollapsed(String group, bool collapsed) {
+    final groups = collapsedGroups;
+    if (collapsed) {
+      groups.add(group);
+    } else {
+      groups.remove(group);
+    }
+    return _box.put('collapsedGroups', groups.join(','));
+  }
+
+  static ChartHints get chartHints => ChartHints.values.firstWhere(
+        (h) => h.name == _box.get('chartHints'),
+        orElse: () => ChartHints.above,
+      );
+
+  static Future<void> setChartHints(ChartHints value) async {
+    await _box.put('chartHints', value.name);
+    version.value++;
+  }
 }

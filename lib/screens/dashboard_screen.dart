@@ -81,8 +81,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ValueForecastService.version.addListener(_onDataChanged);
   }
 
+  /// Что сейчас разглядывают на графике стоимости — для показа над графиком.
+  final ValueNotifier<ChartInspection?> _chartInspect = ValueNotifier(null);
+
   @override
   void dispose() {
+    _chartInspect.dispose();
     StorageService.dataVersion.removeListener(_onDataChanged);
     ManualPriceService.version.removeListener(_onDataChanged);
     OnlinePriceService.version.removeListener(_onPriceChanged);
@@ -222,83 +226,102 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      'Стоимость портфеля',
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim),
-                    ),
-                    if (periodChange != null) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: TagChip(
-                              text: '${Fmt.pct(periodChange.changePct)} · ${_periodLabel(_period).toLowerCase()}',
-                              color: AppColors.pnl(periodChange.changeAbs),
-                              icon: periodChange.changeAbs >= 0
-                                  ? Icons.trending_up_rounded
-                                  : Icons.trending_down_rounded,
+                // Пока палец на графике, сумма над ним показывает разглядываемую
+                // точку или итог замера — сам график ничем не закрыт.
+                ValueListenableBuilder<ChartInspection?>(
+                  valueListenable: _chartInspect,
+                  builder: (context, inspect, _) {
+                    if (inspect != null && inspect.fits(timeline.length)) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _inspectHeader(context, inspect, timeline, currentValue,
+                            secondRow: !isEmpty,
+                            // Невидимая копия плашки периода держит высоту
+                            // первой строки — карточка не дёргается.
+                            heightKeeper: periodChange == null
+                                ? null
+                                : TagChip(
+                                    text: Fmt.pct(periodChange.changePct),
+                                    color: AppColors.pnl(periodChange.changeAbs),
+                                    icon: Icons.trending_up_rounded,
+                                  )),
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Стоимость портфеля',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim),
                             ),
+                            if (periodChange != null) ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: TagChip(
+                                      text: '${Fmt.pct(periodChange.changePct)} · ${_periodLabel(_period).toLowerCase()}',
+                                      color: AppColors.pnl(periodChange.changeAbs),
+                                      icon: periodChange.changeAbs >= 0
+                                          ? Icons.trending_up_rounded
+                                          : Icons.trending_down_rounded,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ] else
+                              const Spacer(),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        HiddenAmount.forText(
+                          Fmt.money(currentValue),
+                          fontSize: 36,
+                          child: RollingNumber(
+                            value: currentValue,
+                            formatter: (v) => Fmt.money(v),
+                            style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1.5),
                           ),
                         ),
-                      ),
-                    ] else
-                      const Spacer(),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                HiddenAmount.forText(
-                  Fmt.money(currentValue),
-                  fontSize: 36,
-                  child: RollingNumber(
-                    value: currentValue,
-                    formatter: (v) => Fmt.money(v),
-                    style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1.5),
-                  ),
-                ),
-                if (!isEmpty) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: AppColors.pnl(totalProfit).withOpacity(0.16),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          totalProfit >= 0 ? Icons.arrow_outward_rounded : Icons.south_east_rounded,
-                          size: 14,
-                          color: AppColors.pnl(totalProfit),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: RollingNumber(
-                          value: totalProfit,
-                          formatter: (v) => Fmt.signedMoney(v),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.pnl(totalProfit),
+                        if (!isEmpty) ...[
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.pnl(totalProfit).withOpacity(0.16),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  totalProfit >= 0 ? Icons.arrow_outward_rounded : Icons.south_east_rounded,
+                                  size: 14,
+                                  color: AppColors.pnl(totalProfit),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: RollingNumber(
+                                  value: totalProfit,
+                                  formatter: (v) => Fmt.signedMoney(v),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.pnl(totalProfit),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text('общая прибыль', style: TextStyle(fontSize: 11.5, color: context.dim)),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'по текущим бумагам ${Fmt.signedMoney(unrealizedPnl)} · '
-                    'по продажам ${Fmt.signedMoney(realizedPnl)} · '
-                    'выплаты ${Fmt.signedMoney(totalIncome)}',
-                    style: TextStyle(fontSize: 10.8, color: context.dim, height: 1.3),
-                  ),
-                ],
+                        ],
+                      ],
+                    );
+                  },
+                ),
                 const SizedBox(height: 14),
                 if (timeline.length > 1)
                   Sparkline(
@@ -306,6 +329,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: accent,
                     height: 132,
                     tooltipBuilder: (i, v) => '${Fmt.date(timeline[i].key)}\n${Fmt.money(v)}',
+                    inspection: AppearanceService.chartHints == ChartHints.above ? _chartInspect : null,
                     dateLabel: (i) => Fmt.date(timeline[i].key),
                     priceLabel: (v) => Fmt.money(v),
                   )
@@ -560,15 +584,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 'написание тикеров: «SBER» и «Sber» считаются разными бумагами.',
       ));
     }
-    for (int i = 0; i < entries.length; i++) {
-      final e = entries[i];
-      children.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: FadeSlideIn.staggered(
-          index: i,
-          child: _holdingTile(context, e.key, e.value, total <= 0 ? 0 : e.value.valueRub / total),
-        ),
+    // Бумаги идут группами: сначала акции, потом облигации, потом фонды и
+    // прочее. Внутри группы — по стоимости, как и раньше. Доля у бумаги
+    // по-прежнему считается от всего портфеля.
+    final typeOf = _holdingTypes();
+    final grouping = AppearanceService.holdingsGrouping;
+    final collapsed = grouping == HoldingsGrouping.collapsible
+        ? AppearanceService.collapsedGroups
+        : const <String>{};
+    int tileIndex = 0;
+    for (final type in _groupOrder) {
+      final group = entries.where((e) => (typeOf[e.key] ?? AssetType.other) == type).toList();
+      if (group.isEmpty) continue;
+      final groupValue = group.fold(0.0, (s, e) => s + e.value.valueRub);
+      final groupPnl = group.fold(0.0, (s, e) => s + e.value.pnlRub);
+      final groupCost = group.fold(0.0, (s, e) => s + e.value.costBasisRub);
+      final isCollapsed = collapsed.contains(type.name);
+      children.add(_groupHeader(
+        context,
+        type: type,
+        count: group.length,
+        value: groupValue,
+        share: total <= 0 ? 0 : groupValue / total,
+        pnlPct: groupCost == 0 ? 0 : groupPnl / groupCost * 100,
+        pnlRub: groupPnl,
+        collapsible: grouping == HoldingsGrouping.collapsible,
+        collapsed: isCollapsed,
       ));
+      if (isCollapsed) continue;
+      for (final e in group) {
+        children.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: FadeSlideIn.staggered(
+            index: tileIndex++,
+            child: _holdingTile(context, e.key, e.value, total <= 0 ? 0 : e.value.valueRub / total),
+          ),
+        ));
+      }
     }
 
     // --- Распределение ---
@@ -1197,6 +1249,257 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
     return ticker;
+  }
+
+  /// Шапка главной карточки, пока палец лежит на графике. Повторяет строки
+  /// обычной шапки, чтобы карточка не прыгала по высоте.
+  List<Widget> _inspectHeader(
+    BuildContext context,
+    ChartInspection inspect,
+    List<MapEntry<DateTime, double>> timeline,
+    double currentValue, {
+    required bool secondRow,
+    Widget? heightKeeper,
+  }) {
+    final dimStyle = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim);
+    final String caption;
+    final String big;
+    final Color? bigColor;
+    final double from;
+    final double to;
+    final String detail;
+    if (inspect.isRange) {
+      final a = timeline[inspect.from!];
+      final b = timeline[inspect.to!];
+      caption = '${Fmt.date(a.key)} → ${Fmt.date(b.key)}';
+      from = a.value;
+      to = b.value;
+      big = Fmt.signedMoney(to - from);
+      bigColor = AppColors.pnl(to - from);
+      detail = '${Fmt.money(from)} → ${Fmt.money(to)}';
+    } else {
+      final p = timeline[inspect.index!];
+      caption = Fmt.date(p.key);
+      from = p.value;
+      to = currentValue;
+      big = Fmt.money(p.value);
+      bigColor = null;
+      detail = 'до сегодня ${Fmt.signedMoney(to - from)}';
+    }
+    final diff = to - from;
+    final pct = from == 0 ? 0.0 : diff / from.abs() * 100;
+
+    return [
+      Row(
+        children: [
+          Expanded(
+            child: Text(caption, maxLines: 1, overflow: TextOverflow.ellipsis, style: dimStyle),
+          ),
+          if (heightKeeper != null)
+            Visibility(
+              visible: false,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: heightKeeper,
+            ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      HiddenAmount.forText(
+        big,
+        fontSize: 36,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            big,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 36,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1.5,
+              color: bigColor,
+            ),
+          ),
+        ),
+      ),
+      if (secondRow) ...[
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: AppColors.pnl(diff).withOpacity(0.16),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                diff >= 0 ? Icons.arrow_outward_rounded : Icons.south_east_rounded,
+                size: 14,
+                color: AppColors.pnl(diff),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              Fmt.pct(pct, decimals: 2),
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.pnl(diff)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: HiddenAmount.forText(
+                detail,
+                fontSize: 11.5,
+                child: Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: context.dim),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ];
+  }
+
+  /// Порядок групп в составе портфеля.
+  static const _groupOrder = [
+    AssetType.stock,
+    AssetType.bond,
+    AssetType.etf,
+    AssetType.currency,
+    AssetType.other,
+  ];
+
+  /// Тип каждой бумаги — по последней сделке с ней.
+  Map<String, AssetType> _holdingTypes() {
+    final result = <String, AssetType>{};
+    for (final p in StorageService.purchases) {
+      result[p.ticker] = p.type;
+    }
+    return result;
+  }
+
+  static String _groupTitle(AssetType type) => switch (type) {
+        AssetType.stock => 'Акции',
+        AssetType.bond => 'Облигации',
+        AssetType.etf => 'Фонды',
+        AssetType.currency => 'Валюта',
+        AssetType.other => 'Прочее',
+      };
+
+  static Color _groupColor(AssetType type) => switch (type) {
+        AssetType.stock => AppColors.info,
+        AssetType.bond => AppColors.violet,
+        AssetType.etf => AppColors.cyan,
+        AssetType.currency => AppColors.gold,
+        AssetType.other => AppColors.neutral,
+      };
+
+  /// Заголовок группы: тип, число бумаг, сумма и доля в портфеле. В режиме
+  /// сворачивания это карточка со стрелкой, нажатие по ней прячет бумаги.
+  Widget _groupHeader(
+    BuildContext context, {
+    required AssetType type,
+    required int count,
+    required double value,
+    required double share,
+    required double pnlPct,
+    required double pnlRub,
+    required bool collapsible,
+    required bool collapsed,
+  }) {
+    final color = _groupColor(type);
+    final money = Fmt.money(value);
+    final row = Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        // Название и число бумаг уступают место сумме: при длинной сумме
+        // обрезается «· 12 бумаг», а не деньги.
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: _groupTitle(type),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+                TextSpan(
+                  text: '  · $count ${Fmt.papers(count)}',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
+                ),
+              ],
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        HiddenAmount.forText(
+          money,
+          fontSize: 13,
+          child: Text(money, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '${(share * 100).toStringAsFixed(0)}%',
+          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim),
+        ),
+        if (collapsible) ...[
+          const SizedBox(width: 4),
+          AnimatedRotation(
+            turns: collapsed ? 0 : 0.5,
+            duration: const Duration(milliseconds: 200),
+            child: Icon(Icons.expand_more_rounded, size: 20, color: context.dim),
+          ),
+        ],
+      ],
+    );
+
+    if (!collapsible) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+        child: row,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: AppCard(
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+        onTap: () async {
+          await AppearanceService.setGroupCollapsed(type.name, !collapsed);
+          if (mounted) setState(() {});
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            row,
+            if (collapsed) ...[
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: HiddenAmount.forText(
+                  Fmt.signedMoney(pnlRub),
+                  fontSize: 11,
+                  child: Text(
+                    'Прибыль ${Fmt.signedMoney(pnlRub)} · ${Fmt.pct(pnlPct)}',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.pnl(pnlRub)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {

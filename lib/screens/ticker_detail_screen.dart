@@ -14,6 +14,7 @@ import '../models/income.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
 import '../services/analytics_service.dart';
+import '../services/appearance_service.dart';
 import '../services/currency_service.dart';
 import '../services/favorites_service.dart';
 import '../services/logo_service.dart';
@@ -129,8 +130,12 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     if (_payouts.isEmpty && !_payoutsLoading) _loadPayouts();
   }
 
+  /// Что сейчас разглядывают на графике цены — для показа в шапке карточки.
+  final ValueNotifier<ChartInspection?> _chartInspect = ValueNotifier(null);
+
   @override
   void dispose() {
+    _chartInspect.dispose();
     OnlineSettingsService.version.removeListener(_onOnlineChanged);
     super.dispose();
   }
@@ -1094,12 +1099,38 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         : 0.0;
     final online = OnlineSettingsService.enabled;
 
+    String dateOf(int i) => Fmt.dateTime(all[i].key, withTime: _intraday);
+    String priceOf(double v) => Fmt.price(v, type: assetType);
+
     return AppCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          // Пока палец на графике, подпись и плашка справа показывают
+          // разглядываемую точку или итог замера — график остаётся открытым.
+          ValueListenableBuilder<ChartInspection?>(
+            valueListenable: _chartInspect,
+            builder: (context, inspect, _) {
+              String subtitle = visibleValues.length > 1
+                  ? '${Fmt.date(points.first.key)} — ${Fmt.date(points.last.key)}'
+                  : _statusText();
+              String chipText = '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)} · ${Fmt.pct(changePct)}';
+              Color chipColor = AppColors.pnl(change);
+              if (inspect != null && inspect.fits(all.length)) {
+                if (inspect.isRange) {
+                  final a = all[inspect.from!].value;
+                  final b = all[inspect.to!].value;
+                  subtitle = '${dateOf(inspect.from!)} → ${dateOf(inspect.to!)}';
+                  chipText = chartDiffLabel(a, b, priceOf);
+                  chipColor = AppColors.pnl(b - a);
+                } else {
+                  subtitle = dateOf(inspect.index!);
+                  chipText = priceOf(all[inspect.index!].value);
+                  chipColor = context.accent;
+                }
+              }
+              return Row(
             children: [
               Expanded(
                 child: Column(
@@ -1109,9 +1140,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                         style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
                     const SizedBox(height: 2),
                     Text(
-                      visibleValues.length > 1
-                          ? '${Fmt.date(points.first.key)} — ${Fmt.date(points.last.key)}'
-                          : _statusText(),
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 11, color: context.dim),
                     ),
                   ],
@@ -1123,8 +1154,8 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
                     child: TagChip(
-                      text: '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)} · ${Fmt.pct(changePct)}',
-                      color: AppColors.pnl(change),
+                      text: chipText,
+                      color: chipColor,
                     ),
                   ),
                 )
@@ -1136,6 +1167,8 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   onPressed: _loadExchangeHistory,
                 ),
             ],
+          );
+            },
           ),
           const SizedBox(height: 10),
           PillTabs<ChartRange>(
@@ -1181,6 +1214,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             priceLabel: (v) => Fmt.price(v, type: assetType),
                             tooltipBuilder: (i, v) =>
                                 '${Fmt.dateTime(all[i].key, withTime: _intraday)}\n${Fmt.price(v, type: assetType)}',
+                            inspection: AppearanceService.chartHints == ChartHints.above
+                                ? _chartInspect
+                                : null,
                           );
                         },
                       ),

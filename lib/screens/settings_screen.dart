@@ -332,6 +332,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       value: AppearanceService.hideAmounts,
                       onChanged: AppearanceService.setHideAmounts,
                     ),
+                    const SizedBox(height: 16),
+                    _choiceTitle(
+                      'Состав портфеля',
+                      'Бумаги на главной разбиты на группы: акции, облигации, фонды. '
+                          'Группы можно показывать с заголовками или сворачивать.',
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedToggle<HoldingsGrouping>(
+                      values: HoldingsGrouping.values,
+                      selected: AppearanceService.holdingsGrouping,
+                      labelOf: (g) => g.title,
+                      iconOf: (g) => g == HoldingsGrouping.headers
+                          ? Icons.view_agenda_outlined
+                          : Icons.unfold_less_rounded,
+                      onChanged: AppearanceService.setHoldingsGrouping,
+                    ),
+                    const SizedBox(height: 16),
+                    _choiceTitle(
+                      'Значения на графике',
+                      'Что видно, когда палец лежит на графике или двумя пальцами '
+                          'отмечен период. «Над графиком» — на месте суммы, сам график ничем '
+                          'не закрыт. «На графике» — тонкая строка сверху и даты у линий.',
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedToggle<ChartHints>(
+                      values: ChartHints.values,
+                      selected: AppearanceService.chartHints,
+                      labelOf: (h) => h.title,
+                      iconOf: (h) => h == ChartHints.above
+                          ? Icons.vertical_align_top_rounded
+                          : Icons.show_chart_rounded,
+                      onChanged: AppearanceService.setChartHints,
+                    ),
                   ],
                 ),
               ),
@@ -556,6 +589,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child,
         ],
       ),
+    );
+  }
+
+  Widget _choiceTitle(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 2),
+        Text(subtitle, style: TextStyle(fontSize: 11.3, height: 1.35, color: context.dim)),
+      ],
     );
   }
 

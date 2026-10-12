@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../design/charts.dart';
+import '../services/appearance_service.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -133,11 +134,15 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
+  /// Что сейчас разглядывают на графике — для строки под ним.
+  final ValueNotifier<ChartInspection?> _chartInspect = ValueNotifier(null);
+
   @override
   void dispose() {
     OnlineSettingsService.version.removeListener(_onOnlineChanged);
     _searchCtrl.dispose();
     _viewStartN.dispose();
+    _chartInspect.dispose();
     super.dispose();
   }
 
@@ -650,20 +655,56 @@ class _MarketScreenState extends State<MarketScreen> {
                               priceLabel: (v) => Fmt.price(v),
                               onPan: _viewSize < all.length ? _panChart : null,
                               onPanEnd: _loadOlderChart,
+                              inspection: AppearanceService.chartHints == ChartHints.above
+                                  ? _chartInspect
+                                  : null,
                             ),
             ),
             if (visibleValues.length > 1) ...[
               const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(Fmt.date(points.first.key), style: TextStyle(fontSize: 10.5, color: context.dim)),
-                  Text(
-                    Fmt.price(visibleValues.last),
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                  ),
-                  Text(Fmt.date(points.last.key), style: TextStyle(fontSize: 10.5, color: context.dim)),
-                ],
+              // Над этим графиком нет крупной цены, поэтому разглядываемая
+              // точка и итог замера показываются в строке под ним — на месте
+              // дат периода и последней цены.
+              ValueListenableBuilder<ChartInspection?>(
+                valueListenable: _chartInspect,
+                builder: (context, inspect, _) {
+                  String left = Fmt.date(points.first.key);
+                  String center = Fmt.price(visibleValues.last);
+                  String right = Fmt.date(points.last.key);
+                  Color? centerColor;
+                  if (inspect != null && inspect.fits(all.length)) {
+                    String dateOf(int i) => Fmt.dateTime(all[i].key, withTime: _intraday);
+                    if (inspect.isRange) {
+                      final a = all[inspect.from!].value;
+                      final b = all[inspect.to!].value;
+                      left = dateOf(inspect.from!);
+                      right = dateOf(inspect.to!);
+                      center = chartDiffLabel(a, b, Fmt.price);
+                      centerColor = AppColors.pnl(b - a);
+                    } else {
+                      left = dateOf(inspect.index!);
+                      right = '';
+                      center = Fmt.price(all[inspect.index!].value);
+                    }
+                  }
+                  return Row(
+                    children: [
+                      Text(left, style: TextStyle(fontSize: 10.5, color: context.dim)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            center,
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: centerColor),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(right, style: TextStyle(fontSize: 10.5, color: context.dim)),
+                    ],
+                  );
+                },
               ),
             ],
           ],

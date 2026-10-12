@@ -299,9 +299,9 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
 
   /// Подпись под галкой: что будет учтено, если её включить.
   static String _plansSubtitle(PlanCoverage c, double spent) {
-    if (c.included == 0) return 'В пределах выбранного срока планов нет';
+    if (c.included == 0) return 'В пределах выбранного срока покупок по планам нет';
     final n = c.included;
-    final word = Fmt.plural(n, 'план', 'плана', 'планов');
+    final word = Fmt.purchases(n);
     final until = c.lastDate == null ? '' : ' до ${Fmt.monthShort(c.lastDate!.month)} ${c.lastDate!.year}';
     return '$n $word, ≈${Fmt.money(spent)}$until';
   }

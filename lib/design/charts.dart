@@ -142,6 +142,43 @@ ChartWindow chartWindowForDates(List<DateTime> dates, ChartRange range) {
 }
 
 
+/// Что сейчас разглядывают на графике: одну точку под пальцем или отрезок
+/// между двумя пальцами. Индексы — в полном наборе значений графика.
+class ChartInspection {
+  final int? index;
+  final int? from;
+  final int? to;
+
+  const ChartInspection.point(int this.index)
+      : from = null,
+        to = null;
+
+  const ChartInspection.range(int this.from, int this.to) : index = null;
+
+  bool get isRange => from != null && to != null;
+
+  /// Индексы внутри набора длины [length] — набор мог смениться, пока палец
+  /// лежал на графике.
+  bool fits(int length) => isRange
+      ? from! >= 0 && to! >= 0 && from! < length && to! < length
+      : index != null && index! >= 0 && index! < length;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChartInspection && other.index == index && other.from == from && other.to == to;
+
+  @override
+  int get hashCode => Object.hash(index, from, to);
+}
+
+/// Разница между двумя точками графика: «+42 310 ₽ · +2.30%».
+String chartDiffLabel(double from, double to, String Function(double) priceLabel) {
+  final diff = to - from;
+  final pct = from == 0 ? 0.0 : diff / from.abs() * 100;
+  final sign = diff >= 0 ? '+' : '';
+  return '$sign${priceLabel(diff)} · $sign${pct.toStringAsFixed(2)}%';
+}
+
 class Sparkline extends StatefulWidget {
   final List<double> values;
   final Color color;
@@ -177,6 +214,11 @@ class Sparkline extends StatefulWidget {
   /// Жест закончился — можно, например, догрузить историю.
   final VoidCallback? onPanEnd;
 
+  /// Куда сообщать, что разглядывают на графике. Если задано, поверх графика
+  /// ничего не рисуется: значения показывает сам экран — на месте суммы над
+  /// графиком. Без него подсказки рисуются тонкой строкой на самом графике.
+  final ValueNotifier<ChartInspection?>? inspection;
+
   const Sparkline({
     super.key,
     required this.values,
@@ -193,6 +235,7 @@ class Sparkline extends StatefulWidget {
     this.windowStart = 0,
     this.onPan,
     this.onPanEnd,
+    this.inspection,
   });
 
   @override
@@ -283,7 +326,37 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
   void dispose() {
     _holdTimer?.cancel();
     _c.dispose();
+    // Экран не должен остаться с «замороженным» замером, если график исчез,
+    // пока палец лежал на нём. Сбрасываем после кадра: во время разборки
+    // дерева перестраивать соседние виджеты нельзя.
+    final notifier = widget.inspection;
+    if (notifier != null && notifier.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Экран мог уйти вместе с графиком и уже освободить уведомитель.
+        try {
+          notifier.value = null;
+        } catch (_) {}
+      });
+    }
     super.dispose();
+  }
+
+  /// Любое изменение касания или замера сразу уходит экрану.
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _publish();
+  }
+
+  void _publish() {
+    final notifier = widget.inspection;
+    if (notifier == null) return;
+    final ChartInspection? next = _measuring
+        ? ChartInspection.range(_rangeLeft!, _rangeRight!)
+        : _touch != null
+            ? ChartInspection.point(_touch!)
+            : null;
+    if (notifier.value != next) notifier.value = next;
   }
 
   void _updateTouch(double dx, double width) {
@@ -354,6 +427,50 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
       _marker = (marker != null && marker != _marker) ? marker : null;
     });
     if (marker != null) HapticFeedback.selectionClick();
+  }
+
+  /// Подсказка по центру над точкой [x], но не за краями графика.
+  Widget _anchored(double x, Widget child, {required bool top}) => Positioned.fill(
+        child: IgnorePointer(
+          child: CustomSingleChildLayout(
+            delegate: _AnchorDelegate(x: x, top: top),
+            child: child,
+          ),
+        ),
+      );
+
+  List<Widget> _rangeHints(List<double> values, double w) {
+    final from = values[_rangeLeft!];
+    final to = values[_rangeRight!];
+    final priceLabel = widget.priceLabel ?? ((double v) => v.toStringAsFixed(2));
+    final leftX = (_rangeLeft! - widget.windowStart) * _step(w);
+    final rightX = (_rangeRight! - widget.windowStart) * _step(w);
+    final fromDate = widget.dateLabel?.call(_rangeLeft!) ?? '';
+    final toDate = widget.dateLabel?.call(_rangeRight!) ?? '';
+    // Пальцы рядом — две подписи налезли бы друг на друга, пишем одну.
+    final close = (rightX - leftX).abs() < 110;
+
+    Widget at(double x, Widget child, {required bool top}) => _anchored(x, child, top: top);
+
+    return [
+      at(
+        (leftX + rightX) / 2,
+        _HintPill(
+          text: chartDiffLabel(from, to, priceLabel),
+          color: AppColors.pnl(to - from),
+          strong: true,
+        ),
+        top: true,
+      ),
+      if (fromDate.isNotEmpty || toDate.isNotEmpty) ...[
+        if (close)
+          at((leftX + rightX) / 2, _HintPill(text: '$fromDate — $toDate', color: widget.color), top: false)
+        else ...[
+          if (fromDate.isNotEmpty) at(leftX, _HintPill(text: fromDate, color: widget.color), top: false),
+          if (toDate.isNotEmpty) at(rightX, _HintPill(text: toDate, color: widget.color), top: false),
+        ],
+      ],
+    ];
   }
 
   @override
@@ -482,17 +599,20 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                   ),
                   ),
                 ),
-                if (_touch != null && !_measuring)
-                  Positioned(
-                    // Окно шире, чем раньше: в него должна влезать дата со
-                    // временем целиком.
-                    left: (touchedX - 70).clamp(0.0, math.max(0.0, w - 140)),
-                    top: 0,
-                    child: _Tooltip(
-                      text: widget.tooltipBuilder?.call(_touch!, values[_touch!]) ??
-                          values[_touch!].toStringAsFixed(0),
+                // Касание одним пальцем: строка с датой и значением у верхнего
+                // края, сдвигается вслед за пальцем, но не выходит за график.
+                if (_touch != null && !_measuring && widget.inspection == null)
+                  _anchored(
+                    touchedX,
+                    _HintPill(
+                      text: (widget.tooltipBuilder?.call(_touch!, values[_touch!]) ??
+                              values[_touch!].toStringAsFixed(0))
+                          .split('\n')
+                          .where((l) => l.trim().isNotEmpty)
+                          .join(' · '),
                       color: widget.color,
                     ),
+                    top: true,
                   ),
                 if (_marker != null && !_measuring && widget.markerLabel != null)
                   Positioned(
@@ -507,22 +627,10 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                               .color,
                     ),
                   ),
-                if (_measuring)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    child: Center(
-                      child: _RangeBox(
-                        color: widget.color,
-                        fromValue: values[_rangeLeft!],
-                        toValue: values[_rangeRight!],
-                        fromLabel: widget.dateLabel?.call(_rangeLeft!) ?? '',
-                        toLabel: widget.dateLabel?.call(_rangeRight!) ?? '',
-                        priceLabel: widget.priceLabel ?? (v) => v.toStringAsFixed(2),
-                      ),
-                    ),
-                  ),
+                // Замер двумя пальцами: итог строкой сверху, даты — внизу,
+                // под каждой из линий.
+                if (_measuring && widget.inspection == null)
+                  ..._rangeHints(values, w),
               ],
             ),
           ),
@@ -534,79 +642,57 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
 }
 
 
-/// Окно замера: цена и дата под каждым пальцем плюс разница между ними.
-class _RangeBox extends StatelessWidget {
-  final Color color;
-  final double fromValue;
-  final double toValue;
-  final String fromLabel;
-  final String toLabel;
-  final String Function(double) priceLabel;
+/// Ставит подсказку центром над точкой по горизонтали, прижимая к краям
+/// графика, если она туда не помещается.
+class _AnchorDelegate extends SingleChildLayoutDelegate {
+  final double x;
+  final bool top;
 
-  const _RangeBox({
-    required this.color,
-    required this.fromValue,
-    required this.toValue,
-    required this.fromLabel,
-    required this.toLabel,
-    required this.priceLabel,
-  });
+  _AnchorDelegate({required this.x, required this.top});
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) => constraints.loosen();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final maxLeft = math.max(0.0, size.width - childSize.width);
+    final left = (x - childSize.width / 2).clamp(0.0, maxLeft).toDouble();
+    return Offset(left, top ? 0.0 : size.height - childSize.height);
+  }
+
+  @override
+  bool shouldRelayout(_AnchorDelegate oldDelegate) => oldDelegate.x != x || oldDelegate.top != top;
+}
+
+/// Подсказка на графике в одну строку — небольшая, чтобы закрывать как
+/// можно меньше линии.
+class _HintPill extends StatelessWidget {
+  final String text;
+  final Color color;
+  final bool strong;
+
+  const _HintPill({required this.text, required this.color, this.strong = false});
 
   @override
   Widget build(BuildContext context) {
-    final diff = toValue - fromValue;
-    final pct = fromValue == 0 ? 0.0 : diff / fromValue.abs() * 100;
-    final diffColor = AppColors.pnl(diff);
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: context.isDark ? AppColors.darkSurfaceTop : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        // Рамка по направлению изменения: вырос — зелёная, упал — красная.
-        border: Border.all(color: diffColor.withOpacity(0.6), width: 1.4),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 18)],
+        color: (context.isDark ? AppColors.darkSurfaceTop : Colors.white).withOpacity(0.92),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.45)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _side(context, fromLabel, priceLabel(fromValue)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Icon(Icons.arrow_forward_rounded, size: 14, color: context.dim),
-              ),
-              _side(context, toLabel, priceLabel(toValue)),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: diffColor.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '${diff >= 0 ? '+' : ''}${priceLabel(diff)}   ${diff >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%',
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: diffColor),
-            ),
-          ),
-        ],
+      child: Text(
+        text,
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
+        style: TextStyle(
+          fontSize: strong ? 11.5 : 10.5,
+          fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+          color: strong ? color : context.dim,
+        ),
       ),
-    );
-  }
-
-  Widget _side(BuildContext context, String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (label.isNotEmpty)
-          Text(label, style: TextStyle(fontSize: 9.5, color: context.dim)),
-        Text(value, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
-      ],
     );
   }
 }
