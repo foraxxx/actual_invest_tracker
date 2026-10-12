@@ -1645,3 +1645,96 @@ class MiniProgressBar extends StatelessWidget {
     );
   }
 }
+
+// =============================================================================
+// МИНИ-ГРАФИК
+// =============================================================================
+
+/// Маленькая линия цены без осей и касаний — для строки бумаги в списке.
+/// Цвет — рост или падение за весь показанный отрезок.
+class MiniSparkline extends StatelessWidget {
+  final List<double> values;
+  final double width;
+  final double height;
+
+  /// Рисовать ли заливку под линией и насколько бледно всё целиком. Для
+  /// варианта «фоном» линия должна быть едва заметной.
+  final bool fill;
+  final double opacity;
+
+  const MiniSparkline({
+    super.key,
+    required this.values,
+    this.width = 54,
+    this.height = 22,
+    this.fill = false,
+    this.opacity = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.length < 2) return SizedBox(width: width, height: height);
+    final color = AppColors.pnl(values.last - values.first);
+    return SizedBox(
+      width: width,
+      height: height,
+      child: CustomPaint(
+        painter: _MiniSparkPainter(values: values, color: color, fill: fill, opacity: opacity),
+      ),
+    );
+  }
+}
+
+class _MiniSparkPainter extends CustomPainter {
+  final List<double> values;
+  final Color color;
+  final bool fill;
+  final double opacity;
+
+  _MiniSparkPainter({
+    required this.values,
+    required this.color,
+    required this.fill,
+    required this.opacity,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    var lo = values.first;
+    var hi = values.first;
+    for (final v in values) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    final span = hi - lo;
+    // Ровная цена — линия посередине, а не прилипшая к краю.
+    double y(double v) => span <= 0
+        ? size.height / 2
+        : size.height - 2 - (v - lo) / span * (size.height - 4);
+    final step = size.width / (values.length - 1);
+    final path = Path()..moveTo(0, y(values.first));
+    for (int i = 1; i < values.length; i++) {
+      path.lineTo(i * step, y(values[i]));
+    }
+    if (fill) {
+      final area = Path.from(path)
+        ..lineTo(size.width, size.height)
+        ..lineTo(0, size.height)
+        ..close();
+      canvas.drawPath(area, Paint()..color = color.withOpacity(0.14 * opacity));
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withOpacity(opacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MiniSparkPainter old) =>
+      !identical(old.values, values) || old.color != color || old.fill != fill || old.opacity != opacity;
+}

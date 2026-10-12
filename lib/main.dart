@@ -16,6 +16,7 @@ import 'services/backup_settings_service.dart';
 import 'services/moex_sync_service.dart';
 import 'services/market_filter_service.dart';
 import 'services/plan_filter_service.dart';
+import 'services/mini_history_service.dart';
 import 'services/online_price_service.dart';
 import 'services/tour_service.dart';
 import 'services/online_settings_service.dart';
@@ -48,6 +49,7 @@ void main() async {
   await AppearanceService.init();
   await MarketFilterService.init();
   await PlanFilterService.init();
+  await MiniHistoryService.init();
 
   // Убираем курсы, которые могли записаться с биржи по ошибке (своп-инструмент
   // вместо валютной пары давал значения вроде 0,08 ₽).

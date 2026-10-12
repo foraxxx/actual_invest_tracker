@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
-import '../design/charts.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -17,6 +16,8 @@ import '../services/storage_service.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import '../widgets/payout_forecast_sheet.dart';
+import '../widgets/payout_calendar.dart';
+import '../services/payout_calendar_service.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
 
@@ -29,6 +30,12 @@ class IncomesScreen extends StatefulWidget {
 
 class _IncomesScreenState extends State<IncomesScreen> {
   IncomeType? _filter;
+
+  /// Год в календаре выплат.
+  int _year = DateTime.now().year;
+
+  /// Месяц, выбранный в календаре: список ниже показывает только его.
+  DateTime? _month;
 
   @override
   void initState() {
@@ -54,12 +61,18 @@ class _IncomesScreenState extends State<IncomesScreen> {
   @override
   Widget build(BuildContext context) {
     final all = StorageService.incomes..sort((a, b) => b.date.compareTo(a.date));
-    final list = _filter == null ? all : all.where((i) => i.type == _filter).toList();
+    final month = _month;
+    final list = all
+        .where((i) => _filter == null || i.type == _filter)
+        .where((i) => month == null || (i.date.year == month.year && i.date.month == month.month))
+        .toList();
+    final years = PayoutCalendarService.years();
+    if (!years.contains(_year)) _year = DateTime.now().year;
+    final cells = PayoutCalendarService.year(_year);
 
     final totalNet = AnalyticsService.totalIncome(f: PeriodFilter.all);
     final dividends = all.where((i) => i.type == IncomeType.dividend).length;
     final coupons = all.where((i) => i.type == IncomeType.coupon).length;
-    final byMonth = AnalyticsService.incomeByMonth(f: PeriodFilter.year1);
     // Тот же расчёт, что и на главной: по объявленным биржей выплатам и
     // истории самой бумаги, а не по тому, что уже получено.
     final forecastSummary = PayoutForecastService.portfolioForecast();
@@ -212,28 +225,40 @@ class _IncomesScreenState extends State<IncomesScreen> {
                     ),
                   ],
 
-                  if (byMonth.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    FadeSlideIn(
-                      delay: const Duration(milliseconds: 100),
-                      child: AppCard(
-                        padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SectionTitle(title: 'Выплаты по месяцам', subtitle: 'За последний год'),
-                            BarsChart(
-                              values: byMonth.values.toList(),
-                              labels: byMonth.keys.map(Fmt.monthKeyLabel).toList(),
-                              color: AppColors.positive,
-                              valueFormatter: (v) => Fmt.money(v),
-                              height: 170,
+                  const SizedBox(height: 16),
+                  FadeSlideIn(
+                    delay: const Duration(milliseconds: 100),
+                    child: AppCard(
+                      padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SectionTitle(
+                            title: 'Выплаты по месяцам',
+                            subtitle: 'Нажмите на месяц, чтобы оставить в списке только его',
+                          ),
+                          if (years.length > 1) ...[
+                            PillTabs<int>(
+                              values: years,
+                              selected: _year,
+                              labelOf: (y) => '$y',
+                              onChanged: (y) => setState(() {
+                                _year = y;
+                                _month = null;
+                              }),
+                              padding: EdgeInsets.zero,
                             ),
+                            const SizedBox(height: 12),
                           ],
-                        ),
+                          PayoutCalendar(
+                            cells: cells,
+                            selected: _month,
+                            onSelect: (m) => setState(() => _month = m),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
 
                   const SizedBox(height: 18),
                   PillTabs<IncomeType?>(
@@ -244,6 +269,17 @@ class _IncomesScreenState extends State<IncomesScreen> {
                         : (t == IncomeType.dividend ? 'Дивиденды' : 'Купоны'),
                     onChanged: (t) => setState(() => _filter = t),
                   ),
+                  if (month != null) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: InputChip(
+                        label: Text('Только ${Fmt.monthTitle(PayoutMonthCell.monthKey(month)).toLowerCase()}'),
+                        onDeleted: () => setState(() => _month = null),
+                        onPressed: () => setState(() => _month = null),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
 
                   ..._buildList(list),

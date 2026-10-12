@@ -6,7 +6,7 @@ enum HoldingSubtitle { quantityAndPrice, share, profitRub, profitPct }
 
 extension HoldingSubtitleX on HoldingSubtitle {
   String get title => switch (this) {
-        HoldingSubtitle.quantityAndPrice => 'Количество и цена',
+        HoldingSubtitle.quantityAndPrice => 'Количество',
         HoldingSubtitle.share => 'Доля в портфеле',
         HoldingSubtitle.profitRub => 'Прибыль в рублях',
         HoldingSubtitle.profitPct => 'Прибыль в процентах',
@@ -59,6 +59,37 @@ extension ChartHintsX on ChartHints {
   String get title => switch (this) {
         ChartHints.above => 'Над графиком',
         ChartHints.inline => 'На графике',
+      };
+}
+
+/// Как раскладывать карту портфеля.
+enum TreemapLayout { flat, byType }
+
+extension TreemapLayoutX on TreemapLayout {
+  String get title => switch (this) {
+        TreemapLayout.flat => 'Все бумаги',
+        TreemapLayout.byType => 'По типам',
+      };
+}
+
+/// Мини-график цены в строке бумаги.
+enum MiniChartStyle { inline, background, off }
+
+extension MiniChartStyleX on MiniChartStyle {
+  String get title => switch (this) {
+        MiniChartStyle.inline => 'Рядом',
+        MiniChartStyle.background => 'Фоном',
+        MiniChartStyle.off => 'Нет',
+      };
+}
+
+/// Сетка календаря выплат.
+enum PayoutCalendarStyle { threeColumns, twoColumns }
+
+extension PayoutCalendarStyleX on PayoutCalendarStyle {
+  String get title => switch (this) {
+        PayoutCalendarStyle.threeColumns => '3 столбца',
+        PayoutCalendarStyle.twoColumns => '2 столбца',
       };
 }
 
@@ -206,4 +237,40 @@ class AppearanceService {
     await _box.put('chartHints', value.name);
     version.value++;
   }
+
+  static TreemapLayout get treemapLayout => TreemapLayout.values.firstWhere(
+        (t) => t.name == _box.get('treemapLayout'),
+        orElse: () => TreemapLayout.flat,
+      );
+
+  static Future<void> setTreemapLayout(TreemapLayout value) async {
+    await _box.put('treemapLayout', value.name);
+    version.value++;
+  }
+
+  static MiniChartStyle get miniChart => MiniChartStyle.values.firstWhere(
+        (m) => m.name == _box.get('miniChart'),
+        orElse: () => MiniChartStyle.inline,
+      );
+
+  static Future<void> setMiniChart(MiniChartStyle value) async {
+    await _box.put('miniChart', value.name);
+    version.value++;
+  }
+
+  static PayoutCalendarStyle get payoutCalendar => PayoutCalendarStyle.values.firstWhere(
+        (c) => c.name == _box.get('payoutCalendar'),
+        orElse: () => PayoutCalendarStyle.threeColumns,
+      );
+
+  static Future<void> setPayoutCalendar(PayoutCalendarStyle value) async {
+    await _box.put('payoutCalendar', value.name);
+    version.value++;
+  }
+
+  /// Последняя открытая вкладка «Распределения» на главной. Мимо [version]:
+  /// переключение вкладки не должно перестраивать всё приложение.
+  static String? get allocationTab => _box.get('allocationTab');
+
+  static Future<void> setAllocationTab(String value) => _box.put('allocationTab', value);
 }

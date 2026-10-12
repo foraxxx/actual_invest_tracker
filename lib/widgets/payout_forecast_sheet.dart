@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../design/charts.dart';
 import '../design/format.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
+import '../services/payout_calendar_service.dart';
 import '../services/payout_forecast_service.dart';
+import 'payout_calendar.dart';
 
 /// Единое окно прогноза выплат для всех экранов приложения.
 void showPayoutForecastSheet(BuildContext context) {
@@ -38,13 +39,9 @@ void showPayoutForecastSheet(BuildContext context) {
                     title: 'Ожидаемые выплаты по месяцам',
                     subtitle: 'Всего около ${Fmt.money(total)}',
                   ),
-                  BarsChart(
-                    values: byMonth.values.toList(),
-                    labels: byMonth.keys.map(Fmt.monthKeyLabel).toList(),
-                    color: AppColors.violet,
-                    valueFormatter: Fmt.money,
-                    height: 190,
-                  ),
+                  // Все клетки — прогноз, поэтому пунктирные. Нажатие на месяц
+                  // показывает, от каких бумаг ждать деньги.
+                  PayoutCalendar(cells: PayoutCalendarService.next12()),
                 ],
               ),
             ),

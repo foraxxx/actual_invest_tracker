@@ -23,15 +23,22 @@ import '../services/tax_service.dart';
 import '../services/benchmark_service.dart';
 import '../services/portfolio_history_service.dart';
 import '../services/value_forecast_service.dart';
+import '../services/mini_history_service.dart';
+import '../services/moex_sync_service.dart';
+import '../services/online_settings_service.dart';
 import '../widgets/ticker_avatar.dart';
 import '../widgets/payout_forecast_sheet.dart';
 import '../widgets/value_forecast_sheet.dart';
+import '../widgets/updated_ago.dart';
+import '../widgets/portfolio_treemap.dart';
+import '../widgets/payout_calendar.dart';
+import '../services/payout_calendar_service.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
 import 'wrapped_screen.dart';
 
 /// По какому признаку строится кольцевая диаграмма распределения.
-enum _AllocationMode { sectors, tickers }
+enum _AllocationMode { sectors, tickers, map }
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -42,8 +49,13 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   PeriodFilter _period = PeriodFilter.all;
-  PeriodFilter _incomePeriod = PeriodFilter.year1;
-  _AllocationMode _alloc = _AllocationMode.sectors;
+  /// Год в календаре «Дивиденды и купоны».
+  int _incomeYear = DateTime.now().year;
+  // Вкладка «Распределения» запоминается между запусками.
+  _AllocationMode _alloc = _AllocationMode.values.firstWhere(
+    (m) => m.name == AppearanceService.allocationTab,
+    orElse: () => _AllocationMode.sectors,
+  );
 
   /// Какой метод расчёта доходности показан: 0 — XIRR, 1 — TWR.
   ///
@@ -79,6 +91,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     PortfolioHistoryService.error.addListener(_onDataChanged);
     // Уточнённые по истории индекса допущения меняют итог в карточке прогноза.
     ValueForecastService.version.addListener(_onDataChanged);
+    MiniHistoryService.version.addListener(_onDataChanged);
+    // Мини-графики в составе: история за 30 дней, не чаще раза в день.
+    if (AppearanceService.miniChart != MiniChartStyle.off) {
+      MiniHistoryService.refresh(AnalyticsService.currentHoldings().keys);
+    }
+  }
+
+  Future<void> _pullToRefresh() async {
+    PortfolioHistoryService.refresh();
+    PayoutForecastService.refresh(force: true);
+    BenchmarkService.refresh();
+    MiniHistoryService.refresh(AnalyticsService.currentHoldings().keys, force: true);
+    if (OnlineSettingsService.enabled) {
+      await MoexSyncService.instance.refreshNow(force: true);
+    }
   }
 
   /// Что сейчас разглядывают на графике стоимости — для показа над графиком.
@@ -95,6 +122,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     PortfolioHistoryService.timeline.removeListener(_onDataChanged);
     PortfolioHistoryService.error.removeListener(_onDataChanged);
     ValueForecastService.version.removeListener(_onDataChanged);
+    MiniHistoryService.version.removeListener(_onDataChanged);
     super.dispose();
   }
 
@@ -195,7 +223,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final totalProfit = unrealizedPnl + realizedPnl + totalIncome;
     final bySector = AnalyticsService.currentValueBySector();
     final byTicker = AnalyticsService.currentValueByTicker();
-    final incomeByMonth = AnalyticsService.incomeByMonth(f: _incomePeriod);
     final concentration = AnalyticsService.topHoldingConcentrationPct();
     final topTicker = AnalyticsService.topHoldingTicker();
     final xirr = AnalyticsService.xirrPercent();
@@ -594,7 +621,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         : const <String>{};
     int tileIndex = 0;
     for (final type in _groupOrder) {
-      final group = entries.where((e) => (typeOf[e.key] ?? AssetType.other) == type).toList();
+      final group = entries.where((e) => (typeOf[e.key.toUpperCase()] ?? AssetType.other) == type).toList();
       if (group.isEmpty) continue;
       final groupValue = group.fold(0.0, (s, e) => s + e.value.valueRub);
       final groupPnl = group.fold(0.0, (s, e) => s + e.value.pnlRub);
@@ -625,6 +652,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // --- Распределение ---
     final allocData = _alloc == _AllocationMode.sectors ? bySector : byTicker;
+    final allocTypes = _holdingTypes();
     if (allocData.isNotEmpty) {
       children.add(const SizedBox(height: 20));
       children.add(AppCard(
@@ -642,47 +670,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 scrollable: false,
                 values: _AllocationMode.values,
                 selected: _alloc,
-                labelOf: (m) => m == _AllocationMode.sectors ? 'По секторам' : 'По бумагам',
-                onChanged: (m) => setState(() => _alloc = m),
+                labelOf: (m) => switch (m) {
+                  _AllocationMode.sectors => 'По секторам',
+                  _AllocationMode.tickers => 'По бумагам',
+                  _AllocationMode.map => 'Карта',
+                },
+                onChanged: (m) {
+                  setState(() => _alloc = m);
+                  AppearanceService.setAllocationTab(m.name);
+                },
               ),
             ),
             const SizedBox(height: 16),
-            DonutChart(
-              data: allocData,
-              valueFormatter: (v) => Fmt.money(v),
-              centerLabel: _alloc == _AllocationMode.sectors ? 'Всего по секторам' : 'Всего по бумагам',
-            ),
+            if (_alloc == _AllocationMode.map)
+              PortfolioTreemap(
+                grouped: AppearanceService.treemapLayout == TreemapLayout.byType,
+                // Порядок групп — как в составе портфеля: акции, облигации…
+                items: [
+                  for (final type in _groupOrder)
+                    for (final e in holdings.entries)
+                      if ((allocTypes[e.key.toUpperCase()] ?? AssetType.other) == type)
+                        TreemapItem(
+                          ticker: e.key,
+                          label: e.key.length <= 6 ? e.key : _holdingName(e.key),
+                          value: e.value.valueRub,
+                          pnlPct: e.value.pnlPct,
+                          group: _groupTitle(type),
+                        ),
+                ],
+                onTap: (ticker) => Navigator.push(
+                  context,
+                  AppPageRoute(builder: (_) => TickerDetailScreen(ticker: ticker)),
+                ),
+              )
+            else
+              DonutChart(
+                data: allocData,
+                valueFormatter: (v) => Fmt.money(v),
+                centerLabel: _alloc == _AllocationMode.sectors ? 'Всего по секторам' : 'Всего по бумагам',
+              ),
           ],
         ),
       ));
     }
 
-    // --- Доход по месяцам ---
-    if (StorageService.incomes.isNotEmpty) {
+    // --- Доход по месяцам: календарь ---
+    // Прошедшие месяцы — полученное, остаток года — прогноз пунктиром.
+    if (StorageService.incomes.isNotEmpty || hasPayouts) {
+      final years = PayoutCalendarService.years();
+      if (!years.contains(_incomeYear)) _incomeYear = DateTime.now().year;
+      final cells = PayoutCalendarService.year(_incomeYear);
+      final yearTotal = cells.fold(0.0, (s, c) => s + c.total);
+      final yearHasForecast = cells.any((c) => c.hasForecast);
       children.add(const SizedBox(height: 20));
       children.add(AppCard(
-        padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SectionTitle(
+            SectionTitle(
               title: 'Дивиденды и купоны',
-              subtitle: 'Полученные выплаты по месяцам',
-              padding: EdgeInsets.only(bottom: 12, left: 2),
+              subtitle: yearTotal <= 0
+                  ? 'Выплат за $_incomeYear год нет'
+                  : '${yearHasForecast ? 'Получено и ожидается' : 'Получено'} за $_incomeYear: '
+                      '${yearHasForecast ? '≈' : ''}${Fmt.money(yearTotal)}',
+              padding: const EdgeInsets.only(bottom: 12, left: 2),
             ),
-            PillTabs<PeriodFilter>(
-              values: const [PeriodFilter.month6, PeriodFilter.year1, PeriodFilter.all],
-              selected: _incomePeriod,
-              labelOf: _periodLabel,
-              onChanged: (v) => setState(() => _incomePeriod = v),
-            ),
-            const SizedBox(height: 14),
-            BarsChart(
-              values: incomeByMonth.values.toList(),
-              labels: incomeByMonth.keys.map(Fmt.monthKeyLabel).toList(),
-              color: AppColors.positive,
-              valueFormatter: Fmt.money,
-            ),
+            if (years.length > 1) ...[
+              PillTabs<int>(
+                values: years,
+                selected: _incomeYear,
+                labelOf: (y) => '$y',
+                onChanged: (y) => setState(() => _incomeYear = y),
+                padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 12),
+            ],
+            PayoutCalendar(cells: cells),
           ],
         ),
       ));
@@ -712,10 +776,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         profit: totalProfit,
         child: SafeArea(
           bottom: false,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-            children: children,
+          // Потянуть вниз — обновить котировки, график стоимости и выплаты.
+          child: RefreshIndicator(
+            onRefresh: _pullToRefresh,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              children: children,
+            ),
           ),
         ),
       ),
@@ -748,6 +816,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
+              if (OnlineSettingsService.enabled) ...[
+                const SizedBox(height: 2),
+                UpdatedAgo(style: TextStyle(fontSize: 11, color: context.dim)),
+              ],
             ],
           ),
         ),
@@ -1223,23 +1295,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Вторая строка в карточке бумаги — что показывать, выбирается в
   /// настройках оформления.
   String _holdingSubtitle(String ticker, HoldingInfo h, double share) {
-    final type = _holdingType(ticker);
+    // Цены в строке не пишем: средняя и текущая есть в карточке бумаги, а в
+    // списке они только мешали читать количество.
     return switch (AppearanceService.holdingSubtitle) {
-      HoldingSubtitle.quantityAndPrice =>
-        '${Fmt.qty(h.qty)} шт · ${Fmt.price(h.avgCost, type: type)} → ${Fmt.price(h.displayPrice, type: type)}',
+      HoldingSubtitle.quantityAndPrice => '${Fmt.qty(h.qty)} шт',
       HoldingSubtitle.share => '${(share * 100).toStringAsFixed(1)}% портфеля · ${Fmt.qty(h.qty)} шт',
       HoldingSubtitle.profitRub => '${Fmt.signedMoney(h.pnlRub)} · ${Fmt.qty(h.qty)} шт',
       HoldingSubtitle.profitPct => '${Fmt.pct(h.pnlPct)} · ${Fmt.qty(h.qty)} шт',
     };
-  }
-
-  AssetType _holdingType(String ticker) {
-    for (final purchase in StorageService.purchases.reversed) {
-      if (purchase.ticker.toUpperCase() == ticker.toUpperCase()) {
-        return purchase.type;
-      }
-    }
-    return AssetType.stock;
   }
 
   String _holdingName(String ticker) {
@@ -1377,7 +1440,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, AssetType> _holdingTypes() {
     final result = <String, AssetType>{};
     for (final p in StorageService.purchases) {
-      result[p.ticker] = p.type;
+      result[p.ticker.toUpperCase()] = p.type;
     }
     return result;
   }
@@ -1505,6 +1568,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {
     final pnlColor = AppColors.pnl(h.pnlRub);
     final density = AppearanceService.density.scale;
+    final miniStyle = AppearanceService.miniChart;
+    final mini = miniStyle == MiniChartStyle.off ? null : MiniHistoryService.pointsFor(ticker);
     return AppCard(
       padding: EdgeInsets.fromLTRB(12, 12 * density, 12, 12 * density),
       onTap: () => Navigator.push(
@@ -1513,6 +1578,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
+          Stack(
+            children: [
+              // Вариант «фоном»: бледная линия цены под названием и суммой.
+              if (mini != null && miniStyle == MiniChartStyle.background)
+                Positioned.fill(
+                  left: 54,
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: MiniSparkline(
+                        values: mini,
+                        width: double.infinity,
+                        height: 26,
+                        fill: true,
+                        opacity: 0.45,
+                      ),
+                    ),
+                  ),
+                ),
           Row(
             children: [
               Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 42)),
@@ -1545,6 +1629,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
+              if (mini != null && miniStyle == MiniChartStyle.inline) ...[
+                const SizedBox(width: 8),
+                MiniSparkline(values: mini),
+              ],
               const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -1576,6 +1664,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   );
                 },
               ),
+            ],
+          ),
             ],
           ),
           const SizedBox(height: 10),

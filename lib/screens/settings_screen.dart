@@ -365,6 +365,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           : Icons.show_chart_rounded,
                       onChanged: AppearanceService.setChartHints,
                     ),
+                    const SizedBox(height: 16),
+                    _choiceTitle(
+                      'Карта портфеля',
+                      'Вкладка «Карта» в распределении: плитка — бумага, размер — доля, '
+                          'цвет — прибыль. Все бумаги одним полем или отдельно по типам.',
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedToggle<TreemapLayout>(
+                      values: TreemapLayout.values,
+                      selected: AppearanceService.treemapLayout,
+                      labelOf: (t) => t.title,
+                      iconOf: (t) => t == TreemapLayout.flat
+                          ? Icons.dashboard_outlined
+                          : Icons.space_dashboard_outlined,
+                      onChanged: AppearanceService.setTreemapLayout,
+                    ),
+                    const SizedBox(height: 16),
+                    _choiceTitle(
+                      'Мини-график в составе',
+                      'Цена бумаги за 30 дней в строке на главной: рядом с суммой, '
+                          'фоном под строкой или без графика.',
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedToggle<MiniChartStyle>(
+                      values: MiniChartStyle.values,
+                      selected: AppearanceService.miniChart,
+                      labelOf: (m) => m.title,
+                      onChanged: AppearanceService.setMiniChart,
+                    ),
+                    const SizedBox(height: 16),
+                    _choiceTitle(
+                      'Календарь выплат',
+                      'Сетка месяцев на главной, во вкладке «Выплаты» и в прогнозе: '
+                          '3 столбца — компактнее, 2 столбца — с полными названиями месяцев.',
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedToggle<PayoutCalendarStyle>(
+                      values: PayoutCalendarStyle.values,
+                      selected: AppearanceService.payoutCalendar,
+                      labelOf: (c) => c.title,
+                      iconOf: (c) => c == PayoutCalendarStyle.threeColumns
+                          ? Icons.grid_view_rounded
+                          : Icons.view_agenda_outlined,
+                      onChanged: AppearanceService.setPayoutCalendar,
+                    ),
                   ],
                 ),
               ),

@@ -310,8 +310,19 @@ class PayoutForecastService {
   /// сохраняем сезонность прошлых выплат бумаги с биржи, затем выплат самого
   /// пользователя. Равномерное распределение остаётся последним запасным
   /// вариантом, когда никаких дат нет.
-  static Map<String, double> portfolioForecastByMonth({DateTime? from}) {
-    final now = from ?? DateTime.now();
+  static Map<String, double> portfolioForecastByMonth({DateTime? from}) =>
+      _forecastByMonth(from ?? DateTime.now()).totals;
+
+  /// То же, но с разбивкой каждого месяца по бумагам: месяц → бумага → рубли.
+  /// Нужна календарю выплат, чтобы показать, от каких бумаг ждать деньги.
+  /// Сумма по бумагам месяца совпадает с [portfolioForecastByMonth] с
+  /// точностью до копеек округления.
+  static Map<String, Map<String, double>> portfolioForecastByMonthDetailed({DateTime? from}) =>
+      _forecastByMonth(from ?? DateTime.now()).detail;
+
+  static ({Map<String, double> totals, Map<String, Map<String, double>> detail}) _forecastByMonth(
+    DateTime now,
+  ) {
     final firstMonth = DateTime(now.year, now.month + 1);
     final months = List.generate(
       12,
@@ -319,6 +330,9 @@ class PayoutForecastService {
     );
     final result = <String, double>{
       for (final month in months) _monthKey(month): 0,
+    };
+    final detail = <String, Map<String, double>>{
+      for (final month in months) _monthKey(month): <String, double>{},
     };
     final holdings = AnalyticsService.currentHoldings();
 
@@ -386,7 +400,9 @@ class PayoutForecastService {
       final weightTotal = _sum(weights);
       for (int i = 0; i < months.length; i++) {
         final key = _monthKey(months[i]);
-        result[key] = result[key]! + annual * weights[i] / weightTotal;
+        final part = annual * weights[i] / weightTotal;
+        result[key] = result[key]! + part;
+        if (part > 0) detail[key]![ticker] = (detail[key]![ticker] ?? 0) + part;
       }
     }
 
@@ -401,7 +417,7 @@ class PayoutForecastService {
           );
       result[lastNonZero] = result[lastNonZero]! + expected - actual;
     }
-    return result;
+    return (totals: result, detail: detail);
   }
 
   static int _monthIndex(List<DateTime> months, DateTime date) =>
@@ -447,10 +463,18 @@ class PayoutForecastService {
   /// ближайшие деньги должны быть фактом, а не оценкой. Поэтому сумма здесь
   /// не складывается с годовым прогнозом и не является его частью.
   static ({double rub, int payouts}) restOfCurrentMonth({DateTime? from}) {
-    final now = from ?? DateTime.now();
+    final r = _restOfCurrentMonth(from ?? DateTime.now());
+    return (rub: r.rub, payouts: r.payouts);
+  }
 
+  /// Остаток текущего месяца по бумагам: бумага → рубли.
+  static Map<String, double> restOfCurrentMonthByTicker({DateTime? from}) =>
+      _restOfCurrentMonth(from ?? DateTime.now()).byTicker;
+
+  static ({double rub, int payouts, Map<String, double> byTicker}) _restOfCurrentMonth(DateTime now) {
     double total = 0;
     int count = 0;
+    final byTicker = <String, double>{};
     for (final entry in AnalyticsService.currentHoldings().entries) {
       final holding = entry.value;
       if (holding.qty <= 0) continue;
@@ -458,11 +482,13 @@ class PayoutForecastService {
       final currency = _payoutCurrency(list);
       for (final payout in list) {
         if (!isRestOfMonth(payout, now)) continue;
-        total += CurrencyService.toRub(payout.amount * holding.qty, currency);
+        final rub = CurrencyService.toRub(payout.amount * holding.qty, currency);
+        total += rub;
+        byTicker[entry.key] = (byTicker[entry.key] ?? 0) + rub;
         count++;
       }
     }
-    return (rub: total, payouts: count);
+    return (rub: total, payouts: count, byTicker: byTicker);
   }
 
   /// Прогнозная доходность портфеля: ожидаемые выплаты к текущей стоимости.

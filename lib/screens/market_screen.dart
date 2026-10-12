@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../design/charts.dart';
+import '../design/skeleton.dart';
 import '../services/appearance_service.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
@@ -20,6 +21,7 @@ import '../services/online_price_service.dart';
 import '../services/online_settings_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/ticker_avatar.dart';
+import '../widgets/updated_ago.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
 
@@ -408,37 +410,12 @@ class _MarketScreenState extends State<MarketScreen> {
                   children: [
                     Text('Биржа', style: Theme.of(context).textTheme.headlineMedium),
                     const SizedBox(height: 2),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: MoexSyncService.refreshing,
-                      builder: (context, refreshing, _) {
-                        final last = OnlineSettingsService.lastSyncAt;
-                        final marketOpen = MoexTradingScheduleService.isTradingSession();
-                        return Row(
-                          children: [
-                            if (refreshing) ...[
-                              SizedBox(
-                                width: 10,
-                                height: 10,
-                                child: CircularProgressIndicator(strokeWidth: 1.6, color: context.accent),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                            Text(
-                              refreshing
-                                  ? 'Обновляю…'
-                                  : last == null
-                                      ? '${quotes.length} бумаг · '
-                                          '${marketOpen ? "торги идут" : "биржа закрыта"}'
-                                      : '${quotes.length} бумаг · '
-                                          '${last.hour.toString().padLeft(2, '0')}:'
-                                          '${last.minute.toString().padLeft(2, '0')}:'
-                                          '${last.second.toString().padLeft(2, '0')} · '
-                                          '${marketOpen ? "торги идут" : "биржа закрыта"}',
-                              style: TextStyle(fontSize: 12, color: context.dim),
-                            ),
-                          ],
-                        );
-                      },
+                    // Когда пришли котировки — относительным временем: «2 мин
+                    // назад» читается быстрее, чем часы с секундами.
+                    UpdatedAgo(
+                      suffix: () => MoexTradingScheduleService.isTradingSession()
+                          ? ' · торги идут'
+                          : ' · биржа закрыта',
                     ),
                   ],
                 ),
@@ -462,7 +439,10 @@ class _MarketScreenState extends State<MarketScreen> {
           // ListView.builder, а не ListView(children: [...]): строк в списке
           // бумаг тысячи, и обычный ListView создаёт их ВСЕ сразу, даже те,
           // что за экраном. Здесь строятся только видимые.
-          child: ListView.builder(
+          // Потянуть вниз — обновить котировки и график.
+          child: RefreshIndicator(
+            onRefresh: _pullToRefresh,
+            child: ListView.builder(
             padding: const EdgeInsets.only(bottom: kListBottomPadding),
             physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
             // Четыре шапки сверху, дальше строки бумаг (или заглушка).
@@ -500,10 +480,17 @@ class _MarketScreenState extends State<MarketScreen> {
               );
             },
           ),
+          ),
         ),
       ],
     );
   }
+
+  Future<void> _pullToRefresh() async {
+    _loadChart();
+    await MoexSyncService.instance.refreshNow(fullMarket: true, force: true);
+  }
+
   Widget _ratesCard() {
     const visibleCurrencies = ['USD', 'EUR', 'CNY'];
     return Padding(
@@ -628,7 +615,7 @@ class _MarketScreenState extends State<MarketScreen> {
             SizedBox(
               height: 140,
               child: _chartLoading
-                  ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const ChartSkeleton(height: 140)
                   : _chartError != null
                       ? Center(
                           child: Text(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../design/charts.dart';
+import '../design/skeleton.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -140,6 +141,15 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     super.dispose();
   }
 
+  Future<void> _pullToRefresh() async {
+    if (!OnlineSettingsService.enabled) return;
+    await Future.wait([
+      MoexSyncService.instance.refreshNow(force: true),
+      _loadExchangeHistory(),
+      _loadPayouts(),
+    ]);
+  }
+
   Future<void> _loadExchangeHistory() async {
     setState(() {
       _exchangeLoading = true;
@@ -213,9 +223,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
   Widget _payoutsCard() {
     if (!OnlineSettingsService.enabled) return const SizedBox.shrink();
     if (_payoutsLoading && _payouts.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      // Заготовка строк выплат вместо кружка: карточка сразу занимает своё
+      // место, и экран не прыгает, когда выплаты приезжают.
+      return const AppCard(
+        padding: EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: ListSkeleton(rows: 3),
       );
     }
     if (_payouts.isEmpty) {
@@ -516,7 +528,10 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final pnlColor = AppColors.pnl(holding?.pnlRub ?? 0);
 
     return Scaffold(
-      body: CustomScrollView(
+      // Потянуть вниз — обновить цену, историю цены и выплаты.
+      body: RefreshIndicator(
+        onRefresh: _pullToRefresh,
+        child: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
           _appBar(context, ticker, name, sector, holding, quote, pnlColor),
@@ -685,6 +700,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             ),
           ),
         ],
+      ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -1185,7 +1201,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           SizedBox(
             height: 150,
             child: _exchangeLoading
-                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                ? const ChartSkeleton(height: 150)
                 : values.length < 2
                     ? Center(
                         child: Padding(
