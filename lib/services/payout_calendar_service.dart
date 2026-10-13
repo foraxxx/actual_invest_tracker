@@ -1,3 +1,4 @@
+import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'payout_forecast_service.dart';
 import 'storage_service.dart';
@@ -54,18 +55,19 @@ class PayoutCalendarService {
 
   /// Годы для переключателя: где есть полученные выплаты, текущий и
   /// следующий — если на него уже есть прогноз.
+  ///
+  /// Дальше следующего года не заглядываем: там были бы видны только купоны
+  /// с уже известными датами, без дивидендов, и год выглядел бы обманчиво
+  /// пустым.
   static List<int> years({DateTime? now, bool withForecast = true}) {
     final today = now ?? DateTime.now();
     final result = <int>{today.year};
     for (final i in StorageService.incomes) {
-      result.add(i.date.year);
+      if (i.date.year <= today.year) result.add(i.date.year);
     }
     if (withForecast) {
-      final forecast = PayoutForecastService.portfolioForecastByMonth(from: today);
-      final nextYear = '${today.year + 1}-';
-      if (forecast.entries.any((e) => e.key.startsWith(nextYear) && e.value > 0)) {
-        result.add(today.year + 1);
-      }
+      final next = year(today.year + 1, now: today);
+      if (next.any((c) => !c.isEmpty)) result.add(today.year + 1);
     }
     return result.toList()..sort();
   }
@@ -82,18 +84,57 @@ class PayoutCalendarService {
         ? PayoutForecastService.restOfCurrentMonthByTicker(from: today)
         : const <String, double>{};
     final currentKey = PayoutMonthCell.monthKey(today);
+    // Прогноз считается на 12 месяцев со следующего. Месяцы дальше него
+    // заполняем выплатами, которые биржа уже поставила в график, — иначе,
+    // например, декабрьский купон следующего года пропадал бы, хотя его дата
+    // и сумма известны.
+    final horizonEnd = DateTime(today.year, today.month + 13);
+
+    Map<String, double> expectedFor(DateTime month) {
+      final key = PayoutMonthCell.monthKey(month);
+      if (!withForecast) return const {};
+      if (key == currentKey) return rest;
+      if (!month.isBefore(horizonEnd)) return _scheduled(month);
+      return forecast[key] ?? const {};
+    }
 
     return [
       for (int m = 1; m <= 12; m++)
         _cell(
           DateTime(year, m),
           received[PayoutMonthCell.monthKey(DateTime(year, m))] ?? const [],
-          PayoutMonthCell.monthKey(DateTime(year, m)) == currentKey
-              ? rest
-              : forecast[PayoutMonthCell.monthKey(DateTime(year, m))] ?? const {},
+          expectedFor(DateTime(year, m)),
           today,
         ),
     ];
+  }
+
+  /// Выплаты месяца по графику биржи: известные даты × нынешнее количество.
+  /// Если размер будущего купона ещё не объявлен (флоатер), берём последний
+  /// известный купон этой бумаги — так же считает прогноз стоимости.
+  static Map<String, double> _scheduled(DateTime month) {
+    final result = <String, double>{};
+    for (final entry in AnalyticsService.currentHoldings().entries) {
+      final qty = entry.value.qty;
+      if (qty <= 0) continue;
+      final payouts = PayoutForecastService.payoutsFor(entry.key)
+          .where((p) => p.kind == 'Купон' || p.kind == 'Дивиденд')
+          .toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
+      double lastCoupon = 0;
+      for (final p in payouts) {
+        if (p.kind == 'Купон' && p.amount > 0 && p.date.isBefore(month)) lastCoupon = p.amount;
+        if (!p.dateKnown || p.date.year != month.year || p.date.month != month.month) continue;
+        final perUnit = p.amount > 0 ? p.amount : (p.kind == 'Купон' ? lastCoupon : 0.0);
+        if (perUnit <= 0) continue;
+        // Мосбиржа пишет рубль как SUR — переводим в понятный приложению код.
+        final raw = p.currency.toUpperCase();
+        final currency = (raw == 'SUR' || raw.isEmpty) ? 'RUB' : raw;
+        final rub = CurrencyService.toRub(perUnit * qty, currency);
+        result[entry.key] = (result[entry.key] ?? 0) + rub;
+      }
+    }
+    return result;
   }
 
   /// Прогноз на 12 месяцев со следующего — для окна «Прогноз выплат».

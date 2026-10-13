@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../design/charts.dart';
@@ -91,9 +92,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ValueForecastService.version.addListener(_onDataChanged);
     MiniHistoryService.version.addListener(_onDataChanged);
     // Мини-графики в составе: история за 30 дней, не чаще раза в день.
-    if (AppearanceService.miniChart != MiniChartStyle.off) {
-      MiniHistoryService.refresh(AnalyticsService.currentHoldings().keys);
-    }
+    MiniHistoryService.refresh(AnalyticsService.currentHoldings().keys);
   }
 
   Future<void> _pullToRefresh() async {
@@ -588,15 +587,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // молча спрятать блок — иначе экран выглядит сломанным.
     final entries = holdings.entries.toList()..sort((a, b) => b.value.valueRub.compareTo(a.value.valueRub));
     final total = entries.fold(0.0, (s, e) => s + e.value.valueRub);
+    final typeOf = _holdingTypes();
+    final sectionsCollapsed = AppearanceService.collapsedGroups;
     children.add(const SizedBox(height: 26));
+    // «Состав» целиком не сворачивается: сворачиваются его группы (акции,
+    // облигации), иначе до бумаги пришлось бы раскрывать два уровня.
     children.add(TourSpot(
       id: 'holdings',
       child: SectionTitle(
-      title: 'Состав портфеля',
-      subtitle: entries.isEmpty
-          ? 'Открытых позиций нет'
-          : '${entries.length} ${Fmt.papers(entries.length)} · ${Fmt.money(total)}',
-    ),
+        title: 'Состав портфеля',
+        subtitle: entries.isEmpty
+            ? 'Открытых позиций нет'
+            : '${entries.length} ${Fmt.papers(entries.length)} · ${Fmt.money(total)}',
+      ),
     ));
     if (entries.isEmpty) {
       children.add(InfoBanner(
@@ -612,7 +615,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Бумаги идут группами: сначала акции, потом облигации, потом фонды и
     // прочее. Внутри группы — по стоимости, как и раньше. Доля у бумаги
     // по-прежнему считается от всего портфеля.
-    final typeOf = _holdingTypes();
     final grouping = AppearanceService.holdingsGrouping;
     final collapsed = grouping == HoldingsGrouping.collapsible
         ? AppearanceService.collapsedGroups
@@ -652,15 +654,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final allocData = _alloc == _AllocationMode.sectors ? bySector : byTicker;
     if (allocData.isNotEmpty) {
       children.add(const SizedBox(height: 20));
-      children.add(AppCard(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-        child: Column(
+      final allocCollapsed = sectionsCollapsed.contains(_secAlloc);
+      final allocCount = allocData.length;
+      children.add(_section(
+        context,
+        id: _secAlloc,
+        icon: Icons.donut_large_rounded,
+        title: 'Распределение',
+        subtitle: 'Доли текущих позиций',
+        trailing: Text(
+          _alloc == _AllocationMode.sectors
+              ? '$allocCount ${Fmt.plural(allocCount, 'сектор', 'сектора', 'секторов')}'
+              : '$allocCount ${Fmt.papers(allocCount)}',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.dim),
+        ),
+        collapsed: allocCollapsed,
+        preview: () => _sharesPreview(context, allocData),
+        body: Column(
           children: [
-            const SectionTitle(
-              title: 'Распределение',
-              subtitle: 'Доли текущих позиций',
-              padding: EdgeInsets.only(bottom: 12),
-            ),
             Align(
               alignment: Alignment.centerLeft,
               child: PillTabs<_AllocationMode>(
@@ -680,6 +691,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               valueFormatter: (v) => Fmt.money(v),
               centerLabel: _alloc == _AllocationMode.sectors ? 'Всего по секторам' : 'Всего по бумагам',
             ),
+            const SizedBox(height: 4),
           ],
         ),
       ));
@@ -694,19 +706,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final yearTotal = cells.fold(0.0, (s, c) => s + c.total);
       final yearHasForecast = cells.any((c) => c.hasForecast);
       children.add(const SizedBox(height: 20));
-      children.add(AppCard(
-        padding: const EdgeInsets.fromLTRB(14, 16, 14, 10),
-        child: Column(
+      final payCollapsed = sectionsCollapsed.contains(_secPayouts);
+      children.add(_section(
+        context,
+        id: _secPayouts,
+        icon: Icons.calendar_month_rounded,
+        title: 'Дивиденды и купоны',
+        subtitle: yearTotal <= 0
+            ? 'Выплат за $_incomeYear год нет'
+            : '${yearHasForecast ? 'Получено и ожидается' : 'Получено'} за $_incomeYear',
+        trailing: yearTotal <= 0
+            ? null
+            : _moneyText('${yearHasForecast ? '≈' : ''}${Fmt.money(yearTotal)}', color: AppColors.positive),
+        collapsed: payCollapsed,
+        preview: () => _monthsPreview(context, cells),
+        body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SectionTitle(
-              title: 'Дивиденды и купоны',
-              subtitle: yearTotal <= 0
-                  ? 'Выплат за $_incomeYear год нет'
-                  : '${yearHasForecast ? 'Получено и ожидается' : 'Получено'} за $_incomeYear: '
-                      '${yearHasForecast ? '≈' : ''}${Fmt.money(yearTotal)}',
-              padding: const EdgeInsets.only(bottom: 12, left: 2),
-            ),
             if (years.length > 1) ...[
               PillTabs<int>(
                 values: years,
@@ -1398,6 +1414,195 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
   }
 
+  // --- Сворачиваемые разделы главной ---
+
+  static const _secAlloc = 'sec_alloc';
+  static const _secPayouts = 'sec_payouts';
+
+  Widget _moneyText(String text, {Color? color}) => HiddenAmount.forText(
+        text,
+        fontSize: 13.5,
+        child: Text(
+          text,
+          maxLines: 1,
+          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color),
+        ),
+      );
+
+  /// Раздел главной, который сворачивается нажатием на заголовок — как
+  /// группы в составе портфеля. Свёрнутый раздел — одна строка с итогом, а в
+  /// варианте «с превью» ещё и маленькая картинка содержимого. Приложение
+  /// запоминает, какие разделы свёрнуты.
+  Widget _section(
+    BuildContext context, {
+    required String id,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool collapsed,
+    required Widget body,
+    Widget? trailing,
+    Widget Function()? preview,
+  }) {
+    final withPreview = AppearanceService.sectionPreview == SectionPreview.preview;
+    final header = Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: context.accent.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 17, color: context.accent),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: 8),
+          trailing,
+        ],
+        const SizedBox(width: 2),
+        AnimatedRotation(
+          turns: collapsed ? 0 : 0.5,
+          duration: const Duration(milliseconds: 200),
+          child: Icon(Icons.expand_more_rounded, size: 22, color: context.dim),
+        ),
+      ],
+    );
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () async {
+              await AppearanceService.setGroupCollapsed(id, !collapsed);
+              if (mounted) setState(() {});
+            },
+            child: header,
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: collapsed
+                ? (withPreview && preview != null
+                    ? Padding(padding: const EdgeInsets.only(top: 10), child: preview())
+                    : const SizedBox(width: double.infinity))
+                : Padding(padding: const EdgeInsets.only(top: 14), child: body),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Превью «Распределения»: полоса долей и три крупнейшие позиции.
+  Widget _sharesPreview(BuildContext context, Map<String, double> data) {
+    final entries = data.entries.where((e) => e.value > 0).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final total = entries.fold(0.0, (s, e) => s + e.value);
+    if (total <= 0) return const SizedBox.shrink();
+    final top = entries.take(3).map((e) {
+      final name = e.key.length > 14 ? '${e.key.substring(0, 13)}…' : e.key;
+      return '$name ${(e.value / total * 100).toStringAsFixed(0)}%';
+    }).join(' · ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: SizedBox(
+            height: 8,
+            child: Row(
+              children: [
+                for (int i = 0; i < entries.length; i++)
+                  Expanded(
+                    flex: math.max(1, (entries[i].value / total * 1000).round()),
+                    child: Container(
+                      margin: EdgeInsets.only(right: i == entries.length - 1 ? 0 : 1.5),
+                      color: AppColors.chartAt(i),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          entries.length > 3 ? '$top · …' : top,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.dim),
+        ),
+      ],
+    );
+  }
+
+  /// Превью «Дивидендов и купонов»: 12 квадратиков месяцев, чем ярче — тем
+  /// больше выплат, прогноз обведён.
+  Widget _monthsPreview(BuildContext context, List<PayoutMonthCell> cells) {
+    final maxTotal = cells.fold(0.0, (m, c) => math.max(m, c.total));
+    final empty = context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            for (int i = 0; i < cells.length; i++) ...[
+              if (i > 0) const SizedBox(width: 3),
+              Expanded(
+                child: Container(
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: cells[i].isEmpty
+                        ? empty
+                        : AppColors.positive.withOpacity(
+                            0.12 + 0.6 * (maxTotal <= 0 ? 0 : cells[i].total / maxTotal)),
+                    borderRadius: BorderRadius.circular(3),
+                    border: cells[i].hasForecast
+                        ? Border.all(color: AppColors.positive.withOpacity(0.7), width: 1)
+                        : null,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 5),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('янв', style: TextStyle(fontSize: 10, color: context.dim)),
+            Text('по месяцам', style: TextStyle(fontSize: 10, color: context.dim)),
+            Text('дек', style: TextStyle(fontSize: 10, color: context.dim)),
+          ],
+        ),
+      ],
+    );
+  }
+
   /// Порядок групп в составе портфеля.
   static const _groupOrder = [
     AssetType.stock,
@@ -1544,8 +1749,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {
     final pnlColor = AppColors.pnl(h.pnlRub);
     final density = AppearanceService.density.scale;
-    final miniStyle = AppearanceService.miniChart;
-    final mini = miniStyle == MiniChartStyle.off ? null : MiniHistoryService.pointsFor(ticker);
+    final mini = MiniHistoryService.pointsFor(ticker);
     return AppCard(
       padding: EdgeInsets.fromLTRB(12, 11 * density, 12, 11 * density),
       onTap: () => Navigator.push(
@@ -1562,21 +1766,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            _holdingName(ticker),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        if (h.hasManualPrice) ...[
-                          const SizedBox(width: 6),
-                          Icon(Icons.edit_rounded, size: 11, color: context.dim),
-                        ],
-                      ],
+                    Text(
+                      _holdingName(ticker),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 2),
                     MarqueeText(
@@ -1586,7 +1780,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
-              if (mini != null && miniStyle == MiniChartStyle.inline) ...[
+              if (mini != null) ...[
                 const SizedBox(width: 8),
                 MiniSparkline(values: mini, width: 44, height: 20),
               ],
@@ -1608,11 +1802,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
-          // Режим «ниже»: тонкая линия цены за 30 дней во всю ширину строки.
-          if (mini != null && miniStyle == MiniChartStyle.below) ...[
-            const SizedBox(height: 6),
-            MiniSparkline(values: mini, width: double.infinity, height: 12),
-          ],
         ],
       ),
     );

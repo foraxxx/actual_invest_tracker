@@ -62,14 +62,13 @@ extension ChartHintsX on ChartHints {
       };
 }
 
-/// Мини-график цены в строке бумаги.
-enum MiniChartStyle { inline, below, off }
+/// Как выглядят свёрнутые разделы главной.
+enum SectionPreview { line, preview }
 
-extension MiniChartStyleX on MiniChartStyle {
+extension SectionPreviewX on SectionPreview {
   String get title => switch (this) {
-        MiniChartStyle.inline => 'Рядом',
-        MiniChartStyle.below => 'Ниже',
-        MiniChartStyle.off => 'Нет',
+        SectionPreview.line => 'Строка',
+        SectionPreview.preview => 'С превью',
       };
 }
 
@@ -241,18 +240,13 @@ class AppearanceService {
     version.value++;
   }
 
-  static MiniChartStyle get miniChart {
-    final raw = _box.get('miniChart');
-    // Вариант «фоном» убран — у кого он был выбран, получают «ниже».
-    if (raw == 'background') return MiniChartStyle.below;
-    return MiniChartStyle.values.firstWhere(
-      (m) => m.name == raw,
-      orElse: () => MiniChartStyle.inline,
-    );
-  }
+  static SectionPreview get sectionPreview => SectionPreview.values.firstWhere(
+        (p) => p.name == _box.get('sectionPreview'),
+        orElse: () => SectionPreview.preview,
+      );
 
-  static Future<void> setMiniChart(MiniChartStyle value) async {
-    await _box.put('miniChart', value.name);
+  static Future<void> setSectionPreview(SectionPreview value) async {
+    await _box.put('sectionPreview', value.name);
     version.value++;
   }
 

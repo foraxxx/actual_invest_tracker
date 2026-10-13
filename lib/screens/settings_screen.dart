@@ -367,16 +367,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                     _choiceTitle(
-                      'Мини-график в составе',
-                      'Цена бумаги за 30 дней в строке на главной: рядом с суммой, '
-                          'тонкой линией под строкой или без графика.',
+                      'Свёрнутые разделы',
+                      'Как выглядят свёрнутые «Распределение» и «Дивиденды и купоны» на '
+                          'главной: одной строкой с итогом или ещё с превью — полосой долей '
+                          'или квадратиками месяцев. Свернуть раздел — нажать на его заголовок.',
                     ),
                     const SizedBox(height: 8),
-                    SegmentedToggle<MiniChartStyle>(
-                      values: MiniChartStyle.values,
-                      selected: AppearanceService.miniChart,
-                      labelOf: (m) => m.title,
-                      onChanged: AppearanceService.setMiniChart,
+                    SegmentedToggle<SectionPreview>(
+                      values: SectionPreview.values,
+                      selected: AppearanceService.sectionPreview,
+                      labelOf: (p) => p.title,
+                      iconOf: (p) => p == SectionPreview.line
+                          ? Icons.horizontal_rule_rounded
+                          : Icons.view_day_outlined,
+                      onChanged: AppearanceService.setSectionPreview,
                     ),
                     const SizedBox(height: 16),
                     _choiceTitle(
