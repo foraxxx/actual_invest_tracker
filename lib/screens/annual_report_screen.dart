@@ -9,6 +9,7 @@ import '../design/tokens.dart';
 import '../services/annual_report_service.dart';
 import '../services/portfolio_service.dart';
 import '../services/report_pdf_service.dart';
+import '../widgets/month_calendar.dart';
 import '../widgets/ticker_avatar.dart';
 import 'ticker_detail_screen.dart';
 
@@ -133,31 +134,27 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
               ],
           ),
 
+          // Календари вместо столбиков: суммы видны целиком, а нажатие на
+          // месяц показывает каждую выплату или сделку.
           if (report.payoutsByMonth.isNotEmpty) ...[
             const SizedBox(height: 22),
             const SectionTitle(title: 'Выплаты по месяцам', padding: EdgeInsets.only(bottom: 12)),
             AppCard(
-              padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-              child: BarsChart(
-                values: _monthValues(report.payoutsByMonth),
-                labels: _monthLabels,
-                color: AppColors.positive,
-                valueFormatter: (v) => Fmt.money(v),
-              ),
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+              child: MonthCalendar(months: _payoutMonths(report), color: AppColors.positive),
             ),
           ],
 
-          if (report.boughtByMonth.isNotEmpty) ...[
+          if (report.trades.isNotEmpty) ...[
             const SizedBox(height: 18),
-            const SectionTitle(title: 'Покупки по месяцам', padding: EdgeInsets.only(bottom: 12)),
+            const SectionTitle(
+              title: 'Сделки по месяцам',
+              subtitle: 'Вложено в бумаги: покупки минус продажи',
+              padding: EdgeInsets.only(bottom: 12),
+            ),
             AppCard(
-              padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-              child: BarsChart(
-                values: _monthValues(report.boughtByMonth),
-                labels: _monthLabels,
-                color: AppColors.info,
-                valueFormatter: (v) => Fmt.money(v),
-              ),
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+              child: MonthCalendar(months: _tradeMonths(report), color: AppColors.info),
             ),
           ],
 
@@ -225,15 +222,57 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
     );
   }
 
-  /// Месяцы для графика: пустые тоже показываем, иначе картина года выглядит
-  /// рваной и месяцы не совпадают по позициям на двух графиках.
-  static const _monthLabels = [
-    'янв', 'фев', 'мар', 'апр', 'май', 'июн',
-    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
-  ];
+  /// Календарь выплат года: только полученное, без прогноза — это итоги.
+  List<CalendarMonth> _payoutMonths(AnnualReport report) => [
+        for (int m = 1; m <= 12; m++)
+          () {
+            final events = report.payoutEvents.where((e) => e.date.month == m).toList();
+            final total = report.payoutsByMonth[m] ?? 0;
+            return CalendarMonth(
+              month: DateTime(report.year, m),
+              value: total,
+              main: total <= 0 ? '—' : Fmt.money(total),
+              summary: events.isEmpty ? '' : '${events.length} ${Fmt.payouts(events.length)}',
+              lines: [
+                for (final e in events)
+                  CalendarLine(date: e.date, title: e.name, amount: Fmt.money(e.rub), ticker: e.ticker),
+              ],
+            );
+          }(),
+      ];
 
-  List<double> _monthValues(Map<int, double> byMonth) =>
-      [for (int m = 1; m <= 12; m++) byMonth[m] ?? 0];
+  /// Календарь сделок: крупно — сколько вложено за месяц (покупки − продажи),
+  /// мелко — из чего сложилось. Месяц, где продано больше, чем куплено,
+  /// получается со знаком «−» и другим цветом.
+  List<CalendarMonth> _tradeMonths(AnnualReport report) => [
+        for (int m = 1; m <= 12; m++)
+          () {
+            final bought = report.boughtByMonth[m] ?? 0;
+            final sold = report.soldByMonth[m] ?? 0;
+            final net = bought - sold;
+            final events = report.trades.where((e) => e.date.month == m).toList();
+            return CalendarMonth(
+              month: DateTime(report.year, m),
+              value: net,
+              main: events.isEmpty ? '—' : Fmt.signedMoney(net),
+              captions: [
+                if (bought > 0) ('куплено ${Fmt.money(bought)}', null),
+                if (sold > 0) ('продано ${Fmt.money(sold)}', AppColors.negative),
+              ],
+              summary: events.isEmpty ? '' : '${events.length} ${Fmt.deals(events.length)}',
+              lines: [
+                for (final e in events)
+                  CalendarLine(
+                    date: e.date,
+                    title: '${e.isSell ? 'Продажа' : 'Покупка'} · ${e.name}',
+                    amount: Fmt.money(e.rub),
+                    amountColor: e.isSell ? AppColors.negative : null,
+                    ticker: e.ticker,
+                  ),
+              ],
+            );
+          }(),
+      ];
 
   Widget _summaryCard(AnnualReport report) {
     final result = report.totalResultRub;

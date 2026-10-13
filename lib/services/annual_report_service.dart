@@ -58,6 +58,25 @@ class ReportRow {
   double get totalResultRub => realizedRub + payoutsRub + unrealizedRub;
 }
 
+/// Одна сделка или выплата за год — для списков под календарями.
+class ReportEvent {
+  final DateTime date;
+  final String ticker;
+  final String name;
+  final double rub;
+
+  /// Для сделок: продажа. У выплат всегда false.
+  final bool isSell;
+
+  const ReportEvent({
+    required this.date,
+    required this.ticker,
+    required this.name,
+    required this.rub,
+    this.isSell = false,
+  });
+}
+
 /// Итоги года целиком.
 class AnnualReport {
   final int year;
@@ -84,6 +103,15 @@ class AnnualReport {
   /// Покупки по месяцам — для графика.
   final Map<int, double> boughtByMonth;
 
+  /// Продажи по месяцам. Вместе с покупками дают, сколько денег на самом
+  /// деле вложено в бумаги за месяц: одни покупки без продаж вводили в
+  /// заблуждение.
+  final Map<int, double> soldByMonth;
+
+  /// Каждая сделка и каждая выплата года — по дате.
+  final List<ReportEvent> trades;
+  final List<ReportEvent> payoutEvents;
+
   /// Распределение текущей стоимости по секторам.
   final Map<String, double> bySector;
 
@@ -100,6 +128,9 @@ class AnnualReport {
     required this.valueEndRub,
     required this.payoutsByMonth,
     required this.boughtByMonth,
+    required this.soldByMonth,
+    required this.trades,
+    required this.payoutEvents,
     required this.bySector,
   });
 
@@ -189,6 +220,8 @@ class AnnualReportService {
     final sold = <String, double>{};
     final soldSum = <String, double>{};
     final boughtByMonth = <int, double>{};
+    final soldByMonth = <int, double>{};
+    final trades = <ReportEvent>[];
 
     for (final p in purchases) {
       names[p.ticker] = p.name.isNotEmpty ? p.name : p.ticker;
@@ -199,9 +232,17 @@ class AnnualReportService {
         p.currency,
         date: p.date,
       );
+      trades.add(ReportEvent(
+        date: p.date,
+        ticker: p.ticker,
+        name: names[p.ticker] ?? p.ticker,
+        rub: sumRub,
+        isSell: p.isSell,
+      ));
       if (p.isSell) {
         sold[p.ticker] = (sold[p.ticker] ?? 0) + p.quantity;
         soldSum[p.ticker] = (soldSum[p.ticker] ?? 0) + sumRub;
+        soldByMonth[p.date.month] = (soldByMonth[p.date.month] ?? 0) + sumRub;
       } else {
         bought[p.ticker] = (bought[p.ticker] ?? 0) + p.quantity;
         boughtSum[p.ticker] = (boughtSum[p.ticker] ?? 0) + sumRub;
@@ -211,6 +252,7 @@ class AnnualReportService {
 
     final payouts = <String, double>{};
     final payoutsByMonth = <int, double>{};
+    final payoutEvents = <ReportEvent>[];
     double taxPaid = 0;
     for (final i in incomes) {
       if (i.date.isBefore(from) || i.date.isAfter(periodEnd)) continue;
@@ -219,7 +261,10 @@ class AnnualReportService {
       payoutsByMonth[i.date.month] = (payoutsByMonth[i.date.month] ?? 0) + rub;
       taxPaid += CurrencyService.toRub(i.taxPaid, i.currency, date: i.date);
       names[i.ticker] ??= i.name.isNotEmpty ? i.name : i.ticker;
+      payoutEvents.add(ReportEvent(date: i.date, ticker: i.ticker, name: names[i.ticker]!, rub: rub));
     }
+    trades.sort((a, b) => a.date.compareTo(b.date));
+    payoutEvents.sort((a, b) => a.date.compareTo(b.date));
 
     // Реализованная прибыль по продажам этого года — методом ФИФО, тем же,
     // что и в остальном приложении.
@@ -284,6 +329,9 @@ class AnnualReportService {
       valueEndRub: rows.fold(0.0, (sum, r) => sum + r.valueRub),
       payoutsByMonth: payoutsByMonth,
       boughtByMonth: boughtByMonth,
+      soldByMonth: soldByMonth,
+      trades: trades,
+      payoutEvents: payoutEvents,
       bySector: bySector,
     );
   }

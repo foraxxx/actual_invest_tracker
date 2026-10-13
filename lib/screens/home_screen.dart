@@ -5,7 +5,6 @@ import '../services/moex_sync_service.dart';
 import '../design/page_tour.dart';
 import 'dashboard_screen.dart';
 import 'purchases_screen.dart';
-import 'incomes_screen.dart';
 import 'plans_screen.dart';
 import 'market_screen.dart';
 import 'settings_screen.dart';
@@ -22,7 +21,7 @@ class HomeScreen extends StatefulWidget {
     context.findAncestorStateOfType<_HomeScreenState>()?._select(_settingsIndex);
   }
 
-  static const _settingsIndex = 5;
+  static const _settingsIndex = 4;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -47,7 +46,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     DashboardScreen(),
     MarketScreen(),
     PurchasesScreen(),
-    IncomesScreen(),
     PlansScreen(),
     SettingsScreen(),
   ];
@@ -56,7 +54,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     NavItem(icon: Icons.donut_large_outlined, activeIcon: Icons.donut_large, label: 'Портфель'),
     NavItem(icon: Icons.show_chart_rounded, activeIcon: Icons.show_chart_rounded, label: 'Биржа'),
     NavItem(icon: Icons.swap_horiz_outlined, activeIcon: Icons.swap_horiz, label: 'Сделки'),
-    NavItem(icon: Icons.payments_outlined, activeIcon: Icons.payments, label: 'Выплаты'),
     NavItem(icon: Icons.flag_outlined, activeIcon: Icons.flag, label: 'Планы'),
     NavItem(icon: Icons.tune_outlined, activeIcon: Icons.tune, label: 'Настройки'),
   ];

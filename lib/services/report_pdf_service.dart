@@ -67,9 +67,9 @@ class ReportPdfService {
             _monthChart(report.payoutsByMonth, _positive),
             pw.SizedBox(height: 16),
           ],
-          if (report.boughtByMonth.isNotEmpty) ...[
-            _sectionTitle('Покупки по месяцам'),
-            _monthChart(report.boughtByMonth, _accent),
+          if (report.boughtByMonth.isNotEmpty || report.soldByMonth.isNotEmpty) ...[
+            _sectionTitle('Сделки по месяцам'),
+            _tradesByMonth(report),
             pw.SizedBox(height: 16),
           ],
           if (report.bySector.isNotEmpty) ...[
@@ -264,6 +264,82 @@ class ReportPdfService {
               ],
             ),
           ),
+      ],
+    );
+  }
+
+  /// Сделки по месяцам таблицей: куплено, продано и сколько на самом деле
+  /// вложено в бумаги. Одни покупки без продаж вводили в заблуждение, а
+  /// отрицательный итог месяца столбиком не нарисовать.
+  static pw.Widget _tradesByMonth(AnnualReport report) {
+    const months = [
+      'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+      'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+    ];
+    pw.Widget cell(String text, {bool bold = false, PdfColor? color, pw.TextAlign align = pw.TextAlign.right}) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 3),
+        child: pw.Text(
+          text,
+          textAlign: align,
+          style: pw.TextStyle(
+            fontSize: 8,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: color,
+          ),
+        ),
+      );
+    }
+
+    double boughtTotal = 0;
+    double soldTotal = 0;
+    final rows = <pw.TableRow>[];
+    for (int m = 1; m <= 12; m++) {
+      final bought = report.boughtByMonth[m] ?? 0;
+      final sold = report.soldByMonth[m] ?? 0;
+      if (bought <= 0 && sold <= 0) continue;
+      boughtTotal += bought;
+      soldTotal += sold;
+      final net = bought - sold;
+      rows.add(pw.TableRow(children: [
+        cell(months[m - 1], align: pw.TextAlign.left),
+        cell(bought > 0 ? Fmt.money(bought) : '—'),
+        cell(sold > 0 ? Fmt.money(sold) : '—', color: sold > 0 ? _negative : null),
+        cell(Fmt.signedMoney(net), bold: true, color: net < 0 ? _negative : null),
+      ]));
+    }
+    final netTotal = boughtTotal - soldTotal;
+
+    return pw.Table(
+      border: const pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: _line),
+        bottom: pw.BorderSide(color: _line),
+      ),
+      columnWidths: const {
+        0: pw.FlexColumnWidth(1.6),
+        1: pw.FlexColumnWidth(1.5),
+        2: pw.FlexColumnWidth(1.5),
+        3: pw.FlexColumnWidth(1.6),
+      },
+      children: [
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFFF4F6FA)),
+          children: [
+            cell('Месяц', bold: true, align: pw.TextAlign.left),
+            cell('Куплено', bold: true),
+            cell('Продано', bold: true),
+            cell('Вложено', bold: true),
+          ],
+        ),
+        ...rows,
+        pw.TableRow(
+          children: [
+            cell('За год', bold: true, align: pw.TextAlign.left),
+            cell(Fmt.money(boughtTotal), bold: true),
+            cell(Fmt.money(soldTotal), bold: true, color: soldTotal > 0 ? _negative : null),
+            cell(Fmt.signedMoney(netTotal), bold: true, color: netTotal < 0 ? _negative : null),
+          ],
+        ),
       ],
     );
   }

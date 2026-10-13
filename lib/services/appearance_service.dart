@@ -62,23 +62,13 @@ extension ChartHintsX on ChartHints {
       };
 }
 
-/// Как раскладывать карту портфеля.
-enum TreemapLayout { flat, byType }
-
-extension TreemapLayoutX on TreemapLayout {
-  String get title => switch (this) {
-        TreemapLayout.flat => 'Все бумаги',
-        TreemapLayout.byType => 'По типам',
-      };
-}
-
 /// Мини-график цены в строке бумаги.
-enum MiniChartStyle { inline, background, off }
+enum MiniChartStyle { inline, below, off }
 
 extension MiniChartStyleX on MiniChartStyle {
   String get title => switch (this) {
         MiniChartStyle.inline => 'Рядом',
-        MiniChartStyle.background => 'Фоном',
+        MiniChartStyle.below => 'Ниже',
         MiniChartStyle.off => 'Нет',
       };
 }
@@ -164,10 +154,23 @@ class AppearanceService {
   static Future<void> setShowNavLabels(bool value) => _setFlag('showNavLabels', value);
 
   /// Вкладка, которая открывается при входе в портфель.
-  static int get startTab => int.tryParse(_box.get('startTab') ?? '') ?? 0;
+  ///
+  /// Хранится под новым ключом: вкладку «Выплаты» убрали, и номера после неё
+  /// сдвинулись. Старое значение пересчитывается: «Выплаты» (3) → «Портфель»,
+  /// «Планы» (4) → 3, «Настройки» (5) → 4.
+  static int get startTab {
+    final current = int.tryParse(_box.get('startTabV2') ?? '');
+    if (current != null) return current.clamp(0, 4);
+    return switch (int.tryParse(_box.get('startTab') ?? '') ?? 0) {
+      4 => 3,
+      5 => 4,
+      final i when i >= 0 && i < 3 => i,
+      _ => 0,
+    };
+  }
 
   static Future<void> setStartTab(int value) async {
-    await _box.put('startTab', '$value');
+    await _box.put('startTabV2', '$value');
     version.value++;
   }
 
@@ -238,20 +241,15 @@ class AppearanceService {
     version.value++;
   }
 
-  static TreemapLayout get treemapLayout => TreemapLayout.values.firstWhere(
-        (t) => t.name == _box.get('treemapLayout'),
-        orElse: () => TreemapLayout.flat,
-      );
-
-  static Future<void> setTreemapLayout(TreemapLayout value) async {
-    await _box.put('treemapLayout', value.name);
-    version.value++;
+  static MiniChartStyle get miniChart {
+    final raw = _box.get('miniChart');
+    // Вариант «фоном» убран — у кого он был выбран, получают «ниже».
+    if (raw == 'background') return MiniChartStyle.below;
+    return MiniChartStyle.values.firstWhere(
+      (m) => m.name == raw,
+      orElse: () => MiniChartStyle.inline,
+    );
   }
-
-  static MiniChartStyle get miniChart => MiniChartStyle.values.firstWhere(
-        (m) => m.name == _box.get('miniChart'),
-        orElse: () => MiniChartStyle.inline,
-      );
 
   static Future<void> setMiniChart(MiniChartStyle value) async {
     await _box.put('miniChart', value.name);

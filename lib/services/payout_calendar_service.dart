@@ -2,6 +2,17 @@ import 'currency_service.dart';
 import 'payout_forecast_service.dart';
 import 'storage_service.dart';
 
+/// Одна выплата в месяце календаря: полученная или ожидаемая.
+class PayoutItem {
+  /// Дата, если известна. У ожидаемой выплаты без объявленной даты — null.
+  final DateTime? date;
+  final String ticker;
+  final double rub;
+  final bool expected;
+
+  const PayoutItem({required this.ticker, required this.rub, this.date, this.expected = false});
+}
+
 /// Один месяц календаря выплат.
 class PayoutMonthCell {
   final DateTime month;
@@ -15,15 +26,15 @@ class PayoutMonthCell {
   /// Сколько выплат уже пришло в этом месяце.
   final int receivedCount;
 
-  /// От каких бумаг деньги: полученные и ожидаемые вместе.
-  final Map<String, double> byTicker;
+  /// Каждая выплата месяца: сначала по дате, ожидаемые без даты — в конце.
+  final List<PayoutItem> items;
 
   const PayoutMonthCell({
     required this.month,
     this.received = 0,
     this.expected = 0,
     this.receivedCount = 0,
-    this.byTicker = const {},
+    this.items = const [],
   });
 
   double get total => received + expected;
@@ -43,16 +54,18 @@ class PayoutCalendarService {
 
   /// Годы для переключателя: где есть полученные выплаты, текущий и
   /// следующий — если на него уже есть прогноз.
-  static List<int> years({DateTime? now}) {
+  static List<int> years({DateTime? now, bool withForecast = true}) {
     final today = now ?? DateTime.now();
     final result = <int>{today.year};
     for (final i in StorageService.incomes) {
       result.add(i.date.year);
     }
-    final forecast = PayoutForecastService.portfolioForecastByMonth(from: today);
-    final nextYear = '${today.year + 1}-';
-    if (forecast.entries.any((e) => e.key.startsWith(nextYear) && e.value > 0)) {
-      result.add(today.year + 1);
+    if (withForecast) {
+      final forecast = PayoutForecastService.portfolioForecastByMonth(from: today);
+      final nextYear = '${today.year + 1}-';
+      if (forecast.entries.any((e) => e.key.startsWith(nextYear) && e.value > 0)) {
+        result.add(today.year + 1);
+      }
     }
     return result.toList()..sort();
   }
@@ -74,10 +87,11 @@ class PayoutCalendarService {
       for (int m = 1; m <= 12; m++)
         _cell(
           DateTime(year, m),
-          received[PayoutMonthCell.monthKey(DateTime(year, m))],
+          received[PayoutMonthCell.monthKey(DateTime(year, m))] ?? const [],
           PayoutMonthCell.monthKey(DateTime(year, m)) == currentKey
               ? rest
               : forecast[PayoutMonthCell.monthKey(DateTime(year, m))] ?? const {},
+          today,
         ),
     ];
   }
@@ -86,67 +100,87 @@ class PayoutCalendarService {
   static List<PayoutMonthCell> next12({DateTime? now}) {
     final today = now ?? DateTime.now();
     final forecast = PayoutForecastService.portfolioForecastByMonthDetailed(from: today);
-    final totals = PayoutForecastService.portfolioForecastByMonth(from: today);
     final first = DateTime(today.year, today.month + 1);
     return [
       for (int i = 0; i < 12; i++)
-        () {
-          final month = DateTime(first.year, first.month + i);
-          final key = PayoutMonthCell.monthKey(month);
-          final byTicker = forecast[key] ?? const <String, double>{};
-          // Итог месяца берём из общего прогноза: в нём поправка на копейки
-          // округления, и сумма клеток совпадает с итогом окна.
-          return PayoutMonthCell(
-            month: month,
-            expected: totals[key] ?? 0,
-            byTicker: byTicker,
-          );
-        }(),
+        _cell(
+          DateTime(first.year, first.month + i),
+          const [],
+          forecast[PayoutMonthCell.monthKey(DateTime(first.year, first.month + i))] ?? const {},
+          today,
+        ),
     ];
   }
 
   static PayoutMonthCell _cell(
     DateTime month,
-    ({double rub, int count, Map<String, double> byTicker})? got,
+    List<PayoutItem> got,
     Map<String, double> expected,
+    DateTime today,
   ) {
-    final byTicker = <String, double>{...?got?.byTicker};
-    expected.forEach((t, v) => byTicker[t] = (byTicker[t] ?? 0) + v);
+    final items = <PayoutItem>[
+      ...got,
+      for (final e in expected.entries)
+        if (e.value > 0.005)
+          PayoutItem(
+            ticker: e.key,
+            rub: e.value,
+            date: _expectedDate(e.key, month, today),
+            expected: true,
+          ),
+    ]..sort((a, b) {
+        // Без даты — в конец месяца; при равной дате полученные раньше.
+        final ad = a.date, bd = b.date;
+        if (ad == null && bd == null) return b.rub.compareTo(a.rub);
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        final byDate = ad.compareTo(bd);
+        if (byDate != 0) return byDate;
+        return (a.expected ? 1 : 0) - (b.expected ? 1 : 0);
+      });
     return PayoutMonthCell(
       month: month,
-      received: got?.rub ?? 0,
-      receivedCount: got?.count ?? 0,
+      received: got.fold(0.0, (s, i) => s + i.rub),
+      receivedCount: got.length,
       expected: expected.values.fold(0.0, (s, v) => s + v),
-      byTicker: byTicker,
+      items: items,
     );
   }
 
+  /// Дата ожидаемой выплаты, если биржа её объявила: первая выплата бумаги в
+  /// этом месяце, ещё не прошедшая. Иначе — null, месяц известен, день нет.
+  static DateTime? _expectedDate(String ticker, DateTime month, DateTime today) {
+    final start = DateTime(today.year, today.month, today.day);
+    DateTime? best;
+    for (final p in PayoutForecastService.payoutsFor(ticker)) {
+      if (!p.dateKnown || p.amount <= 0) continue;
+      if (p.kind != 'Купон' && p.kind != 'Дивиденд') continue;
+      if (p.date.year != month.year || p.date.month != month.month) continue;
+      if (p.date.isBefore(start)) continue;
+      if (best == null || p.date.isBefore(best)) best = p.date;
+    }
+    return best;
+  }
+
   /// Полученные выплаты по месяцам — в рублях после налога, как в «Итогах».
-  static Map<String, ({double rub, int count, Map<String, double> byTicker})> _received() {
-    final map = <String, ({double rub, int count, Map<String, double> byTicker})>{};
+  static Map<String, List<PayoutItem>> _received() {
+    final map = <String, List<PayoutItem>>{};
     for (final i in StorageService.incomes) {
       final key = PayoutMonthCell.monthKey(i.date);
       final rub = CurrencyService.toRub(i.amountNet, i.currency, date: i.date);
-      final prev = map[key];
-      final byTicker = <String, double>{...?prev?.byTicker};
-      byTicker[i.ticker] = (byTicker[i.ticker] ?? 0) + rub;
-      map[key] = (rub: (prev?.rub ?? 0) + rub, count: (prev?.count ?? 0) + 1, byTicker: byTicker);
+      (map[key] ??= []).add(PayoutItem(ticker: i.ticker, rub: rub, date: i.date));
     }
     return map;
   }
 
-  /// Короткая подпись бумаги: тикер, а у облигаций с длинным кодом — название.
-  static String label(String ticker) {
-    if (ticker.length <= 6) return ticker;
+  /// Название бумаги для списка: из сделок или выплат, иначе тикер.
+  static String nameOf(String ticker) {
+    final upper = ticker.toUpperCase();
     for (final p in StorageService.purchases.reversed) {
-      if (p.ticker.toUpperCase() == ticker.toUpperCase() && p.name.trim().isNotEmpty) {
-        return p.name.trim();
-      }
+      if (p.ticker.toUpperCase() == upper && p.name.trim().isNotEmpty) return p.name.trim();
     }
     for (final i in StorageService.incomes) {
-      if (i.ticker.toUpperCase() == ticker.toUpperCase() && i.name.trim().isNotEmpty) {
-        return i.name.trim();
-      }
+      if (i.ticker.toUpperCase() == upper && i.name.trim().isNotEmpty) return i.name.trim();
     }
     return ticker;
   }

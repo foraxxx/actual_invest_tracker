@@ -367,25 +367,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                     _choiceTitle(
-                      'Карта портфеля',
-                      'Вкладка «Карта» в распределении: плитка — бумага, размер — доля, '
-                          'цвет — прибыль. Все бумаги одним полем или отдельно по типам.',
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<TreemapLayout>(
-                      values: TreemapLayout.values,
-                      selected: AppearanceService.treemapLayout,
-                      labelOf: (t) => t.title,
-                      iconOf: (t) => t == TreemapLayout.flat
-                          ? Icons.dashboard_outlined
-                          : Icons.space_dashboard_outlined,
-                      onChanged: AppearanceService.setTreemapLayout,
-                    ),
-                    const SizedBox(height: 16),
-                    _choiceTitle(
                       'Мини-график в составе',
                       'Цена бумаги за 30 дней в строке на главной: рядом с суммой, '
-                          'фоном под строкой или без графика.',
+                          'тонкой линией под строкой или без графика.',
                     ),
                     const SizedBox(height: 8),
                     SegmentedToggle<MiniChartStyle>(
@@ -397,7 +381,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 16),
                     _choiceTitle(
                       'Календарь выплат',
-                      'Сетка месяцев на главной, во вкладке «Выплаты» и в прогнозе: '
+                      'Сетка месяцев на главной, в прогнозе выплат и в итогах года: '
                           '3 столбца — компактнее, 2 столбца — с полными названиями месяцев.',
                     ),
                     const SizedBox(height: 8),

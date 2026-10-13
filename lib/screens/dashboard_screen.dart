@@ -15,7 +15,6 @@ import '../models/purchase.dart';
 import '../services/cash_service.dart';
 import '../services/payout_forecast_service.dart';
 import '../services/storage_service.dart';
-import '../services/favorites_service.dart';
 import '../services/manual_price_service.dart';
 import '../services/online_price_service.dart';
 import '../services/portfolio_service.dart';
@@ -30,7 +29,6 @@ import '../widgets/ticker_avatar.dart';
 import '../widgets/payout_forecast_sheet.dart';
 import '../widgets/value_forecast_sheet.dart';
 import '../widgets/updated_ago.dart';
-import '../widgets/portfolio_treemap.dart';
 import '../widgets/payout_calendar.dart';
 import '../services/payout_calendar_service.dart';
 import 'home_screen.dart';
@@ -38,7 +36,7 @@ import 'ticker_detail_screen.dart';
 import 'wrapped_screen.dart';
 
 /// По какому признаку строится кольцевая диаграмма распределения.
-enum _AllocationMode { sectors, tickers, map }
+enum _AllocationMode { sectors, tickers }
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -652,7 +650,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // --- Распределение ---
     final allocData = _alloc == _AllocationMode.sectors ? bySector : byTicker;
-    final allocTypes = _holdingTypes();
     if (allocData.isNotEmpty) {
       children.add(const SizedBox(height: 20));
       children.add(AppCard(
@@ -670,11 +667,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 scrollable: false,
                 values: _AllocationMode.values,
                 selected: _alloc,
-                labelOf: (m) => switch (m) {
-                  _AllocationMode.sectors => 'По секторам',
-                  _AllocationMode.tickers => 'По бумагам',
-                  _AllocationMode.map => 'Карта',
-                },
+                labelOf: (m) => m == _AllocationMode.sectors ? 'По секторам' : 'По бумагам',
                 onChanged: (m) {
                   setState(() => _alloc = m);
                   AppearanceService.setAllocationTab(m.name);
@@ -682,33 +675,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            if (_alloc == _AllocationMode.map)
-              PortfolioTreemap(
-                grouped: AppearanceService.treemapLayout == TreemapLayout.byType,
-                // Порядок групп — как в составе портфеля: акции, облигации…
-                items: [
-                  for (final type in _groupOrder)
-                    for (final e in holdings.entries)
-                      if ((allocTypes[e.key.toUpperCase()] ?? AssetType.other) == type)
-                        TreemapItem(
-                          ticker: e.key,
-                          label: e.key.length <= 6 ? e.key : _holdingName(e.key),
-                          value: e.value.valueRub,
-                          pnlPct: e.value.pnlPct,
-                          group: _groupTitle(type),
-                        ),
-                ],
-                onTap: (ticker) => Navigator.push(
-                  context,
-                  AppPageRoute(builder: (_) => TickerDetailScreen(ticker: ticker)),
-                ),
-              )
-            else
-              DonutChart(
-                data: allocData,
-                valueFormatter: (v) => Fmt.money(v),
-                centerLabel: _alloc == _AllocationMode.sectors ? 'Всего по секторам' : 'Всего по бумагам',
-              ),
+            DonutChart(
+              data: allocData,
+              valueFormatter: (v) => Fmt.money(v),
+              centerLabel: _alloc == _AllocationMode.sectors ? 'Всего по секторам' : 'Всего по бумагам',
+            ),
           ],
         ),
       ));
@@ -1565,42 +1536,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// Строка бумаги в составе портфеля.
+  ///
+  /// Компактная: аватар поменьше и без звёздочки избранного (она есть в
+  /// карточке бумаги) — иначе с мини-графиком рядом названию не хватало места.
+  /// Доли бумаг здесь не показываются, они есть в «Распределении».
   Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {
     final pnlColor = AppColors.pnl(h.pnlRub);
     final density = AppearanceService.density.scale;
     final miniStyle = AppearanceService.miniChart;
     final mini = miniStyle == MiniChartStyle.off ? null : MiniHistoryService.pointsFor(ticker);
     return AppCard(
-      padding: EdgeInsets.fromLTRB(12, 12 * density, 12, 12 * density),
+      padding: EdgeInsets.fromLTRB(12, 11 * density, 12, 11 * density),
       onTap: () => Navigator.push(
         context,
         AppPageRoute(builder: (_) => TickerDetailScreen(ticker: ticker)),
       ),
       child: Column(
         children: [
-          Stack(
-            children: [
-              // Вариант «фоном»: бледная линия цены под названием и суммой.
-              if (mini != null && miniStyle == MiniChartStyle.background)
-                Positioned.fill(
-                  left: 54,
-                  child: IgnorePointer(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: MiniSparkline(
-                        values: mini,
-                        width: double.infinity,
-                        height: 26,
-                        fill: true,
-                        opacity: 0.45,
-                      ),
-                    ),
-                  ),
-                ),
           Row(
             children: [
-              Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 42)),
-              const SizedBox(width: 12),
+              Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 36)),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1612,7 +1569,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             _holdingName(ticker),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
                           ),
                         ),
                         if (h.hasManualPrice) ...[
@@ -1631,7 +1588,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               if (mini != null && miniStyle == MiniChartStyle.inline) ...[
                 const SizedBox(width: 8),
-                MiniSparkline(values: mini),
+                MiniSparkline(values: mini, width: 44, height: 20),
               ],
               const SizedBox(width: 8),
               Column(
@@ -1639,46 +1596,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   HiddenAmount.forText(
                     Fmt.money(h.valueRub),
-                    fontSize: 14.5,
+                    fontSize: 14,
                     child: Text(
                       Fmt.money(h.valueRub),
-                      style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                     ),
                   ),
                   const SizedBox(height: 3),
                   TagChip(text: Fmt.pct(h.pnlPct), color: pnlColor, fontSize: 10.5),
                 ],
               ),
-              ValueListenableBuilder<int>(
-                valueListenable: FavoritesService.version,
-                builder: (context, _, __) {
-                  final isFav = FavoritesService.isFavorite(ticker);
-                  return IconButton(
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(
-                      isFav ? Icons.star_rounded : Icons.star_border_rounded,
-                      size: 20,
-                      color: isFav ? AppColors.gold : context.dim,
-                    ),
-                    onPressed: () => FavoritesService.toggle(ticker),
-                  );
-                },
-              ),
             ],
           ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: MiniProgressBar(value: weight, color: context.accent)),
-              const SizedBox(width: 8),
-              Text(
-                '${(weight * 100).toStringAsFixed(1)}%',
-                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: context.dim),
-              ),
-            ],
-          ),
+          // Режим «ниже»: тонкая линия цены за 30 дней во всю ширину строки.
+          if (mini != null && miniStyle == MiniChartStyle.below) ...[
+            const SizedBox(height: 6),
+            MiniSparkline(values: mini, width: double.infinity, height: 12),
+          ],
         ],
       ),
     );

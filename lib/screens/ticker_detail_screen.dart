@@ -30,6 +30,7 @@ import '../services/sector_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../widgets/plan_picker.dart';
+import '../widgets/income_sheet.dart';
 import '../widgets/ticker_avatar.dart';
 
 /// Карточка одной бумаги: сводка позиции, история цены, льгота ЛДВ,
@@ -613,76 +614,41 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 const SizedBox(height: 14),
                 _payoutsCard(),
 
-                if (incomes.isNotEmpty) ...[
-                  const SizedBox(height: 22),
-                  SectionTitle(
-                    title: _isBond ? 'Купоны' : 'Дивиденды',
-                    subtitle: '${incomes.length} ${Fmt.payouts(incomes.length)}',
-                    trailing: Text(
-                      Fmt.signedMoney(incomeTotal),
-                      style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.positive),
-                    ),
+                // Свои выплаты по бумаге. Раздел есть всегда — с кнопкой
+                // добавления: купон или дивиденд может прийти и после продажи.
+                const SizedBox(height: 22),
+                SectionTitle(
+                  title: assetType == AssetType.bond ? 'Купоны' : 'Дивиденды',
+                  subtitle: incomes.isEmpty
+                      ? 'Пока не записаны'
+                      : '${incomes.length} ${Fmt.payouts(incomes.length)} · ${Fmt.signedMoney(incomeTotal)}',
+                  trailing: TextButton.icon(
+                    onPressed: () async {
+                      await showAddIncomeSheet(
+                        context,
+                        ticker: ticker,
+                        name: name,
+                        isBond: assetType == AssetType.bond,
+                      );
+                      if (mounted) setState(() {});
+                    },
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Выплата', style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
-                  if (forecast != null && forecast.rub > 0) ...[
-                    InfoBanner(
-                      icon: Icons.auto_graph_rounded,
-                      color: AppColors.violet,
-                      text: 'Ожидаемый доход за 12 мес со следующего месяца: ~${Fmt.money(forecast.rub)} '
-                          '(доходность ~${forecastYield.toStringAsFixed(1)}%) — ${forecast.source}. Не гарантия.',
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  ...incomes.map((i) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: AppCard(
-                          padding: const EdgeInsets.all(13),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(11),
-                                  color: AppColors.positive.withOpacity(0.14),
-                                ),
-                                child: Icon(
-                                  i.type == IncomeType.dividend
-                                      ? Icons.trending_up_rounded
-                                      : Icons.receipt_long_rounded,
-                                  size: 18,
-                                  color: AppColors.positive,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      i.type == IncomeType.dividend ? 'Дивиденд' : 'Купон',
-                                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      Fmt.date(i.date),
-                                      style: TextStyle(fontSize: 11.5, color: context.dim),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                '+${Fmt.price(i.amountNet, currency: i.currency == 'RUB' ? '₽' : i.currency)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 13.5,
-                                  color: AppColors.positive,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )),
+                ),
+                if (forecast != null && forecast.rub > 0) ...[
+                  InfoBanner(
+                    icon: Icons.auto_graph_rounded,
+                    color: AppColors.violet,
+                    text: 'Ожидаемый доход за 12 мес со следующего месяца: ~${Fmt.money(forecast.rub)} '
+                        '(доходность ~${forecastYield.toStringAsFixed(1)}%) — ${forecast.source}. Не гарантия.',
+                  ),
+                  const SizedBox(height: 10),
                 ],
+                ...incomes.map((i) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _incomeRow(i),
+                    )),
 
                 const SizedBox(height: 22),
                 SectionTitle(
@@ -1279,6 +1245,93 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       color: AppColors.warning,
       text: 'До льготы ЛДВ по части позиции (${Fmt.qty(nearest.qty)} шт) '
           'осталось ${nearest.daysUntilLdv} дн.',
+    );
+  }
+
+  /// Строка своей выплаты. Свайп влево удаляет её — с возможностью вернуть.
+  Widget _incomeRow(Income i) {
+    return Dismissible(
+      key: Key(i.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        decoration: BoxDecoration(
+          borderRadius: AppRadius.all(AppRadius.md),
+          gradient: LinearGradient(colors: [AppColors.negative.withOpacity(0.15), AppColors.negative]),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 22),
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+      ),
+      onDismissed: (_) {
+        // Копия до удаления: удалённый объект Hive повторно не сохранить.
+        final copy = Income(
+          id: i.id,
+          date: i.date,
+          ticker: i.ticker,
+          name: i.name,
+          type: i.type,
+          amountGross: i.amountGross,
+          taxPaid: i.taxPaid,
+          currency: i.currency,
+          note: i.note,
+        );
+        StorageService.deleteIncome(i.id);
+        setState(() {});
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: const Text('Выплата удалена'),
+            action: SnackBarAction(
+              label: 'Вернуть',
+              onPressed: () {
+                StorageService.addIncome(copy);
+                if (mounted) setState(() {});
+              },
+            ),
+          ));
+      },
+      child: AppCard(
+        padding: const EdgeInsets.all(13),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(11),
+                color: AppColors.positive.withOpacity(0.14),
+              ),
+              child: Icon(
+                i.type == IncomeType.dividend ? Icons.trending_up_rounded : Icons.receipt_long_rounded,
+                size: 18,
+                color: AppColors.positive,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    i.type == IncomeType.dividend ? 'Дивиденд' : 'Купон',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${Fmt.date(i.date)}'
+                    '${i.taxPaid > 0 ? ' · налог ${Fmt.price(i.taxPaid, currency: i.currency == 'RUB' ? '₽' : i.currency)}' : ''}',
+                    style: TextStyle(fontSize: 11.5, color: context.dim),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              '+${Fmt.price(i.amountNet, currency: i.currency == 'RUB' ? '₽' : i.currency)}',
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.positive),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
