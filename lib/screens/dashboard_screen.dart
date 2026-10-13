@@ -220,8 +220,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final totalProfit = unrealizedPnl + realizedPnl + totalIncome;
     final bySector = AnalyticsService.currentValueBySector();
     final byTicker = AnalyticsService.currentValueByTicker();
-    final concentration = AnalyticsService.topHoldingConcentrationPct();
-    final topTicker = AnalyticsService.topHoldingTicker();
     final xirr = AnalyticsService.xirrPercent();
     final twr = AnalyticsService.twrPercent();
     final benchmark = BenchmarkService.returnPercent.value;
@@ -567,18 +565,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ],
 
-      if (concentration > 40 && topTicker != null) ...[
-        const SizedBox(height: 10),
-        FadeSlideIn(
-          delay: Duration(milliseconds: 40 * step++),
-          child: InfoBanner(
-            icon: Icons.warning_amber_rounded,
-            color: AppColors.warning,
-            text: '$topTicker занимает ${concentration.toStringAsFixed(0)}% портфеля — '
-                'диверсификация низкая',
-          ),
-        ),
-      ],
     ];
 
 
@@ -589,20 +575,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final total = entries.fold(0.0, (s, e) => s + e.value.valueRub);
     final typeOf = _holdingTypes();
     final sectionsCollapsed = AppearanceService.collapsedGroups;
-    children.add(const SizedBox(height: 26));
-    // «Состав» целиком не сворачивается: сворачиваются его группы (акции,
-    // облигации), иначе до бумаги пришлось бы раскрывать два уровня.
-    children.add(TourSpot(
-      id: 'holdings',
-      child: SectionTitle(
-        title: 'Состав портфеля',
-        subtitle: entries.isEmpty
-            ? 'Открытых позиций нет'
-            : '${entries.length} ${Fmt.papers(entries.length)} · ${Fmt.money(total)}',
-      ),
-    ));
+    // Отдельного заголовка «Состав портфеля» нет: группы (акции, облигации)
+    // сами выглядят как разделы главной, а общая сумма и так видна наверху.
+    children.add(const SizedBox(height: 20));
     if (entries.isEmpty) {
-      children.add(InfoBanner(
+      children.add(TourSpot(
+        id: 'holdings',
+        child: InfoBanner(
         icon: Icons.inventory_2_outlined,
         color: AppColors.neutral,
         text: StorageService.purchases.isEmpty
@@ -610,6 +589,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             : 'Сделки есть, но по всем бумагам куплено ровно столько же, сколько продано, '
                 'поэтому открытых позиций не осталось. Проверьте количество в продажах и '
                 'написание тикеров: «SBER» и «Sber» считаются разными бумагами.',
+        ),
       ));
     }
     // Бумаги идут группами: сначала акции, потом облигации, потом фонды и
@@ -620,6 +600,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ? AppearanceService.collapsedGroups
         : const <String>{};
     int tileIndex = 0;
+    var anchorPlaced = false;
     for (final type in _groupOrder) {
       final group = entries.where((e) => (typeOf[e.key.toUpperCase()] ?? AssetType.other) == type).toList();
       if (group.isEmpty) continue;
@@ -627,7 +608,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final groupPnl = group.fold(0.0, (s, e) => s + e.value.pnlRub);
       final groupCost = group.fold(0.0, (s, e) => s + e.value.costBasisRub);
       final isCollapsed = collapsed.contains(type.name);
-      children.add(_groupHeader(
+      final header = _groupHeader(
         context,
         type: type,
         count: group.length,
@@ -637,7 +618,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         pnlRub: groupPnl,
         collapsible: grouping == HoldingsGrouping.collapsible,
         collapsed: isCollapsed,
-      ));
+      );
+      // Подсказка обучения «Состав портфеля» указывает на первую группу.
+      children.add(!anchorPlaced ? TourSpot(id: 'holdings', child: header) : header);
+      anchorPlaced = true;
       if (isCollapsed) continue;
       for (final e in group) {
         children.add(Padding(
@@ -1652,94 +1636,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }) {
     final color = _groupColor(type);
     final money = Fmt.money(value);
+    final pnlText = '${Fmt.signedMoney(pnlRub)} · ${Fmt.pct(pnlPct)}';
+    // Группа выглядит так же, как разделы «Распределение» и «Дивиденды и
+    // купоны»: иконка в цветном квадрате, название, итог справа.
     final row = Row(
       children: [
         Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(_groupIcon(type), size: 17, color: color),
         ),
-        const SizedBox(width: 8),
-        // Название и число бумаг уступают место сумме: при длинной сумме
-        // обрезается «· 12 бумаг», а не деньги.
+        const SizedBox(width: 10),
         Expanded(
-          child: Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: _groupTitle(type),
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_groupTitle(type)} · $count',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 1),
+              HiddenAmount.forText(
+                pnlText,
+                fontSize: 11.5,
+                child: Text(
+                  pnlText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.pnl(pnlRub)),
                 ),
-                TextSpan(
-                  text: '  · $count ${Fmt.papers(count)}',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
-                ),
-              ],
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
         const SizedBox(width: 8),
         HiddenAmount.forText(
           money,
-          fontSize: 13,
-          child: Text(money, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          '${(share * 100).toStringAsFixed(0)}%',
-          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim),
+          fontSize: 13.5,
+          child: Text(money, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
         ),
         if (collapsible) ...[
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
           AnimatedRotation(
             turns: collapsed ? 0 : 0.5,
             duration: const Duration(milliseconds: 200),
-            child: Icon(Icons.expand_more_rounded, size: 20, color: context.dim),
+            child: Icon(Icons.expand_more_rounded, size: 22, color: context.dim),
           ),
         ],
       ],
     );
 
-    if (!collapsible) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-        child: row,
-      );
-    }
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: AppCard(
-        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-        onTap: () async {
-          await AppearanceService.setGroupCollapsed(type.name, !collapsed);
-          if (mounted) setState(() {});
-        },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            row,
-            if (collapsed) ...[
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.only(left: 16),
-                child: HiddenAmount.forText(
-                  Fmt.signedMoney(pnlRub),
-                  fontSize: 11,
-                  child: Text(
-                    'Прибыль ${Fmt.signedMoney(pnlRub)} · ${Fmt.pct(pnlPct)}',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.pnl(pnlRub)),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        onTap: collapsible
+            ? () async {
+                await AppearanceService.setGroupCollapsed(type.name, !collapsed);
+                if (mounted) setState(() {});
+              }
+            : null,
+        child: row,
       ),
     );
   }
+
+  static IconData _groupIcon(AssetType type) => switch (type) {
+        AssetType.stock => Icons.show_chart_rounded,
+        AssetType.bond => Icons.receipt_long_rounded,
+        AssetType.etf => Icons.pie_chart_outline_rounded,
+        AssetType.currency => Icons.currency_exchange_rounded,
+        AssetType.other => Icons.category_outlined,
+      };
 
   /// Строка бумаги в составе портфеля.
   ///
