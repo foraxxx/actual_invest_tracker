@@ -74,4 +74,17 @@ void main() {
       expect(old?.monthlySaving, isNull);
     });
   });
+
+  test('отметки о полученных вычетах сохраняются в настройках ИИС', () {
+    final s = IisSettings(
+      type: IisType.newType,
+      openedAt: DateTime(2025, 11, 14),
+      received: {2026: IisReceived(amount: 48300, date: DateTime(2027, 5, 14))},
+    );
+    final back = IisSettings.fromJson(s.toJson())!;
+    expect(back.received[2026]?.amount, 48300);
+    expect(back.received[2026]?.date, DateTime(2027, 5, 14));
+    expect(IisService.totalReceived(back), 48300);
+    expect(IisSettings.fromJson({'t': 'newType', 'o': '2025-11-14T00:00:00.000'})?.received, isEmpty);
+  });
 }

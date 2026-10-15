@@ -9,6 +9,9 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/iis_service.dart';
 import '../services/portfolio_service.dart';
+import '../services/storage_service.dart';
+import '../models/deposit.dart';
+import 'package:uuid/uuid.dart';
 import 'goal_widgets.dart' show monthsText;
 
 const _blue = AppColors.info;
@@ -43,6 +46,8 @@ class IisCard extends StatelessWidget {
     final days = _daysLeftInYear();
     final percent = '${(y.progress * 100).floor()}%';
     final withDeduction = settings.type.hasContributionDeduction;
+    final pending = IisService.pendingYears(settings);
+    final pendingText = _pendingText(pending);
 
     final title = collapsed
         ? (done
@@ -79,9 +84,17 @@ class IisCard extends StatelessWidget {
                   child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
                 ),
                 const SizedBox(height: 1),
+                // Если за прошлый год вычет не отмечен — напоминание вместо
+                // обычной строки.
                 AdaptiveSingleLineText(
-                  subtitle,
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
+                  collapsed && pendingText != null
+                      ? '$pendingText · $days ${Fmt.plural(days, 'день', 'дня', 'дней')} до конца года'
+                      : subtitle,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: collapsed && pendingText != null ? AppColors.warning : context.dim,
+                  ),
                 ),
               ],
             ),
@@ -127,7 +140,7 @@ class IisCard extends StatelessWidget {
                     onTap: () => showIisDetailsSheet(context),
                     child: Padding(
                       padding: const EdgeInsets.only(top: 12),
-                      child: _expanded(context, y, color),
+                      child: _expanded(context, y, color, pending),
                     ),
                   ),
           ),
@@ -136,7 +149,8 @@ class IisCard extends StatelessWidget {
     );
   }
 
-  Widget _expanded(BuildContext context, IisYear y, Color color) {
+  Widget _expanded(BuildContext context, IisYear y, Color color, List<IisYear> pending) {
+    final received = IisService.totalReceived(settings);
     final withDeduction = settings.type.hasContributionDeduction;
     final contributed = Fmt.money(y.contributed);
     final termEnd = IisService.minTermEnd(settings);
@@ -199,6 +213,26 @@ class IisCard extends StatelessWidget {
             ),
           ),
         ],
+        if (pending.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _PendingPlaque(pending: pending),
+        ],
+        if (received > 0) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: Text('Получено вычетов', style: TextStyle(fontSize: 12, color: context.dim))),
+              HiddenAmount.forText(
+                Fmt.money(received),
+                fontSize: 13,
+                child: Text(
+                  Fmt.money(received),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.positive),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 10),
         Row(
           children: [
@@ -221,6 +255,183 @@ class IisCard extends StatelessWidget {
   }
 }
 
+/// «вычет за 2027 ждёт декларации» / «вычеты за 2 года ждут декларации».
+String? _pendingText(List<IisYear> pending) {
+  if (pending.isEmpty) return null;
+  if (pending.length == 1) return 'вычет за ${pending.first.year} ждёт декларации';
+  final n = pending.length;
+  return 'вычеты за $n ${Fmt.plural(n, 'год', 'года', 'лет')} ждут декларации';
+}
+
+/// Жёлтая плашка-напоминание в развёрнутой карточке: один год — сразу
+/// кнопка «Получен», несколько — одна общая строка и переход в подробности.
+class _PendingPlaque extends StatelessWidget {
+  final List<IisYear> pending;
+
+  const _PendingPlaque({required this.pending});
+
+  @override
+  Widget build(BuildContext context) {
+    final single = pending.length == 1;
+    final sum = pending.fold(0.0, (a, y) => a + y.deduction);
+    final title = single
+        ? 'Вычет за ${pending.first.year} ждёт декларации'
+        : 'Вычеты за ${pending.length} ${Fmt.plural(pending.length, 'год', 'года', 'лет')} ждут декларации';
+    final sub = single ? '${Fmt.money(sum)} · пришёл? отметьте' : '${Fmt.money(sum)} · отметьте в подробностях';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.receipt_long_rounded, size: 20, color: AppColors.warning),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.warning)),
+                const SizedBox(height: 2),
+                HiddenAmount.forText(
+                  sub,
+                  fontSize: 11.5,
+                  child: Text(sub, style: TextStyle(fontSize: 11.5, color: context.dim)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _blue,
+              side: BorderSide(color: _blue.withOpacity(0.5)),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              minimumSize: const Size(0, 34),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () => single
+                ? showIisReceivedSheet(context, pending.first)
+                : showIisDetailsSheet(context),
+            child: Text(single ? 'Получен' : 'Отметить', style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Отметка «вычет за год получен»: сколько пришло, когда и — для новой
+/// отметки — внести ли эти деньги обратно в портфель пополнением.
+Future<void> showIisReceivedSheet(BuildContext context, IisYear year) {
+  final s = IisService.current;
+  if (s == null) return Future.value();
+  final existing = s.received[year.year];
+  final amountCtrl = TextEditingController(
+    text: (existing?.amount ?? year.deduction).toStringAsFixed(0),
+  );
+  DateTime? date = existing?.date ?? DateTime.now();
+  var addDeposit = false;
+  String? error;
+
+  return showAppSheet(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheet) => SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 14, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SheetHeader(
+              title: 'Вычет за ${year.year}',
+              subtitle: 'По расчёту — ${Fmt.money(year.deduction)}',
+              trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+            ),
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: amountCtrl,
+              label: 'Сколько пришло, ₽',
+              number: true,
+              onChanged: (_) {
+                if (error != null) setSheet(() => error = null);
+              },
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Меньше расчёта — если НДФЛ за год уплачено меньше',
+              style: TextStyle(fontSize: 11.5, color: ctx.dim),
+            ),
+            const SizedBox(height: 12),
+            AppDateField(
+              value: date,
+              label: 'Когда пришёл (необязательно)',
+              firstDate: DateTime(year.year),
+              lastDate: DateTime.now(),
+              onPicked: (d) => setSheet(() => date = d),
+            ),
+            // Пополнение добавляется только при новой отметке — иначе при
+            // правке появлялись бы повторные пополнения.
+            if (existing == null) ...[
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: addDeposit,
+                onChanged: (v) => setSheet(() => addDeposit = v),
+                title: const Text('Внести обратно в портфель', style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(
+                  'Добавит пополнение на эту сумму с этой датой. Оно засчитается во взносы '
+                  '${(date ?? DateTime.now()).year} года',
+                ),
+              ),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 6),
+              Text(error!, style: const TextStyle(fontSize: 12, color: AppColors.negative)),
+            ],
+            const SizedBox(height: 16),
+            GradientButton(
+              label: 'Сохранить',
+              icon: Icons.check_rounded,
+              onPressed: () async {
+                final amount = double.tryParse(
+                  amountCtrl.text.replaceAll(' ', '').replaceAll('\u00a0', '').replaceAll(',', '.'),
+                );
+                if (amount == null || amount <= 0) {
+                  setSheet(() => error = 'Укажите сумму');
+                  return;
+                }
+                await IisService.setReceived(year.year, IisReceived(amount: amount, date: date));
+                if (addDeposit) {
+                  await StorageService.addDeposit(Deposit(
+                    id: const Uuid().v4(),
+                    date: date ?? DateTime.now(),
+                    amount: amount,
+                    note: 'Вычет ИИС за ${year.year}',
+                  ));
+                }
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+            ),
+            if (existing != null) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: AppColors.negative),
+                onPressed: () async {
+                  await IisService.setReceived(year.year, null);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Снять отметку'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// Черновик настроек ИИС в форме, пока их не сохранили.
 class _IisDraft {
   bool isIis;
@@ -228,13 +439,18 @@ class _IisDraft {
   DateTime opened;
   int rate;
 
+  /// Отметки о полученных вычетах — форма их не показывает, но и не теряет.
+  final Map<int, IisReceived> received;
+
   _IisDraft(IisSettings? s)
       : isIis = s != null,
         type = s?.type ?? IisType.newType,
         opened = s?.openedAt ?? DateTime.now(),
-        rate = s?.ratePct ?? 13;
+        rate = s?.ratePct ?? 13,
+        received = s?.received ?? const {};
 
-  IisSettings? get settings => isIis ? IisSettings(type: type, openedAt: opened, ratePct: rate) : null;
+  IisSettings? get settings =>
+      isIis ? IisSettings(type: type, openedAt: opened, ratePct: rate, received: received) : null;
 }
 
 /// Переключатель «Это ИИС» и, если включён, тип, дата открытия и ставка.
@@ -386,30 +602,173 @@ Future<PortfolioMeta?> showNewPortfolioSheet(BuildContext context) {
   );
 }
 
-/// Подробности ИИС: взносы по месяцам текущего года, итоги по годам, срок.
+/// Подробности ИИС: взносы по месяцам текущего года, вычеты по годам, срок.
 Future<void> showIisDetailsSheet(BuildContext context) {
-  final s = IisService.current;
-  if (s == null) return Future.value();
-  final byMonth = IisService.contributionsByMonth();
-  final year = DateTime.now().year;
-  final months = byMonth.entries.where((e) => e.key.year == year).toList()..sort((a, b) => a.key.compareTo(b.key));
-  final maxMonth = months.fold(0.0, (m, e) => math.max(m, e.value));
-  final termEnd = IisService.minTermEnd(s);
-  final withDeduction = s.type.hasContributionDeduction;
+  if (IisService.current == null) return Future.value();
+  var showAll = false;
 
-  Widget box(BuildContext ctx, Widget child) => Container(
+  return showAppSheet(
+    context: context,
+    builder: (ctx) => ValueListenableBuilder<int>(
+      // Отметка «вычет получен» меняет список сразу, не закрывая окно.
+      valueListenable: IisService.version,
+      builder: (ctx, _, __) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final s = IisService.current;
+          if (s == null) return const SizedBox.shrink();
+          return _IisDetails(
+            settings: s,
+            showAll: showAll,
+            onShowAll: () => setSheet(() => showAll = true),
+            outerContext: context,
+          );
+        },
+      ),
+    ),
+  );
+}
+
+const _monthNames = [
+  'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+  'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
+];
+
+class _IisDetails extends StatelessWidget {
+  final IisSettings settings;
+  final bool showAll;
+  final VoidCallback onShowAll;
+  final BuildContext outerContext;
+
+  const _IisDetails({
+    required this.settings,
+    required this.showAll,
+    required this.onShowAll,
+    required this.outerContext,
+  });
+
+  Widget _box(BuildContext ctx, Widget child, {Color? border, Color? fill}) => Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         decoration: BoxDecoration(
-          color: ctx.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
+          color: fill ?? (ctx.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh),
           borderRadius: BorderRadius.circular(12),
+          border: border == null ? null : Border.all(color: border),
         ),
         child: child,
       );
 
-  return showAppSheet(
-    context: context,
-    builder: (ctx) => SafeArea(
+  @override
+  Widget build(BuildContext ctx) {
+    final s = settings;
+    final byMonth = IisService.contributionsByMonth();
+    final year = DateTime.now().year;
+    final months = byMonth.entries.where((e) => e.key.year == year).toList()..sort((a, b) => a.key.compareTo(b.key));
+    final maxMonth = months.fold(0.0, (m, e) => math.max(m, e.value));
+    final termEnd = IisService.minTermEnd(s);
+    final withDeduction = s.type.hasContributionDeduction;
+    final totalReceived = IisService.totalReceived(s);
+
+    // Годы: текущий, все с неотмеченным вычетом и два последних полученных.
+    // Остальные — под «Показать все годы», чтобы через 10 лет не было ленты.
+    final allYears = IisService.years(s).reversed.toList();
+    final summaries = {for (final y in allYears) y: IisService.yearSummary(s, y, byMonth: byMonth)};
+    bool isPending(int y) => withDeduction && y < year && !s.received.containsKey(y) && summaries[y]!.deduction > 0.5;
+    final shownReceived = allYears.where((y) => s.received.containsKey(y)).take(2).toSet();
+    final visible = showAll
+        ? allYears
+        : allYears.where((y) => y == year || isPending(y) || shownReceived.contains(y)).toList();
+    final hiddenCount = allYears.length - visible.length;
+
+    Widget yearRow(int y) {
+      final sum = summaries[y]!;
+      final received = s.received[y];
+      final String status;
+      final Color? statusColor;
+      final String line;
+      Widget? trailing;
+      Color? border;
+      if (!withDeduction) {
+        status = y == year ? ' · идёт год' : '';
+        statusColor = null;
+        line = sum.contributed > 0 ? 'внесено ${Fmt.money(sum.contributed)}' : 'взносов не было';
+      } else if (y == year) {
+        status = ' · идёт год';
+        statusColor = null;
+        line = 'внесено ${Fmt.money(sum.contributed)} из ${Fmt.money(sum.limit)}';
+        trailing = Text(
+          '≈${Fmt.money(sum.deduction)}',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _blue),
+        );
+      } else if (received != null) {
+        status = ' · ✓ получен';
+        statusColor = AppColors.positive;
+        line = 'пришло ${Fmt.money(received.amount)}${received.date == null ? '' : ' · ${Fmt.date(received.date!)}'}';
+        trailing = const Icon(Icons.check_rounded, color: AppColors.positive, size: 20);
+      } else if (sum.deduction > 0.5) {
+        status = ' · подайте декларацию';
+        statusColor = AppColors.warning;
+        line = 'внесено ${Fmt.money(sum.contributed)} · вычет ${Fmt.money(sum.deduction)}';
+        border = AppColors.warning.withOpacity(0.35);
+        trailing = OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _blue,
+            side: BorderSide(color: _blue.withOpacity(0.5)),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            minimumSize: const Size(0, 34),
+            visualDensity: VisualDensity.compact,
+          ),
+          onPressed: () => showIisReceivedSheet(ctx, sum),
+          child: const Text('Получен', style: TextStyle(fontWeight: FontWeight.w700)),
+        );
+      } else {
+        status = '';
+        statusColor = null;
+        line = 'взносов не было';
+        trailing = Text('—', style: TextStyle(fontSize: 13, color: ctx.dim));
+      }
+      final row = Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: '$y', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                    if (status.isNotEmpty)
+                      TextSpan(
+                        text: status,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: statusColor == null ? FontWeight.w500 : FontWeight.w700,
+                          color: statusColor ?? ctx.dim,
+                        ),
+                      ),
+                  ]),
+                ),
+                const SizedBox(height: 3),
+                HiddenAmount.forText(
+                  line,
+                  fontSize: 12,
+                  child: Text(line, style: TextStyle(fontSize: 12, color: ctx.dim)),
+                ),
+              ],
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 8), trailing],
+        ],
+      );
+      // Полученный год можно открыть и поправить или снять отметку.
+      return received != null && withDeduction
+          ? GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => showIisReceivedSheet(ctx, sum),
+              child: _box(ctx, row),
+            )
+          : _box(ctx, row, border: border);
+    }
+
+    return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
         child: Column(
@@ -431,8 +790,8 @@ Future<void> showIisDetailsSheet(BuildContext context) {
                 child: Row(
                   children: [
                     SizedBox(
-                      width: 34,
-                      child: Text(Fmt.monthShort(e.key.month), style: TextStyle(fontSize: 12, color: ctx.dim)),
+                      width: 74,
+                      child: Text(_monthNames[e.key.month - 1], style: TextStyle(fontSize: 12, color: ctx.dim)),
                     ),
                     Expanded(
                       child: LayoutBuilder(
@@ -456,31 +815,34 @@ Future<void> showIisDetailsSheet(BuildContext context) {
                 ),
               ),
             const SizedBox(height: 12),
-            Text('По годам', style: TextStyle(fontSize: 12.5, color: ctx.dim)),
+            Text(withDeduction ? 'Вычеты по годам' : 'По годам', style: TextStyle(fontSize: 12.5, color: ctx.dim)),
             const SizedBox(height: 8),
-            for (final y in IisService.years(s).reversed)
-              () {
-                final sum = IisService.yearSummary(s, y, byMonth: byMonth);
-                final text = withDeduction
-                    ? '${Fmt.money(sum.contributed)} · вычет ${y == year ? '≈' : ''}${Fmt.money(sum.deduction)}'
-                    : Fmt.money(sum.contributed);
-                return box(
-                  ctx,
-                  Row(
-                    children: [
-                      Text('$y', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                      const Spacer(),
-                      HiddenAmount.forText(
-                        text,
-                        fontSize: 13,
-                        child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+            for (final y in visible) yearRow(y),
+            if (hiddenCount > 0)
+              TextButton(
+                onPressed: onShowAll,
+                child: Text('Показать все годы ($hiddenCount)'),
+              ),
+            if (withDeduction && totalReceived > 0)
+              _box(
+                ctx,
+                Row(
+                  children: [
+                    Expanded(child: Text('Всего получено', style: TextStyle(fontSize: 13, color: ctx.dim))),
+                    HiddenAmount.forText(
+                      Fmt.money(totalReceived),
+                      fontSize: 14,
+                      child: Text(
+                        Fmt.money(totalReceived),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.positive),
                       ),
-                    ],
-                  ),
-                );
-              }(),
+                    ),
+                  ],
+                ),
+                fill: AppColors.positive.withOpacity(0.08),
+              ),
             const SizedBox(height: 8),
-            box(
+            _box(
               ctx,
               Row(
                 children: [
@@ -490,7 +852,7 @@ Future<void> showIisDetailsSheet(BuildContext context) {
               ),
             ),
             if (s.type != IisType.oldA)
-              box(
+              _box(
                 ctx,
                 Row(
                   children: [
@@ -504,6 +866,7 @@ Future<void> showIisDetailsSheet(BuildContext context) {
               ),
             const SizedBox(height: 6),
             Text(
+              '${withDeduction ? 'Нажмите на полученный год, чтобы изменить или снять отметку. ' : ''}'
               'Взносы — ваши пополнения портфеля, как в «Вложено». Вычет — ориентир: не больше НДФЛ, '
               'уплаченного вами за год. Правила ИИС — по данным на 2026 год, уточняйте у брокера.',
               style: TextStyle(fontSize: 11, height: 1.4, color: ctx.dim),
@@ -512,7 +875,7 @@ Future<void> showIisDetailsSheet(BuildContext context) {
             OutlinedButton.icon(
               onPressed: () {
                 Navigator.pop(ctx);
-                showIisSettingsSheet(context, PortfolioService.active);
+                showIisSettingsSheet(outerContext, PortfolioService.active);
               },
               icon: const Icon(Icons.tune_rounded, size: 18),
               label: const Text('Настройки ИИС'),
@@ -520,6 +883,6 @@ Future<void> showIisDetailsSheet(BuildContext context) {
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }

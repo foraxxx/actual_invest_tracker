@@ -27,6 +27,26 @@ extension IisTypeX on IisType {
   bool get hasContributionDeduction => this != IisType.oldB;
 }
 
+/// Отметка «вычет за год получен»: сколько пришло и когда.
+class IisReceived {
+  final double amount;
+  final DateTime? date;
+
+  const IisReceived({required this.amount, this.date});
+
+  Map<String, dynamic> toJson() => {
+        'a': amount,
+        if (date != null) 'd': date!.toIso8601String(),
+      };
+
+  static IisReceived? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final a = (raw['a'] as num?)?.toDouble();
+    if (a == null || a < 0) return null;
+    return IisReceived(amount: a, date: DateTime.tryParse('${raw['d'] ?? ''}'));
+  }
+}
+
 /// Настройки ИИС для портфеля.
 class IisSettings {
   final IisType type;
@@ -35,21 +55,48 @@ class IisSettings {
   /// Ставка НДФЛ, по которой возвращается вычет: 13 или 15.
   final int ratePct;
 
-  const IisSettings({required this.type, required this.openedAt, this.ratePct = 13});
+  /// Полученные вычеты: год взносов -> отметка.
+  final Map<int, IisReceived> received;
+
+  const IisSettings({
+    required this.type,
+    required this.openedAt,
+    this.ratePct = 13,
+    this.received = const {},
+  });
+
+  IisSettings copyWith({IisType? type, DateTime? openedAt, int? ratePct, Map<int, IisReceived>? received}) =>
+      IisSettings(
+        type: type ?? this.type,
+        openedAt: openedAt ?? this.openedAt,
+        ratePct: ratePct ?? this.ratePct,
+        received: received ?? this.received,
+      );
 
   Map<String, dynamic> toJson() => {
         't': type.name,
         'o': openedAt.toIso8601String(),
         'r': ratePct,
+        if (received.isNotEmpty) 'g': {for (final e in received.entries) '${e.key}': e.value.toJson()},
       };
 
   static IisSettings? fromJson(Map<String, dynamic> j) {
     final opened = DateTime.tryParse('${j['o']}');
     if (opened == null) return null;
+    final received = <int, IisReceived>{};
+    final rawReceived = j['g'];
+    if (rawReceived is Map) {
+      for (final e in rawReceived.entries) {
+        final year = int.tryParse('${e.key}');
+        final value = IisReceived.fromJson(e.value);
+        if (year != null && value != null) received[year] = value;
+      }
+    }
     return IisSettings(
       type: IisType.values.firstWhere((t) => t.name == j['t'], orElse: () => IisType.newType),
       openedAt: opened,
       ratePct: (j['r'] as num?)?.toInt() == 15 ? 15 : 13,
+      received: received,
     );
   }
 }
@@ -163,6 +210,35 @@ class IisService {
       maxDeduction: hasDeduction ? deductionBase * rate : 0,
     );
   }
+
+  /// Отмечает вычет за [year] полученным (или снимает отметку, если
+  /// [value] null) у текущего портфеля.
+  static Future<void> setReceived(int year, IisReceived? value) async {
+    final s = current;
+    if (s == null) return;
+    final map = Map<int, IisReceived>.from(s.received);
+    if (value == null) {
+      map.remove(year);
+    } else {
+      map[year] = value;
+    }
+    await save(PortfolioService.activeId, s.copyWith(received: map));
+  }
+
+  /// Прошедшие годы, за которые вычет положен, но не отмечен полученным.
+  /// Сначала самые свежие.
+  static List<IisYear> pendingYears(IisSettings s, {Map<DateTime, double>? byMonth, DateTime? now}) {
+    if (!s.type.hasContributionDeduction) return const [];
+    final months = byMonth ?? contributionsByMonth();
+    final thisYear = (now ?? DateTime.now()).year;
+    return [
+      for (int y = thisYear - 1; y >= s.openedAt.year; y--)
+        if (!s.received.containsKey(y)) yearSummary(s, y, byMonth: months),
+    ].where((y) => y.deduction > 0.5).toList();
+  }
+
+  /// Сколько вычетов отмечено полученными за всё время.
+  static double totalReceived(IisSettings s) => s.received.values.fold(0.0, (a, r) => a + r.amount);
 
   /// Годы с открытия счёта по текущий.
   static List<int> years(IisSettings s) {
