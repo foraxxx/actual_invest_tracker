@@ -31,6 +31,7 @@ import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../widgets/plan_picker.dart';
 import '../widgets/income_sheet.dart';
+import '../widgets/trade_edit_sheet.dart';
 import '../widgets/ticker_avatar.dart';
 
 /// Карточка одной бумаги: сводка позиции, история цены, льгота ЛДВ,
@@ -654,6 +655,53 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 SectionTitle(
                   title: 'Сделки по бумаге',
                   subtitle: '${purchases.length} ${Fmt.deals(purchases.length)}',
+                  // Новая сделка по этой бумаге — без выбора бумаги, как
+                  // «+ Выплата» выше. Сначала короткий выбор: покупка или
+                  // продажа.
+                  trailing: PopupMenuButton<bool>(
+                    tooltip: 'Новая сделка',
+                    position: PopupMenuPosition.under,
+                    onSelected: (isSell) async {
+                      await _quickTradeSheet(context, ticker, name, isSell);
+                      if (mounted) setState(() {});
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: false,
+                        child: Row(
+                          children: [
+                            Icon(Icons.add_shopping_cart_rounded, size: 18, color: AppColors.positive),
+                            SizedBox(width: 10),
+                            Text('Покупка'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: true,
+                        child: Row(
+                          children: [
+                            Icon(Icons.sell_outlined, size: 18, color: AppColors.negative),
+                            SizedBox(width: 10),
+                            Text('Продажа'),
+                          ],
+                        ),
+                      ),
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add_rounded, size: 18, color: context.accent),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Сделка',
+                            style: TextStyle(fontWeight: FontWeight.w700, color: context.accent),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 if (purchases.isEmpty)
                   Text('Сделок по этой бумаге пока нет', style: TextStyle(fontSize: 13, color: context.dim))
@@ -1080,6 +1128,8 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         ? change / visibleValues.first * 100
         : 0.0;
     final online = OnlineSettingsService.enabled;
+    final holding = AnalyticsService.currentHoldings()[widget.ticker];
+    final avgPrice = holding != null && holding.qty > 0 && holding.avgCost > 0 ? holding.avgCost : null;
 
     String dateOf(int i) => Fmt.dateTime(all[i].key, withTime: _intraday);
     String priceOf(double v) => Fmt.price(v, type: assetType);
@@ -1199,6 +1249,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             inspection: AppearanceService.chartHints == ChartHints.above
                                 ? _chartInspect
                                 : null,
+                            // Средняя цена покупки — пунктиром с подписью цены.
+                            referenceValue: avgPrice,
+                            referenceLabel: avgPrice == null ? null : Fmt.price(avgPrice, type: assetType),
                           );
                         },
                       ),
@@ -1339,6 +1392,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final color = p.isSell ? AppColors.negative : AppColors.positive;
     return AppCard(
       padding: const EdgeInsets.all(13),
+      // Нажатие на сделку открывает её правку.
+      onTap: () async {
+        await showEditTradeSheet(context, p);
+        if (mounted) setState(() {});
+      },
       child: Row(
         children: [
           Container(

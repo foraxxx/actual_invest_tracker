@@ -387,6 +387,21 @@ class ValueForecastService {
     );
   }
 
+  /// Помесячный путь стоимости по реалистичному сценарию — только на то, что
+  /// уже лежит в портфеле, без плановых покупок и новых денег. Нужен
+  /// финансовой цели: она отдельно считает, сколько надо добавлять сверху.
+  static List<ForecastPoint> realisticPath(int months) {
+    final now = DateTime.now();
+    return ValueForecastEngine.simulate(
+      assets: currentAssets(now: now),
+      market: assumptions,
+      scenario: ForecastScenario.realistic,
+      start: now,
+      months: months,
+      freeCash: _freeCash,
+    ).points;
+  }
+
   /// Реалистичный сценарий для карточки на главной, где нужен один итог, а
   /// считать остальные два незачем. [plansApplied] — вошли ли в него плановые
   /// покупки: галка может стоять, а учитывать нечего.

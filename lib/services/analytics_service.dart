@@ -97,6 +97,37 @@ class AnalyticsService {
     return OnlinePriceService.get(ticker)?.price;
   }
 
+  /// Изменение позиции «за сегодня»: от закрытия прошлого торгового дня до
+  /// текущей цены с биржи. В выходные это изменение за последнюю сессию —
+  /// как у брокеров. null — если котировки с биржи нет или позиция
+  /// оценивается не по ней (например, по ручной цене).
+  static ({double rub, double pct})? dayChangeFor(String ticker, HoldingInfo h) {
+    if (!OnlineSettingsService.enabled) return null;
+    final quote = OnlinePriceService.get(ticker);
+    final prev = quote?.prevClose;
+    if (quote == null || prev == null || prev <= 0) return null;
+    if ((h.displayPrice - quote.price).abs() > 1e-9) return null;
+    final rub = CurrencyService.toRub((quote.price - prev) * h.qty, h.currency);
+    return (rub: rub, pct: (quote.price / prev - 1) * 100);
+  }
+
+  /// Изменение всего портфеля за сегодня — сумма по бумагам, у которых оно
+  /// известно. Процент — к стоимости этих бумаг на вчерашнем закрытии.
+  static ({double rub, double pct})? portfolioDayChange() {
+    double rub = 0;
+    double base = 0;
+    var any = false;
+    for (final e in currentHoldings().entries) {
+      final d = dayChangeFor(e.key, e.value);
+      if (d == null) continue;
+      any = true;
+      rub += d.rub;
+      base += e.value.valueRub - d.rub;
+    }
+    if (!any || base <= 0) return null;
+    return (rub: rub, pct: rub / base * 100);
+  }
+
   static DateTime? periodStart(PeriodFilter f, {DateTime? now}) {
     final current = now ?? DateTime.now();
     switch (f) {

@@ -13,12 +13,16 @@ class OnlinePrice {
   final String board;
   final int lotSize;
 
+  /// Закрытие прошлого торгового дня — для изменения «за сегодня».
+  final double? prevClose;
+
   const OnlinePrice({
     required this.price,
     required this.fetchedAt,
     required this.shortName,
     required this.board,
     this.lotSize = 1,
+    this.prevClose,
   });
 
   Map<String, dynamic> toJson() => {
@@ -27,6 +31,7 @@ class OnlinePrice {
         'n': shortName,
         'b': board,
         'l': lotSize,
+        if (prevClose != null) 'c': prevClose,
       };
 
   static OnlinePrice? fromJson(Map<String, dynamic> j) {
@@ -39,6 +44,7 @@ class OnlinePrice {
       shortName: '${j['n'] ?? ''}',
       board: '${j['b'] ?? ''}',
       lotSize: ((j['l'] as num?)?.round() ?? 1).clamp(1, 1000000).toInt(),
+      prevClose: (j['c'] as num?)?.toDouble(),
     );
   }
 }
@@ -96,6 +102,7 @@ class OnlinePriceService {
         shortName: q.shortName,
         board: q.board,
         lotSize: q.lotSize,
+        prevClose: q.prevClose,
       ).toJson());
     });
     await _box.putAll(entries);

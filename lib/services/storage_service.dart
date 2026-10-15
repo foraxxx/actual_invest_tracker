@@ -170,6 +170,22 @@ class StorageService {
     _bump();
   }
 
+  /// Сохраняет отредактированную сделку. Если сделка была или стала частью
+  /// плана, прогресс плана пересчитывается из сделок заново — и старого
+  /// плана, и нового, — поэтому правка количества или цены сразу видна в
+  /// планах.
+  static Future<void> updatePurchase(Purchase p, {String? previousPlanId}) async {
+    await purchasesBox.put(p.id, p);
+    final plans = <String>{
+      if (previousPlanId != null) previousPlanId,
+      if (p.planId != null) p.planId!,
+    };
+    for (final id in plans) {
+      await _recomputePlanProgress(id);
+    }
+    _bump();
+  }
+
   /// Привязывает уже сохранённую сделку к плану (см. Purchase.planId) и
   /// пересчитывает прогресс плана из фактических сделок. Используется вместо
   /// прежнего ручного накопления счётчика — так удаление/правка сделки не

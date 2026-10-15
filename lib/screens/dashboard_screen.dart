@@ -30,6 +30,10 @@ import '../widgets/ticker_avatar.dart';
 import '../widgets/payout_forecast_sheet.dart';
 import '../widgets/value_forecast_sheet.dart';
 import '../widgets/updated_ago.dart';
+import '../widgets/goal_widgets.dart';
+import '../widgets/iis_widgets.dart';
+import '../services/goal_service.dart';
+import '../services/iis_service.dart';
 import '../widgets/payout_calendar.dart';
 import '../services/payout_calendar_service.dart';
 import 'home_screen.dart';
@@ -91,6 +95,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Уточнённые по истории индекса допущения меняют итог в карточке прогноза.
     ValueForecastService.version.addListener(_onDataChanged);
     MiniHistoryService.version.addListener(_onDataChanged);
+    GoalService.version.addListener(_onDataChanged);
+    IisService.version.addListener(_onDataChanged);
     // Мини-графики в составе: история за 30 дней, не чаще раза в день.
     MiniHistoryService.refresh(AnalyticsService.currentHoldings().keys);
   }
@@ -120,6 +126,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     PortfolioHistoryService.error.removeListener(_onDataChanged);
     ValueForecastService.version.removeListener(_onDataChanged);
     MiniHistoryService.version.removeListener(_onDataChanged);
+    GoalService.version.removeListener(_onDataChanged);
+    IisService.version.removeListener(_onDataChanged);
     super.dispose();
   }
 
@@ -226,6 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final benchmarkError = BenchmarkService.error.value;
     final taxDue = TaxService.enabled ? TaxService.totalTaxDue() : 0.0;
     final periodChange = AnalyticsService.portfolioChangeForPeriod(_period);
+    final dayChange = AnalyticsService.portfolioDayChange();
 
     final accent = context.accent;
     final isEmpty = holdings.isEmpty && totalIncome == 0 && realizedPnl == 0;
@@ -337,6 +346,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ),
                                 ),
                               ),
+                              // Изменение портфеля за сегодня — рядом с общей
+                              // прибылью, мельче: от закрытия прошлого дня.
+                              if (dayChange != null) ...[
+                                const SizedBox(width: 10),
+                                Flexible(
+                                  child: HiddenAmount.forText(
+                                    Fmt.signedMoney(dayChange.rub),
+                                    fontSize: 12,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'сегодня ${Fmt.signedMoney(dayChange.rub)} · ${Fmt.pct(dayChange.pct, decimals: 2)}',
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.pnl(dayChange.rub),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ],
@@ -575,6 +608,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final total = entries.fold(0.0, (s, e) => s + e.value.valueRub);
     final typeOf = _holdingTypes();
     final sectionsCollapsed = AppearanceService.collapsedGroups;
+    // --- Финансовая цель и ИИС ---
+    // Сразу после плиток: это «зачем» портфеля, а ниже — из чего он состоит.
+    if (!isEmpty) {
+      final goal = GoalService.current;
+      children.add(const SizedBox(height: 14));
+      children.add(GoalCard(
+        plan: goal == null ? null : GoalService.plan(goal),
+        collapsed: sectionsCollapsed.contains(_secGoal),
+        onToggle: () => _toggleSection(_secGoal, sectionsCollapsed.contains(_secGoal)),
+      ));
+      final iis = IisService.current;
+      if (iis != null) {
+        children.add(const SizedBox(height: 10));
+        children.add(IisCard(
+          settings: iis,
+          collapsed: sectionsCollapsed.contains(_secIis),
+          onToggle: () => _toggleSection(_secIis, sectionsCollapsed.contains(_secIis)),
+        ));
+      }
+    }
+
     // Отдельного заголовка «Состав портфеля» нет: группы (акции, облигации)
     // сами выглядят как разделы главной, а общая сумма и так видна наверху.
     children.add(const SizedBox(height: 20));
@@ -1266,10 +1320,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Вторая строка в карточке бумаги — что показывать, выбирается в
   /// настройках оформления.
   String _holdingSubtitle(String ticker, HoldingInfo h, double share) {
-    // Цены в строке не пишем: средняя и текущая есть в карточке бумаги, а в
-    // списке они только мешали читать количество.
+    // Количество и текущая цена одной бумаги. Средняя цена покупки — в
+    // карточке бумаги.
     return switch (AppearanceService.holdingSubtitle) {
-      HoldingSubtitle.quantityAndPrice => '${Fmt.qty(h.qty)} шт',
+      HoldingSubtitle.quantityAndPrice => '${Fmt.qty(h.qty)} шт · '
+          '${Fmt.price(h.displayPrice, type: _holdingTypes()[ticker.toUpperCase()] ?? AssetType.stock)}',
       HoldingSubtitle.share => '${(share * 100).toStringAsFixed(1)}% портфеля · ${Fmt.qty(h.qty)} шт',
       HoldingSubtitle.profitRub => '${Fmt.signedMoney(h.pnlRub)} · ${Fmt.qty(h.qty)} шт',
       HoldingSubtitle.profitPct => '${Fmt.pct(h.pnlPct)} · ${Fmt.qty(h.qty)} шт',
@@ -1401,6 +1456,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // --- Сворачиваемые разделы главной ---
 
   static const _secAlloc = 'sec_alloc';
+  static const _secGoal = 'sec_goal';
+  static const _secIis = 'sec_iis';
+
+  Future<void> _toggleSection(String id, bool collapsed) async {
+    await AppearanceService.setGroupCollapsed(id, !collapsed);
+    if (mounted) setState(() {});
+  }
+
   static const _secPayouts = 'sec_payouts';
 
   Widget _moneyText(String text, {Color? color}) => HiddenAmount.forText(
@@ -1715,6 +1778,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         AssetType.other => Icons.category_outlined,
       };
 
+  /// Плашки прибыли в списке бумаг: в рублях или в процентах. Запоминается.
+  bool _pnlUnitsRub = AppearanceService.pnlInRub;
+
+  void _togglePnlUnits() {
+    setState(() => _pnlUnitsRub = !_pnlUnitsRub);
+    AppearanceService.setPnlInRub(_pnlUnitsRub);
+  }
+
   /// Строка бумаги в составе портфеля.
   ///
   /// Компактная: аватар поменьше и без звёздочки избранного (она есть в
@@ -1724,6 +1795,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final pnlColor = AppColors.pnl(h.pnlRub);
     final density = AppearanceService.density.scale;
     final mini = MiniHistoryService.pointsFor(ticker);
+    final day = AnalyticsService.dayChangeFor(ticker, h);
     return AppCard(
       padding: EdgeInsets.fromLTRB(12, 11 * density, 12, 11 * density),
       onTap: () => Navigator.push(
@@ -1747,9 +1819,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 2),
-                    MarqueeText(
-                      _holdingSubtitle(ticker, h, weight),
-                      style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
+                    // Количество и цена, а после них — изменение за сегодня
+                    // цветной стрелкой. Оно следует тому же переключателю
+                    // «% / ₽», что и плашка справа.
+                    Text.rich(
+                      TextSpan(
+                        style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
+                        children: [
+                          TextSpan(text: _holdingSubtitle(ticker, h, weight)),
+                          if (day != null)
+                            TextSpan(
+                              text: ' · ${day.rub >= 0 ? '▲' : '▼'}'
+                                  '${_pnlUnitsRub ? (AppearanceService.amountsHidden ? '•••' : Fmt.money(day.rub.abs())) : '${day.pct.abs().toStringAsFixed(1)}%'}',
+                              style: TextStyle(color: AppColors.pnl(day.rub), fontWeight: FontWeight.w700),
+                            ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -1759,20 +1846,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 MiniSparkline(values: mini, width: 44, height: 20),
               ],
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  HiddenAmount.forText(
-                    Fmt.money(h.valueRub),
-                    fontSize: 14,
-                    child: Text(
-                      Fmt.money(h.valueRub),
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+              // Сумма и плашка прибыли. Нажатие сюда переключает весь список
+              // между процентами и рублями, остальная строка открывает
+              // карточку. Ширина ограничена, чтобы длинное число не съело
+              // название; если не влезает — шрифт чуть уменьшается, но число
+              // никогда не обрезается.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _togglePnlUnits,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 132),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        HiddenAmount.forText(
+                          Fmt.money(h.valueRub),
+                          fontSize: 14,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              Fmt.money(h.valueRub),
+                              maxLines: 1,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        _pnlUnitsRub
+                            ? HiddenAmount.forText(
+                                Fmt.signedMoney(h.pnlRub),
+                                fontSize: 10.5,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: TagChip(text: Fmt.signedMoney(h.pnlRub), color: pnlColor, fontSize: 10.5),
+                                ),
+                              )
+                            : FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerRight,
+                                child: TagChip(text: Fmt.pct(h.pnlPct), color: pnlColor, fontSize: 10.5),
+                              ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  TagChip(text: Fmt.pct(h.pnlPct), color: pnlColor, fontSize: 10.5),
-                ],
+                ),
               ),
             ],
           ),

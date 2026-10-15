@@ -18,8 +18,8 @@ import '../services/moex_sync_service.dart';
 import '../widgets/plan_picker.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
+import '../widgets/trade_edit_sheet.dart';
 import 'home_screen.dart';
-import 'ticker_detail_screen.dart';
 
 /// Фильтр по типу операции.
 enum _OpFilter { all, buy, sell }
@@ -470,10 +470,12 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
       },
       child: AppCard(
         padding: const EdgeInsets.all(13),
-        onTap: () => Navigator.push(
-          context,
-          AppPageRoute(builder: (_) => TickerDetailScreen(ticker: p.ticker)),
-        ),
+        // Нажатие открывает правку сделки; из неё есть переход в карточку
+        // бумаги.
+        onTap: () async {
+          await showEditTradeSheet(context, p, withTickerLink: true);
+          if (mounted) setState(() {});
+        },
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

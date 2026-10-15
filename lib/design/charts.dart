@@ -219,6 +219,12 @@ class Sparkline extends StatefulWidget {
   /// графиком. Без него подсказки рисуются тонкой строкой на самом графике.
   final ValueNotifier<ChartInspection?>? inspection;
 
+  /// Опорный уровень — например, средняя цена покупки. Рисуется пунктиром
+  /// с подписью [referenceLabel] у правого края. Если уровень вне видимого
+  /// диапазона, пунктира нет, а подпись прижимается к краю со стрелкой.
+  final double? referenceValue;
+  final String? referenceLabel;
+
   const Sparkline({
     super.key,
     required this.values,
@@ -236,6 +242,8 @@ class Sparkline extends StatefulWidget {
     this.onPan,
     this.onPanEnd,
     this.inspection,
+    this.referenceValue,
+    this.referenceLabel,
   });
 
   @override
@@ -594,6 +602,10 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                         rangeLeft: _rangeLeft,
                         rangeRight: _rangeRight,
                         selectedMarker: _marker,
+                        referenceValue: widget.referenceValue,
+                        referenceLabel: widget.referenceLabel,
+                        labelBackground: context.isDark ? AppColors.darkSurfaceTop : Colors.white,
+                        labelText: context.isDark ? Colors.white : const Color(0xFF1D2434),
                       ),
                     ),
                   ),
@@ -753,6 +765,10 @@ class _SparklinePainter extends CustomPainter {
   final int? selectedMarker;
   final double windowStart;
   final int windowSize;
+  final double? referenceValue;
+  final String? referenceLabel;
+  final Color labelBackground;
+  final Color labelText;
 
   _SparklinePainter({
     required this.values,
@@ -766,7 +782,13 @@ class _SparklinePainter extends CustomPainter {
     this.selectedMarker,
     this.windowStart = 0,
     required this.windowSize,
+    this.referenceValue,
+    this.referenceLabel,
+    this.labelBackground = Colors.white,
+    this.labelText = Colors.black,
   });
+
+  static const _referenceColor = AppColors.violet;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -862,6 +884,19 @@ class _SparklinePainter extends CustomPainter {
       canvas.drawPath(area, areaPaint);
     }
 
+    // Опорный уровень (средняя цена покупки) — пунктир под линией цены.
+    final ref = referenceValue;
+    double? refY;
+    if (ref != null && ref >= minV && ref <= maxV) {
+      refY = padTop + (1 - (ref - minV) / (maxV - minV)) * usable;
+      final dash = Paint()
+        ..color = _referenceColor.withOpacity(0.85)
+        ..strokeWidth = 1.5;
+      for (double x = 0; x < size.width; x += 10) {
+        canvas.drawLine(Offset(x, refY), Offset(math.min(x + 6, size.width), refY), dash);
+      }
+    }
+
     // Свечение под линией
     final glow = Paint()
       ..color = color.withOpacity(0.45)
@@ -910,6 +945,59 @@ class _SparklinePainter extends CustomPainter {
             ..strokeWidth = selected ? 2 : 1.6,
         );
       }
+    }
+
+    // Подпись опорного уровня — у правого края. Пока палец на графике, её
+    // нет: на её месте могут быть подсказки касания или замера.
+    final label = referenceLabel;
+    if (ref != null &&
+        label != null &&
+        label.isNotEmpty &&
+        progress > 0.98 &&
+        touchIndex == null &&
+        rangeLeft == null) {
+      final above = ref > maxV;
+      final below = ref < minV;
+      final text = above ? '$label ↑' : below ? '$label ↓' : label;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: labelText),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final w = tp.width + 16;
+      final h = tp.height + 6;
+      final left = size.width - w - 2;
+      double top;
+      if (refY != null) {
+        // Над пунктиром, а если там точка сделки или конец линии — под ним.
+        Rect at(double y) => Rect.fromLTWH(left, y, w, h);
+        bool busy(Rect r) {
+          final inflated = r.inflate(6);
+          if (inflated.contains(points.last)) return true;
+          for (final m in markers) {
+            final p = pointAt(m.index);
+            if (p != null && inflated.contains(p)) return true;
+          }
+          return false;
+        }
+        final up = (refY - h - 4).clamp(0.0, size.height - h).toDouble();
+        final down = (refY + 4).clamp(0.0, size.height - h).toDouble();
+        top = !busy(at(up)) ? up : (!busy(at(down)) ? down : up);
+      } else {
+        top = above ? 2 : size.height - h - 2;
+      }
+      final rect = RRect.fromRectAndRadius(Rect.fromLTWH(left, top, w, h), Radius.circular(h / 2));
+      canvas.drawRRect(rect, Paint()..color = labelBackground.withOpacity(0.92));
+      canvas.drawRRect(
+        rect,
+        Paint()
+          ..color = _referenceColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.3,
+      );
+      tp.paint(canvas, Offset(left + 8, top + 3));
     }
 
     // Замер двумя пальцами: затемняем всё вне диапазона и ставим по вертикали
@@ -978,7 +1066,9 @@ class _SparklinePainter extends CustomPainter {
       old.selectedMarker != selectedMarker ||
       old.windowStart != windowStart ||
       old.windowSize != windowSize ||
-      old.windowSize != windowSize ||
+      old.referenceValue != referenceValue ||
+      old.referenceLabel != referenceLabel ||
+      old.labelBackground != labelBackground ||
       old.values.length != values.length;
 }
 

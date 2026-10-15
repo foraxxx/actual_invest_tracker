@@ -12,6 +12,8 @@ import '../services/analytics_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_price_service.dart';
 import '../services/portfolio_service.dart';
+import '../services/iis_service.dart';
+import '../widgets/iis_widgets.dart';
 import '../services/storage_service.dart';
 import 'home_screen.dart';
 
@@ -411,6 +413,8 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                       runSpacing: 4,
                       children: [
                         if (isActive) TagChip(text: 'текущий', color: accent, fontSize: 9.5),
+                        if (IisService.settingsFor(p.id) != null)
+                          const TagChip(text: 'ИИС', color: AppColors.info, fontSize: 9.5),
                         TagChip(
                           text: isClosed ? 'закрыт' : 'активен',
                           color: isClosed ? AppColors.neutral : AppColors.positive,
@@ -455,12 +459,17 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                 icon: Icon(Icons.more_vert_rounded, size: 19, color: context.dim),
                 onSelected: (v) {
                   if (v == 'rename') _renameDialog(p);
+                  if (v == 'iis') showIisSettingsSheet(context, p).then((_) => _load());
                   if (v == 'close') PortfolioService.setStatus(p.id, PortfolioStatus.closed);
                   if (v == 'reopen') PortfolioService.setStatus(p.id, PortfolioStatus.active);
                   if (v == 'delete') _confirmDelete(p, totalCount);
                 },
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'rename', child: Text('Переименовать')),
+                  PopupMenuItem(
+                    value: 'iis',
+                    child: Text(IisService.settingsFor(p.id) != null ? 'Настройки ИИС' : 'Отметить как ИИС'),
+                  ),
                   if (isClosed)
                     const PopupMenuItem(value: 'reopen', child: Text('Открыть заново'))
                   else

@@ -18,6 +18,9 @@ import 'tax_service.dart';
 import 'theme_service.dart';
 import 'logo_service.dart';
 import 'favorites_service.dart';
+import 'goal_service.dart';
+import 'iis_service.dart';
+import 'portfolio_service.dart';
 
 /// Результат импорта бэкапа: сколько записей добавлено и какие логотипы не
 /// нашлись рядом с файлом (тикер -> ожидаемый относительный путь) — раньше
@@ -150,6 +153,13 @@ class BackupService {
     } catch (_) {}
     try {
       data['favorites'] = FavoritesService.all;
+    } catch (_) {}
+    // Финансовая цель и отметка ИИС этого портфеля.
+    try {
+      final goal = GoalService.current;
+      if (goal != null) data['goal'] = goal.toJson();
+      final iis = IisService.current;
+      if (iis != null) data['iis'] = iis.toJson();
     } catch (_) {}
 
     return data;
@@ -491,6 +501,19 @@ class BackupService {
       if (!FavoritesService.isFavorite(ticker as String)) {
         await FavoritesService.toggle(ticker);
       }
+    }
+
+    // Цель и ИИС — в портфель, куда загружается бэкап. В старых бэкапах этих
+    // полей нет: тогда текущие настройки не трогаем.
+    final goalRaw = data['goal'];
+    if (goalRaw is Map) {
+      final goal = FinancialGoal.fromJson(Map<String, dynamic>.from(goalRaw));
+      if (goal != null) await GoalService.save(goal);
+    }
+    final iisRaw = data['iis'];
+    if (iisRaw is Map) {
+      final iis = IisSettings.fromJson(Map<String, dynamic>.from(iisRaw));
+      if (iis != null) await IisService.save(PortfolioService.activeId, iis);
     }
 
     return ImportResult(count: count, missingLogos: missingLogos);

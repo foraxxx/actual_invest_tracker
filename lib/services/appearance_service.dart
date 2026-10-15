@@ -265,4 +265,10 @@ class AppearanceService {
   static String? get allocationTab => _box.get('allocationTab');
 
   static Future<void> setAllocationTab(String value) => _box.put('allocationTab', value);
+
+  /// Прибыль в списке бумаг на главной — в рублях (иначе в процентах).
+  /// Мимо [version]: переключение перерисовывает только главную.
+  static bool get pnlInRub => _flag('pnlInRub');
+
+  static Future<void> setPnlInRub(bool value) => _box.put('pnlInRub', value ? '1' : '0');
 }

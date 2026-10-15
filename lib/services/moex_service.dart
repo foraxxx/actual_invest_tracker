@@ -52,6 +52,10 @@ class MoexQuote {
 
   final DateTime fetchedAt;
 
+  /// Цена закрытия прошлого торгового дня, в тех же единицах, что [price]
+  /// (у облигаций — уже в рублях). По ней считается изменение «за сегодня».
+  final double? prevClose;
+
   const MoexQuote({
     required this.ticker,
     required this.shortName,
@@ -69,6 +73,7 @@ class MoexQuote {
     this.yieldPct,
     this.couponPercent,
     this.couponPeriodDays,
+    this.prevClose,
   });
 
   /// Выпуск в валюте: номинал не в рублях.
@@ -319,6 +324,14 @@ class MoexService {
       // поэтому пересчитываем сразу здесь.
       final price = (isBondMarket && faceValue != null && faceValue > 0) ? raw * faceValue / 100 : raw;
 
+      // Закрытие прошлого дня — для изменения «за сегодня». Официальное
+      // закрытие точнее, цена последней сделки вчера — запасной вариант.
+      double? prevRaw = _toDouble(sec['PREVLEGALCLOSEPRICE']);
+      if (prevRaw == null || prevRaw <= 0) prevRaw = _toDouble(sec['PREVPRICE']);
+      final prevClose = prevRaw == null || prevRaw <= 0
+          ? null
+          : (isBondMarket && faceValue != null && faceValue > 0) ? prevRaw * faceValue / 100 : prevRaw;
+
       quotes.add(MoexQuote(
         ticker: ticker,
         shortName: (sec['SHORTNAME'] as String?) ?? ticker,
@@ -336,6 +349,7 @@ class MoexService {
         couponPercent: _toDouble(sec['COUPONPERCENT']),
         couponPeriodDays: _toDouble(sec['COUPONPERIOD'])?.round(),
         fetchedAt: now,
+        prevClose: prevClose,
       ));
     }
 

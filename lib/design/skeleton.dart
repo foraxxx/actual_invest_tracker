@@ -14,16 +14,16 @@ import 'tokens.dart';
 ///
 /// Если в системе отключена анимация, перелива нет — остаются спокойные
 /// серые формы.
-class Shimmer extends StatefulWidget {
+class ShimmerGlow extends StatefulWidget {
   final Widget child;
 
-  const Shimmer({super.key, required this.child});
+  const ShimmerGlow({super.key, required this.child});
 
   @override
-  State<Shimmer> createState() => _ShimmerState();
+  State<ShimmerGlow> createState() => _ShimmerState();
 }
 
-class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
+class _ShimmerState extends State<ShimmerGlow> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1400),
@@ -107,7 +107,7 @@ class ChartSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = context.isDark ? Colors.white.withOpacity(0.06) : AppColors.lightSurfaceTop;
-    return Shimmer(
+    return ShimmerGlow(
       child: SizedBox(
         height: height,
         width: double.infinity,
@@ -165,7 +165,7 @@ class ListSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Shimmer(
+    return ShimmerGlow(
       child: Column(
         children: [
           for (int i = 0; i < rows; i++)
