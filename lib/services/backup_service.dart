@@ -21,6 +21,7 @@ import 'favorites_service.dart';
 import 'goal_service.dart';
 import 'iis_service.dart';
 import 'portfolio_service.dart';
+import 'appearance_service.dart';
 
 /// Результат импорта бэкапа: сколько записей добавлено и какие логотипы не
 /// нашлись рядом с файлом (тикер -> ожидаемый относительный путь) — раньше
@@ -29,16 +30,50 @@ class ImportResult {
   final int count;
   final Map<String, String> missingLogos;
 
-  const ImportResult({required this.count, required this.missingLogos});
+  /// Сколько портфелей загружено из общего бэкапа. 0 — старый бэкап одного
+  /// портфеля, загруженный в текущий.
+  final int portfolios;
+
+  const ImportResult({required this.count, required this.missingLogos, this.portfolios = 0});
 }
 
 /// Экспорт/импорт всех данных в один JSON-файл.
 /// Так как БД нет, это единственный способ сделать бэкап
 /// или перенести данные на новый телефон.
 class BackupService {
+  /// Версия формата. 5 — общий бэкап: все портфели в одном файле. 1–4 —
+  /// бэкап одного портфеля, такие файлы по-прежнему загружаются в текущий.
+  static const formatVersion = 5;
+
   static Future<Map<String, dynamic>> _buildData() async {
+    final portfolios = <Map<String, dynamic>>[];
+    for (final meta in PortfolioService.list) {
+      final records = await StorageService.readAllFor(meta.id);
+      final sectors = await SectorService.readFor(meta.id);
+      final entry = <String, dynamic>{
+        'name': meta.name,
+        'status': meta.status.name,
+        'isActive': meta.id == PortfolioService.activeId,
+        'createdAt': meta.createdAt.toIso8601String(),
+        'deposits': records.deposits.map(_depositJson).toList(),
+        'purchases': records.purchases.map(_purchaseJson).toList(),
+        'incomes': records.incomes.map(_incomeJson).toList(),
+        'plans': records.plans.map(_planJson).toList(),
+        'customSectors': sectors.custom,
+        'sectorAssignments': sectors.assignments,
+      };
+      // Финансовая цель и отметка ИИС этого портфеля.
+      try {
+        final goal = GoalService.goalFor(meta.id);
+        if (goal != null) entry['goal'] = goal.toJson();
+        final iis = IisService.settingsFor(meta.id);
+        if (iis != null) entry['iis'] = iis.toJson();
+      } catch (_) {}
+      portfolios.add(entry);
+    }
+
     final data = <String, dynamic>{
-      'version': 4,
+      'version': formatVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       // Настройки приложения: тема, налог, онлайн-загрузка, отметка об
       // обучении. Раньше в бэкап попадали только данные, и после переустановки
@@ -51,68 +86,15 @@ class BackupService {
         'onlineEnabled': OnlineSettingsService.enabled,
         'onlineIntervalSeconds': OnlineSettingsService.intervalSeconds,
         'tourDonePages': TourService.donePages,
+        // Оформление: скрытие сумм, состав портфеля, значения на графике,
+        // свёрнутые разделы, календарь выплат.
+        'hideAmounts': AppearanceService.hideAmounts,
+        'holdingsGrouping': AppearanceService.holdingsGrouping.name,
+        'chartHints': AppearanceService.chartHints.name,
+        'sectionPreview': AppearanceService.sectionPreview.name,
+        'payoutCalendar': AppearanceService.payoutCalendar.name,
       },
-      'deposits': StorageService.deposits
-          .map((d) => {
-                'id': d.id,
-                'date': d.date.toIso8601String(),
-                'amount': d.amount,
-                'currency': d.currency,
-                'note': d.note,
-                'broker': d.broker,
-              })
-          .toList(),
-      'purchases': StorageService.purchases
-          .map((p) => {
-                'id': p.id,
-                'date': p.date.toIso8601String(),
-                'ticker': p.ticker,
-                'name': p.name,
-                'type': p.type.index,
-                'quantity': p.quantity,
-                'pricePerUnit': p.pricePerUnit,
-                'fee': p.fee,
-                'currency': p.currency,
-                'note': p.note,
-                'sector': p.sector,
-                'isSell': p.isSell,
-                'planId': p.planId,
-                // Пишется только когда в план засчитана часть сделки: у
-                // остальных ключа нет, и файл читается и старыми версиями.
-                if (p.planQuantity != null) 'planQuantity': p.planQuantity,
-              })
-          .toList(),
-      'incomes': StorageService.incomes
-          .map((i) => {
-                'id': i.id,
-                'date': i.date.toIso8601String(),
-                'ticker': i.ticker,
-                'name': i.name,
-                'type': i.type.index,
-                'amountGross': i.amountGross,
-                'taxPaid': i.taxPaid,
-                'currency': i.currency,
-                'note': i.note,
-              })
-          .toList(),
-      'plans': StorageService.plans
-          .map((p) => {
-                'id': p.id,
-                'ticker': p.ticker,
-                'name': p.name,
-                'type': p.type.index,
-                'targetQuantity': p.targetQuantity,
-                'targetPrice': p.targetPrice,
-                'targetDate': p.targetDate?.toIso8601String(),
-                'status': p.status.index,
-                'note': p.note,
-                'createdAt': p.createdAt.toIso8601String(),
-                'purchasedQuantity': p.purchasedQuantity,
-                'purchasedAvgPrice': p.purchasedAvgPrice,
-              })
-          .toList(),
-      'customSectors': SectorService.customSectors,
-      'sectorAssignments': SectorService.allAssignments,
+      'portfolios': portfolios,
     };
 
     // Дополнительные данные — каждая обёрнута в свой try/catch: сбой в одной
@@ -154,16 +136,63 @@ class BackupService {
     try {
       data['favorites'] = FavoritesService.all;
     } catch (_) {}
-    // Финансовая цель и отметка ИИС этого портфеля.
-    try {
-      final goal = GoalService.current;
-      if (goal != null) data['goal'] = goal.toJson();
-      final iis = IisService.current;
-      if (iis != null) data['iis'] = iis.toJson();
-    } catch (_) {}
-
     return data;
   }
+
+  static Map<String, dynamic> _depositJson(Deposit d) => {
+        'id': d.id,
+        'date': d.date.toIso8601String(),
+        'amount': d.amount,
+        'currency': d.currency,
+        'note': d.note,
+        'broker': d.broker,
+      };
+
+  static Map<String, dynamic> _purchaseJson(Purchase p) => {
+        'id': p.id,
+        'date': p.date.toIso8601String(),
+        'ticker': p.ticker,
+        'name': p.name,
+        'type': p.type.index,
+        'quantity': p.quantity,
+        'pricePerUnit': p.pricePerUnit,
+        'fee': p.fee,
+        'currency': p.currency,
+        'note': p.note,
+        'sector': p.sector,
+        'isSell': p.isSell,
+        'planId': p.planId,
+        // Пишется только когда в план засчитана часть сделки: у
+        // остальных ключа нет, и файл читается и старыми версиями.
+        if (p.planQuantity != null) 'planQuantity': p.planQuantity,
+      };
+
+  static Map<String, dynamic> _incomeJson(Income i) => {
+        'id': i.id,
+        'date': i.date.toIso8601String(),
+        'ticker': i.ticker,
+        'name': i.name,
+        'type': i.type.index,
+        'amountGross': i.amountGross,
+        'taxPaid': i.taxPaid,
+        'currency': i.currency,
+        'note': i.note,
+      };
+
+  static Map<String, dynamic> _planJson(Plan p) => {
+        'id': p.id,
+        'ticker': p.ticker,
+        'name': p.name,
+        'type': p.type.index,
+        'targetQuantity': p.targetQuantity,
+        'targetPrice': p.targetPrice,
+        'targetDate': p.targetDate?.toIso8601String(),
+        'status': p.status.index,
+        'note': p.note,
+        'createdAt': p.createdAt.toIso8601String(),
+        'purchasedQuantity': p.purchasedQuantity,
+        'purchasedAvgPrice': p.purchasedAvgPrice,
+      };
 
   static String _extOf(String path) {
     final dot = path.lastIndexOf('.');
@@ -186,7 +215,7 @@ class BackupService {
     return file.path;
   }
 
-  /// Тихо (без диалогов и шеринга) сохраняет бэкап текущего портфеля в файл
+  /// Тихо (без диалогов и шеринга) сохраняет общий бэкап всех портфелей в файл
   /// с фиксированным именем внутри указанной папки — перезаписывает один и
   /// тот же файл, а не копит новый на каждое изменение. Используется
   /// автосохранением (см. AutoBackupService). Возвращает null при успехе,
@@ -277,132 +306,102 @@ class BackupService {
   static Future<ImportResult> importFromJson(String jsonStr, {String? logosBaseDir}) async {
     final data = jsonDecode(jsonStr) as Map<String, dynamic>;
     final version = (data['version'] as num?)?.toInt() ?? 1;
-    if (version < 1 || version > 4) {
+    if (version < 1 || version > formatVersion) {
       throw FormatException('Неподдерживаемая версия бэкапа: $version');
     }
 
     // Сначала полностью разбираем и проверяем основные данные, не меняя
     // рабочее хранилище. Только валидный файл допускается к применению.
-    final importedDeposits = <Deposit>[];
-    for (final raw in (data['deposits'] as List? ?? [])) {
-      final d = raw as Map;
-      importedDeposits.add(Deposit(
-        id: d['id'],
-        date: DateTime.parse(d['date']),
-        amount: (d['amount'] as num).toDouble(),
-        currency: d['currency'] ?? 'RUB',
-        note: d['note'],
-        broker: d['broker'],
-      ));
-    }
-
-    final importedPurchases = <Purchase>[];
-    for (final raw in (data['purchases'] as List? ?? [])) {
-      final p = raw as Map;
-      final quantity = (p['quantity'] as num).toDouble();
-      final price = (p['pricePerUnit'] as num).toDouble();
-      final fee = (p['fee'] as num?)?.toDouble() ?? 0;
-      // Комиссия здесь — не только расход, а поправка к сумме сделки: при
-      // покупке облигации в неё добавляется уплаченный НКД, при продаже —
-      // ВЫЧИТАЕТСЯ полученный (см. broker_import_service: `commissions - nkd`).
-      // Дальше по коду сделка считается как `qty * price - fee` для продажи и
-      // `qty * price + fee` для покупки, поэтому отрицательное значение здесь
-      // законно и означает, что НКД превысил комиссии.
-      //
-      // Раньше проверка требовала `fee >= 0` и роняла импорт собственного
-      // бэкапа приложения на первой же продаже ОФЗ: экспорт такие сделки
-      // сохранял, а импорт объявлял файл некорректным.
-      if (quantity <= 0 || price < 0 || !quantity.isFinite || !price.isFinite || !fee.isFinite) {
-        throw FormatException('Некорректная сделка ${p['ticker'] ?? ''}');
+    int count = 0;
+    int portfolioCount = 0;
+    if (version >= 5) {
+      // Общий бэкап: портфели с тем же названием заменяются целиком,
+      // недостающие создаются. Активный портфель не переключается.
+      final parsed = <(Map, _Records)>[];
+      for (final raw in (data['portfolios'] as List? ?? [])) {
+        final src = raw as Map;
+        final name = '${src['name'] ?? ''}'.trim();
+        if (name.isEmpty) throw const FormatException('Портфель без названия');
+        parsed.add((src, _parseRecords(src)));
       }
-      importedPurchases.add(Purchase(
-        id: p['id'],
-        date: DateTime.parse(p['date']),
-        ticker: p['ticker'],
-        name: p['name'],
-        type: AssetType.values[p['type']],
-        quantity: quantity,
-        pricePerUnit: price,
-        fee: fee,
-        currency: p['currency'] ?? 'RUB',
-        note: p['note'],
-        sector: p['sector'],
-        isSell: p['isSell'] ?? false,
-        planId: p['planId'],
-        // Бэкапы до появления поля его не содержат — это «вся сделка».
-        planQuantity: (p['planQuantity'] as num?)?.toDouble(),
-      ));
-    }
+      for (final (src, records) in parsed) {
+        final name = '${src['name']}'.trim();
+        PortfolioMeta? found;
+        for (final p in PortfolioService.list) {
+          if (p.name.trim().toLowerCase() == name.toLowerCase()) found = p;
+        }
+        final meta = found ?? await PortfolioService.create(name);
+        final status = src['status'] == PortfolioStatus.closed.name ? PortfolioStatus.closed : PortfolioStatus.active;
+        if (meta.status != status) await PortfolioService.setStatus(meta.id, status);
 
-    final importedIncomes = <Income>[];
-    for (final raw in (data['incomes'] as List? ?? [])) {
-      final i = raw as Map;
-      final gross = (i['amountGross'] as num).toDouble();
-      final tax = (i['taxPaid'] as num?)?.toDouble() ?? 0;
-      if (gross < 0 || tax < 0 || tax > gross) {
-        throw FormatException('Некорректная выплата ${i['ticker'] ?? ''}');
+        await StorageService.replaceFinancialDataFor(
+          meta.id,
+          deposits: records.deposits,
+          purchases: records.purchases,
+          incomes: records.incomes,
+          plans: records.plans,
+        );
+        await SectorService.replaceFor(
+          meta.id,
+          [for (final s in (src['customSectors'] as List? ?? [])) '$s'],
+          {
+            for (final e in ((src['sectorAssignments'] as Map?) ?? {}).entries) '${e.key}': '${e.value}',
+          },
+        );
+        final goalRaw = src['goal'];
+        await GoalService.saveFor(
+          meta.id,
+          goalRaw is Map ? FinancialGoal.fromJson(Map<String, dynamic>.from(goalRaw)) : null,
+        );
+        final iisRaw = src['iis'];
+        await IisService.save(
+          meta.id,
+          iisRaw is Map ? IisSettings.fromJson(Map<String, dynamic>.from(iisRaw)) : null,
+        );
+        count += records.count;
+        portfolioCount++;
       }
-      importedIncomes.add(Income(
-        id: i['id'],
-        date: DateTime.parse(i['date']),
-        ticker: i['ticker'],
-        name: i['name'],
-        type: IncomeType.values[i['type']],
-        amountGross: gross,
-        taxPaid: tax,
-        currency: i['currency'] ?? 'RUB',
-        note: i['note'],
-      ));
-    }
+    } else {
+      // Старый бэкап одного портфеля — в текущий портфель, с объединением
+      // по id, как и раньше.
+      final records = _parseRecords(data);
+      final depositsById = {for (final d in StorageService.deposits) d.id: d}
+        ..addEntries(records.deposits.map((d) => MapEntry(d.id, d)));
+      final purchasesById = {for (final p in StorageService.purchases) p.id: p}
+        ..addEntries(records.purchases.map((p) => MapEntry(p.id, p)));
+      final incomesById = {for (final i in StorageService.incomes) i.id: i}
+        ..addEntries(records.incomes.map((i) => MapEntry(i.id, i)));
+      final plansById = {for (final p in StorageService.plans) p.id: p}
+        ..addEntries(records.plans.map((p) => MapEntry(p.id, p)));
 
-    final importedPlans = <Plan>[];
-    for (final raw in (data['plans'] as List? ?? [])) {
-      final p = raw as Map;
-      importedPlans.add(Plan(
-        id: p['id'],
-        ticker: p['ticker'],
-        name: p['name'],
-        type: AssetType.values[p['type']],
-        targetQuantity: (p['targetQuantity'] as num).toDouble(),
-        targetPrice: (p['targetPrice'] as num?)?.toDouble(),
-        targetDate:
-            p['targetDate'] != null ? DateTime.parse(p['targetDate']) : null,
-        status: PlanStatus.values[p['status']],
-        note: p['note'],
-        createdAt: DateTime.parse(p['createdAt']),
-        purchasedQuantity:
-            (p['purchasedQuantity'] as num?)?.toDouble() ?? 0,
-        purchasedAvgPrice:
-            (p['purchasedAvgPrice'] as num?)?.toDouble() ?? 0,
-      ));
-    }
+      await StorageService.replaceFinancialData(
+        deposits: depositsById.values,
+        purchases: purchasesById.values,
+        incomes: incomesById.values,
+        plans: plansById.values,
+      );
+      count = records.count;
 
-    final depositsById = {for (final d in StorageService.deposits) d.id: d}
-      ..addEntries(importedDeposits.map((d) => MapEntry(d.id, d)));
-    final purchasesById = {for (final p in StorageService.purchases) p.id: p}
-      ..addEntries(importedPurchases.map((p) => MapEntry(p.id, p)));
-    final incomesById = {for (final i in StorageService.incomes) i.id: i}
-      ..addEntries(importedIncomes.map((i) => MapEntry(i.id, i)));
-    final plansById = {for (final p in StorageService.plans) p.id: p}
-      ..addEntries(importedPlans.map((p) => MapEntry(p.id, p)));
+      for (final sector in (data['customSectors'] as List? ?? [])) {
+        await SectorService.addSector(sector as String);
+      }
+      final sectorAssignments = (data['sectorAssignments'] as Map?) ?? {};
+      for (final entry in sectorAssignments.entries) {
+        await SectorService.assignSector(entry.key as String, entry.value as String);
+      }
 
-    await StorageService.replaceFinancialData(
-      deposits: depositsById.values,
-      purchases: purchasesById.values,
-      incomes: incomesById.values,
-      plans: plansById.values,
-    );
-    final count = importedDeposits.length +
-        importedPurchases.length +
-        importedIncomes.length +
-        importedPlans.length;
-
-    for (final sector in (data['customSectors'] as List? ?? [])) {
-      await SectorService.addSector(sector as String);
-    }
-    final sectorAssignments = (data['sectorAssignments'] as Map?) ?? {};
-    for (final entry in sectorAssignments.entries) {
-      await SectorService.assignSector(entry.key as String, entry.value as String);
+      // Цель и ИИС — в портфель, куда загружается бэкап. В старых бэкапах
+      // этих полей нет: тогда текущие настройки не трогаем.
+      final goalRaw = data['goal'];
+      if (goalRaw is Map) {
+        final goal = FinancialGoal.fromJson(Map<String, dynamic>.from(goalRaw));
+        if (goal != null) await GoalService.save(goal);
+      }
+      final iisRaw = data['iis'];
+      if (iisRaw is Map) {
+        final iis = IisSettings.fromJson(Map<String, dynamic>.from(iisRaw));
+        if (iis != null) await IisService.save(PortfolioService.activeId, iis);
+      }
     }
 
     final priceHistory = (data['manualPriceHistory'] as Map?) ?? {};
@@ -460,6 +459,24 @@ class BackupService {
       if (tourPages is List) {
         await TourService.restoreDonePages(tourPages.map((e) => '$e').toList());
       }
+      // В старых бэкапах этих полей нет — тогда оформление не трогаем.
+      final hide = settings['hideAmounts'];
+      if (hide is bool) await AppearanceService.setHideAmounts(hide);
+      T? byName<T extends Enum>(List<T> values, Object? name) {
+        for (final v in values) {
+          if (v.name == name) return v;
+        }
+        return null;
+      }
+
+      final grouping = byName(HoldingsGrouping.values, settings['holdingsGrouping']);
+      if (grouping != null) await AppearanceService.setHoldingsGrouping(grouping);
+      final hints = byName(ChartHints.values, settings['chartHints']);
+      if (hints != null) await AppearanceService.setChartHints(hints);
+      final preview = byName(SectionPreview.values, settings['sectionPreview']);
+      if (preview != null) await AppearanceService.setSectionPreview(preview);
+      final calendar = byName(PayoutCalendarStyle.values, settings['payoutCalendar']);
+      if (calendar != null) await AppearanceService.setPayoutCalendar(calendar);
     }
 
     final missingLogos = <String, String>{};
@@ -503,20 +520,114 @@ class BackupService {
       }
     }
 
-    // Цель и ИИС — в портфель, куда загружается бэкап. В старых бэкапах этих
-    // полей нет: тогда текущие настройки не трогаем.
-    final goalRaw = data['goal'];
-    if (goalRaw is Map) {
-      final goal = FinancialGoal.fromJson(Map<String, dynamic>.from(goalRaw));
-      if (goal != null) await GoalService.save(goal);
-    }
-    final iisRaw = data['iis'];
-    if (iisRaw is Map) {
-      final iis = IisSettings.fromJson(Map<String, dynamic>.from(iisRaw));
-      if (iis != null) await IisService.save(PortfolioService.activeId, iis);
+
+    return ImportResult(count: count, missingLogos: missingLogos, portfolios: portfolioCount);
+  }
+
+  /// Разбирает и проверяет сделки, выплаты, пополнения и планы одного
+  /// портфеля. Ошибка в любой записи — FormatException, ничего не меняется.
+  static _Records _parseRecords(Map src) {
+    final importedDeposits = <Deposit>[];
+    for (final raw in (src['deposits'] as List? ?? [])) {
+      final d = raw as Map;
+      importedDeposits.add(Deposit(
+        id: d['id'],
+        date: DateTime.parse(d['date']),
+        amount: (d['amount'] as num).toDouble(),
+        currency: d['currency'] ?? 'RUB',
+        note: d['note'],
+        broker: d['broker'],
+      ));
     }
 
-    return ImportResult(count: count, missingLogos: missingLogos);
+    final importedPurchases = <Purchase>[];
+    for (final raw in (src['purchases'] as List? ?? [])) {
+      final p = raw as Map;
+      final quantity = (p['quantity'] as num).toDouble();
+      final price = (p['pricePerUnit'] as num).toDouble();
+      final fee = (p['fee'] as num?)?.toDouble() ?? 0;
+      // Комиссия здесь — не только расход, а поправка к сумме сделки: при
+      // покупке облигации в неё добавляется уплаченный НКД, при продаже —
+      // ВЫЧИТАЕТСЯ полученный (см. broker_import_service: `commissions - nkd`).
+      // Дальше по коду сделка считается как `qty * price - fee` для продажи и
+      // `qty * price + fee` для покупки, поэтому отрицательное значение здесь
+      // законно и означает, что НКД превысил комиссии.
+      //
+      // Раньше проверка требовала `fee >= 0` и роняла импорт собственного
+      // бэкапа приложения на первой же продаже ОФЗ: экспорт такие сделки
+      // сохранял, а импорт объявлял файл некорректным.
+      if (quantity <= 0 || price < 0 || !quantity.isFinite || !price.isFinite || !fee.isFinite) {
+        throw FormatException('Некорректная сделка ${p['ticker'] ?? ''}');
+      }
+      importedPurchases.add(Purchase(
+        id: p['id'],
+        date: DateTime.parse(p['date']),
+        ticker: p['ticker'],
+        name: p['name'],
+        type: AssetType.values[p['type']],
+        quantity: quantity,
+        pricePerUnit: price,
+        fee: fee,
+        currency: p['currency'] ?? 'RUB',
+        note: p['note'],
+        sector: p['sector'],
+        isSell: p['isSell'] ?? false,
+        planId: p['planId'],
+        // Бэкапы до появления поля его не содержат — это «вся сделка».
+        planQuantity: (p['planQuantity'] as num?)?.toDouble(),
+      ));
+    }
+
+    final importedIncomes = <Income>[];
+    for (final raw in (src['incomes'] as List? ?? [])) {
+      final i = raw as Map;
+      final gross = (i['amountGross'] as num).toDouble();
+      final tax = (i['taxPaid'] as num?)?.toDouble() ?? 0;
+      if (gross < 0 || tax < 0 || tax > gross) {
+        throw FormatException('Некорректная выплата ${i['ticker'] ?? ''}');
+      }
+      importedIncomes.add(Income(
+        id: i['id'],
+        date: DateTime.parse(i['date']),
+        ticker: i['ticker'],
+        name: i['name'],
+        type: IncomeType.values[i['type']],
+        amountGross: gross,
+        taxPaid: tax,
+        currency: i['currency'] ?? 'RUB',
+        note: i['note'],
+      ));
+    }
+
+    final importedPlans = <Plan>[];
+    for (final raw in (src['plans'] as List? ?? [])) {
+      final p = raw as Map;
+      importedPlans.add(Plan(
+        id: p['id'],
+        ticker: p['ticker'],
+        name: p['name'],
+        type: AssetType.values[p['type']],
+        targetQuantity: (p['targetQuantity'] as num).toDouble(),
+        targetPrice: (p['targetPrice'] as num?)?.toDouble(),
+        targetDate:
+            p['targetDate'] != null ? DateTime.parse(p['targetDate']) : null,
+        status: PlanStatus.values[p['status']],
+        note: p['note'],
+        createdAt: DateTime.parse(p['createdAt']),
+        purchasedQuantity:
+            (p['purchasedQuantity'] as num?)?.toDouble() ?? 0,
+        purchasedAvgPrice:
+            (p['purchasedAvgPrice'] as num?)?.toDouble() ?? 0,
+      ));
+    }
+
+
+    return _Records(
+      deposits: importedDeposits,
+      purchases: importedPurchases,
+      incomes: importedIncomes,
+      plans: importedPlans,
+    );
   }
 
   /// Повторная попытка подтянуть логотипы из ВРУЧНУЮ выбранной папки — для
@@ -544,4 +655,16 @@ class BackupService {
     }
     return fixed;
   }
+}
+
+/// Записи одного портфеля из бэкапа.
+class _Records {
+  final List<Deposit> deposits;
+  final List<Purchase> purchases;
+  final List<Income> incomes;
+  final List<Plan> plans;
+
+  const _Records({required this.deposits, required this.purchases, required this.incomes, required this.plans});
+
+  int get count => deposits.length + purchases.length + incomes.length + plans.length;
 }

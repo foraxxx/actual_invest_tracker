@@ -547,7 +547,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _actionRow(
                         icon: Icons.ios_share_rounded,
                         title: 'Экспортировать бэкап',
-                        subtitle: 'Сохранить все данные в JSON-файл',
+                        subtitle: 'Все портфели в одном JSON-файле',
                         onTap: () => BackupService.exportToJson(),
                       ),
                       const SizedBox(height: 8),
@@ -756,7 +756,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Импортировано записей: ${result.count}')),
+        SnackBar(
+          content: Text(
+            result.portfolios > 0
+                ? 'Загружено портфелей: ${result.portfolios}, записей: ${result.count}'
+                : 'Импортировано записей: ${result.count}',
+          ),
+        ),
       );
       setState(() {});
 
@@ -923,7 +929,7 @@ class _AutoBackupSectionState extends State<_AutoBackupSection> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Приложение само сохраняет JSON-бэкап текущего портфеля в выбранную папку при каждом '
+              'Приложение само сохраняет общий JSON-бэкап всех портфелей в выбранную папку при каждом '
               'изменении данных. На некоторых версиях Android доступны для записи не все папки — '
               'если не срабатывает, попробуйте «Загрузки».',
               style: TextStyle(fontSize: 11.3, height: 1.45, color: context.dim),

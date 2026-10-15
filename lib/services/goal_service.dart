@@ -17,13 +17,18 @@ class FinancialGoal {
   final DateTime deadline;
   final String name;
 
-  const FinancialGoal({required this.amount, required this.deadline, this.name = ''});
+  /// Сколько человек откладывает в месяц. null — не указано, тогда берётся
+  /// подсказка по прошлым пополнениям (см. GoalService.suggestedMonthlySaving).
+  final double? monthlySaving;
+
+  const FinancialGoal({required this.amount, required this.deadline, this.name = '', this.monthlySaving});
 
   Map<String, dynamic> toJson() => {
         'a': amount,
         'y': deadline.year,
         'm': deadline.month,
         if (name.isNotEmpty) 'n': name,
+        if (monthlySaving != null) 's': monthlySaving,
       };
 
   static FinancialGoal? fromJson(Map<String, dynamic> j) {
@@ -31,7 +36,13 @@ class FinancialGoal {
     final y = (j['y'] as num?)?.toInt();
     final m = (j['m'] as num?)?.toInt();
     if (a == null || y == null || m == null || a <= 0) return null;
-    return FinancialGoal(amount: a, deadline: DateTime(y, m), name: '${j['n'] ?? ''}');
+    final saving = (j['s'] as num?)?.toDouble();
+    return FinancialGoal(
+      amount: a,
+      deadline: DateTime(y, m),
+      name: '${j['n'] ?? ''}',
+      monthlySaving: saving == null || saving < 0 ? null : saving,
+    );
   }
 }
 
@@ -55,12 +66,18 @@ class GoalPlan {
   /// Среднегодовой рост, заложенный в расчёт, в процентах.
   final double annualGrowthPct;
 
-  /// Сколько вы в среднем вносили в месяц за последний год.
-  final double averageMonthly;
+  /// Сколько человек откладывает в месяц: из цели или подсказка.
+  final double saving;
 
-  /// Путь стоимости без взносов и с нужными взносами — для графика.
+  /// Путь стоимости без взносов, с нужными взносами и с тем, что человек
+  /// откладывает, — для графика.
   final List<double> pathWithout;
   final List<double> pathWith;
+  final List<double> pathSaving;
+
+  /// Через сколько месяцев от сегодня цель будет достигнута, если
+  /// откладывать [saving]. null — не достигается и за 50 лет.
+  final int? reachMonths;
 
   const GoalPlan({
     required this.goal,
@@ -69,10 +86,29 @@ class GoalPlan {
     required this.withoutContributions,
     required this.monthly,
     required this.annualGrowthPct,
-    required this.averageMonthly,
+    required this.saving,
     required this.pathWithout,
     required this.pathWith,
+    required this.pathSaving,
+    required this.reachMonths,
   });
+
+  /// Сколько будет к сроку, если откладывать [saving].
+  double get atDeadlineWithSaving => pathSaving.isEmpty ? current : pathSaving.last;
+
+  /// Хватает ли того, что откладывается, чтобы успеть к сроку.
+  bool get savingEnough => reached || atDeadlineWithSaving >= goal.amount - 1;
+
+  /// Сколько не хватает в месяц до нужного взноса.
+  double get savingShortfall => math.max(0, monthly - saving);
+
+  /// Месяц, когда цель будет достигнута при взносах [saving].
+  DateTime? get reachDate {
+    final m = reachMonths;
+    if (m == null) return null;
+    final now = DateTime.now();
+    return DateTime(now.year, now.month + m);
+  }
 
   double get progress => goal.amount <= 0 ? 0 : (current / goal.amount).clamp(0.0, 1.0).toDouble();
   bool get reached => current >= goal.amount;
@@ -92,8 +128,11 @@ class GoalService {
     _box = await Hive.openBox<String>(boxName);
   }
 
-  static FinancialGoal? get current {
-    final raw = _box.get(PortfolioService.activeId);
+  static FinancialGoal? get current => goalFor(PortfolioService.activeId);
+
+  /// Цель любого портфеля — для общего бэкапа.
+  static FinancialGoal? goalFor(String portfolioId) {
+    final raw = _box.get(portfolioId);
     if (raw == null) return null;
     try {
       return FinancialGoal.fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -109,6 +148,16 @@ class GoalService {
 
   static Future<void> delete() async {
     await _box.delete(PortfolioService.activeId);
+    version.value++;
+  }
+
+  /// Записывает или убирает цель любого портфеля — для загрузки бэкапа.
+  static Future<void> saveFor(String portfolioId, FinancialGoal? goal) async {
+    if (goal == null) {
+      await _box.delete(portfolioId);
+    } else {
+      await _box.put(portfolioId, jsonEncode(goal.toJson()));
+    }
     version.value++;
   }
 
@@ -144,7 +193,7 @@ class GoalService {
   static GoalPlan plan(FinancialGoal goal, {double? currentValue}) {
     final current = currentValue ?? AnalyticsService.currentPortfolioValueRub();
     final today = DateTime.now();
-    final key = '${goal.amount}|${goal.deadline}|${(current / 1000).round()}|'
+    final key = '${goal.amount}|${goal.deadline}|${goal.monthlySaving}|${(current / 1000).round()}|'
         '${today.year}-${today.month}-${today.day}';
     if (key == _cacheKey && _cache != null && _cache!.goal.name == goal.name) return _cache!;
     final result = _plan(goal, current);
@@ -173,15 +222,21 @@ class GoalService {
     final growth = math.pow(1 + rate, months).toDouble();
     final monthly = requiredMonthly(current: current, target: goal.amount, months: months, rate: rate);
 
+    final saving = goal.monthlySaving ?? suggestedMonthlySaving();
+
     final without = <double>[];
     final withContrib = <double>[];
+    final withSaving = <double>[];
     var a = current;
     var b = current;
+    var c = current;
     for (int i = 0; i <= months; i++) {
       without.add(a);
       withContrib.add(b);
+      withSaving.add(c);
       a *= 1 + rate;
       b = b * (1 + rate) + monthly;
+      c = c * (1 + rate) + saving;
     }
 
     return GoalPlan(
@@ -191,22 +246,64 @@ class GoalService {
       withoutContributions: current * growth,
       monthly: monthly,
       annualGrowthPct: (math.pow(1 + rate, 12).toDouble() - 1) * 100,
-      averageMonthly: _averageMonthlyContribution(),
+      saving: saving,
       pathWithout: without,
       pathWith: withContrib,
+      pathSaving: withSaving,
+      reachMonths: monthsToReach(current: current, target: goal.amount, monthly: saving, rate: rate),
     );
   }
 
-  /// Средний чистый взнос в месяц за последние 12 месяцев: пополнения минус
-  /// выводы.
-  static double _averageMonthlyContribution() {
-    final from = DateTime.now().subtract(const Duration(days: 365));
-    double sum = 0;
-    for (final m in CashService.summary().moves) {
-      if (m.date.isBefore(from)) continue;
-      if (m.kind == CashMoveKind.deposit || m.kind == CashMoveKind.autoDeposit) sum += m.amountRub;
-      if (m.kind == CashMoveKind.withdrawal) sum += m.amountRub; // уже со знаком минус
+  /// Через сколько месяцев из [current] получится [target], если каждый
+  /// месяц добавлять [monthly] при росте [rate]. null — не за 50 лет.
+  @visibleForTesting
+  static int? monthsToReach({
+    required double current,
+    required double target,
+    required double monthly,
+    required double rate,
+  }) {
+    var v = current;
+    for (int i = 0; i <= 600; i++) {
+      if (v >= target - 1) return i;
+      v = v * (1 + rate) + monthly;
     }
-    return math.max(0, sum / 12);
+    return null;
+  }
+
+  /// Подсказка, сколько человек откладывает в месяц: медиана чистых
+  /// пополнений (пополнения минус выводы) за последние 6 полных месяцев.
+  ///
+  /// Медиана, а не среднее: один крупный перевод накоплений (например, при
+  /// открытии счёта) не завышает обычный ежемесячный взнос.
+  static double suggestedMonthlySaving({DateTime? now}) {
+    final today = now ?? DateTime.now();
+    final first = DateTime(today.year, today.month - 6);
+    final current = DateTime(today.year, today.month);
+    final byMonth = <String, double>{};
+    for (int i = 0; i < 6; i++) {
+      final d = DateTime(first.year, first.month + i);
+      byMonth['${d.year}-${d.month}'] = 0;
+    }
+    for (final m in CashService.summary().moves) {
+      if (m.date.isBefore(first) || !m.date.isBefore(current)) continue;
+      if (m.kind != CashMoveKind.deposit &&
+          m.kind != CashMoveKind.autoDeposit &&
+          m.kind != CashMoveKind.withdrawal) {
+        continue;
+      }
+      final key = '${m.date.year}-${m.date.month}';
+      byMonth[key] = (byMonth[key] ?? 0) + m.amountRub; // вывод уже со знаком минус
+    }
+    final value = median(byMonth.values.toList());
+    return math.max(0, (value / 100).round() * 100.0);
+  }
+
+  @visibleForTesting
+  static double median(List<double> values) {
+    if (values.isEmpty) return 0;
+    final sorted = [...values]..sort();
+    final mid = sorted.length ~/ 2;
+    return sorted.length.isOdd ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   }
 }

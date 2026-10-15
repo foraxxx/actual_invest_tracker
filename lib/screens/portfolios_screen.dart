@@ -235,9 +235,9 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                             child: i == 0
                                 ? TourSpot(
                                     id: 'card',
-                                    child: _portfolioCard(active[i], list.length, totalValue),
+                                    child: _portfolioCard(active[i], list.length, active.length, totalValue),
                                   )
-                                : _portfolioCard(active[i], list.length, totalValue),
+                                : _portfolioCard(active[i], list.length, active.length, totalValue),
                           ),
                         ),
                     ],
@@ -248,7 +248,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                       for (final p in closed)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
-                          child: _portfolioCard(p, list.length, totalValue),
+                          child: _portfolioCard(p, list.length, active.length, totalValue),
                         ),
                     ],
 
@@ -358,12 +358,16 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
     );
   }
 
-  Widget _portfolioCard(PortfolioMeta p, int totalCount, double totalValue) {
+  Widget _portfolioCard(PortfolioMeta p, int totalCount, int activeCount, double totalValue) {
     final isActive = p.id == PortfolioService.activeId;
     final isClosed = p.status == PortfolioStatus.closed;
     final stat = _stats[p.id];
     final accent = context.accent;
     final share = (totalValue <= 0 || stat == null) ? 0.0 : stat.valueRub / totalValue;
+    final isIis = IisService.settingsFor(p.id) != null;
+    // «Текущий» нужен, только когда есть из чего выбирать.
+    final showCurrent = isActive && totalCount > 1;
+    final hasTags = showCurrent || isIis || isClosed;
 
     return AppCard(
       onTap: () => _openPortfolio(p),
@@ -407,21 +411,20 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                     ),
-                    const SizedBox(height: 5),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        if (isActive) TagChip(text: 'текущий', color: accent, fontSize: 9.5),
-                        if (IisService.settingsFor(p.id) != null)
-                          const TagChip(text: 'ИИС', color: AppColors.info, fontSize: 9.5),
-                        TagChip(
-                          text: isClosed ? 'закрыт' : 'активен',
-                          color: isClosed ? AppColors.neutral : AppColors.positive,
-                          fontSize: 9.5,
-                        ),
-                      ],
-                    ),
+                    // Метки — одной строкой; «активен» не пишем, это и так
+                    // видно по разделу.
+                    if (hasTags) ...[
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          if (showCurrent) TagChip(text: 'текущий', color: accent, fontSize: 9.5),
+                          if (showCurrent && (isIis || isClosed)) const SizedBox(width: 6),
+                          if (isIis) const TagChip(text: 'ИИС', color: AppColors.info, fontSize: 9.5),
+                          if (isIis && isClosed) const SizedBox(width: 6),
+                          if (isClosed) const TagChip(text: 'закрыт', color: AppColors.neutral, fontSize: 9.5),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -468,7 +471,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                   const PopupMenuItem(value: 'rename', child: Text('Переименовать')),
                   PopupMenuItem(
                     value: 'iis',
-                    child: Text(IisService.settingsFor(p.id) != null ? 'Настройки ИИС' : 'Отметить как ИИС'),
+                    child: Text(isIis ? 'Настройки ИИС' : 'Отметить как ИИС'),
                   ),
                   if (isClosed)
                     const PopupMenuItem(value: 'reopen', child: Text('Открыть заново'))
@@ -483,7 +486,8 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
               ),
             ],
           ),
-          if (!_loading && !isClosed && share > 0) ...[
+          // Доля имеет смысл, только когда активных портфелей несколько.
+          if (!_loading && !isClosed && activeCount > 1 && share > 0) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -502,25 +506,8 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
   }
 
   Future<void> _createDialog() async {
-    final ctrl = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Новый портфель'),
-        content: AppTextField(controller: ctrl, label: 'Название', autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () async {
-              if (ctrl.text.trim().isEmpty) return;
-              await PortfolioService.create(ctrl.text);
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Создать'),
-          ),
-        ],
-      ),
-    );
+    await showNewPortfolioSheet(context);
+    if (mounted) _load();
   }
 
   Future<void> _renameDialog(PortfolioMeta p) async {

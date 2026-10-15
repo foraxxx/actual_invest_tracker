@@ -46,7 +46,7 @@ class IisCard extends StatelessWidget {
 
     final title = collapsed
         ? (done
-            ? 'ИИС · лимит $year выбран'
+            ? (withDeduction ? 'ИИС · максимальный вычет за $year' : 'ИИС · лимит взносов $year достигнут')
             : 'ИИС · ${Fmt.money(y.contributed)} из ${Fmt.money(y.limit)}')
         : 'ИИС · взносы $year';
     final subtitle = collapsed
@@ -191,7 +191,7 @@ class IisCard extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   y.limitReached
-                      ? 'Лимит выбран — подайте декларацию в ${y.year + 1}'
+                      ? 'Внесено достаточно для максимального вычета ${Fmt.money(y.maxDeduction)} — подайте декларацию в ${y.year + 1}'
                       : 'Внесите ещё ${Fmt.money(y.leftToLimit)} до 31 декабря — будет ${Fmt.money(y.maxDeduction)}',
                   style: TextStyle(fontSize: 11.5, height: 1.35, color: context.dim),
                 ),
@@ -221,13 +221,80 @@ class IisCard extends StatelessWidget {
   }
 }
 
+/// Черновик настроек ИИС в форме, пока их не сохранили.
+class _IisDraft {
+  bool isIis;
+  IisType type;
+  DateTime opened;
+  int rate;
+
+  _IisDraft(IisSettings? s)
+      : isIis = s != null,
+        type = s?.type ?? IisType.newType,
+        opened = s?.openedAt ?? DateTime.now(),
+        rate = s?.ratePct ?? 13;
+
+  IisSettings? get settings => isIis ? IisSettings(type: type, openedAt: opened, ratePct: rate) : null;
+}
+
+/// Переключатель «Это ИИС» и, если включён, тип, дата открытия и ставка.
+/// Общие для формы нового портфеля и настроек ИИС существующего.
+List<Widget> _iisFields(BuildContext ctx, StateSetter setSheet, _IisDraft d) => [
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: d.isIis,
+        onChanged: (v) => setSheet(() => d.isIis = v),
+        title: const Text('Это ИИС', style: TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: const Text('На главной появится карточка: взносы за год, вычет и срок счёта'),
+      ),
+      if (d.isIis) ...[
+        const SizedBox(height: 8),
+        Text('Тип счёта', style: TextStyle(fontSize: 12, color: ctx.dim)),
+        const SizedBox(height: 6),
+        SegmentedToggle<IisType>(
+          values: IisType.values,
+          selected: d.type,
+          labelOf: (t) => t.title,
+          onChanged: (t) => setSheet(() => d.type = t),
+        ),
+        const SizedBox(height: 12),
+        AppDateField(
+          value: d.opened,
+          label: 'Дата открытия',
+          firstDate: DateTime(2015),
+          lastDate: DateTime.now(),
+          onPicked: (v) => setSheet(() => d.opened = v),
+        ),
+        if (d.type.hasContributionDeduction) ...[
+          const SizedBox(height: 12),
+          Text('Ставка вычета', style: TextStyle(fontSize: 12, color: ctx.dim)),
+          const SizedBox(height: 6),
+          SegmentedToggle<int>(
+            values: const [13, 15],
+            selected: d.rate,
+            labelOf: (r) => '$r%',
+            onChanged: (r) => setSheet(() => d.rate = r),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '15% — если ваш доход за год больше 2,4 млн ₽. Вычет возвращается по той ставке, '
+            'по которой вы платили налог.',
+            style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
+          ),
+        ],
+        const SizedBox(height: 10),
+        Text(
+          'Правила ИИС — по данным на 2026 год: вычет со взносов до 400 000 ₽ в год; '
+          'у нового ИИС минимальный срок 5 лет для открытых в 2024–2026 годах и на год больше '
+          'за каждый следующий год, у старого — 3 года. Точные условия уточняйте у брокера.',
+          style: TextStyle(fontSize: 11, height: 1.35, color: ctx.dim),
+        ),
+      ],
+    ];
+
 /// Отметка «Это ИИС» для портфеля: тип, дата открытия, ставка вычета.
 Future<void> showIisSettingsSheet(BuildContext context, PortfolioMeta portfolio) {
-  final existing = IisService.settingsFor(portfolio.id);
-  var isIis = existing != null;
-  var type = existing?.type ?? IisType.newType;
-  var opened = existing?.openedAt ?? DateTime.now();
-  var rate = existing?.ratePct ?? 13;
+  final draft = _IisDraft(IisService.settingsFor(portfolio.id));
 
   return showAppSheet(
     context: context,
@@ -243,66 +310,73 @@ Future<void> showIisSettingsSheet(BuildContext context, PortfolioMeta portfolio)
               trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
             ),
             const SizedBox(height: 10),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: isIis,
-              onChanged: (v) => setSheet(() => isIis = v),
-              title: const Text('Это ИИС', style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: const Text('На главной появится карточка: взносы за год, вычет и срок счёта'),
-            ),
-            if (isIis) ...[
-              const SizedBox(height: 8),
-              Text('Тип счёта', style: TextStyle(fontSize: 12, color: ctx.dim)),
-              const SizedBox(height: 6),
-              SegmentedToggle<IisType>(
-                values: IisType.values,
-                selected: type,
-                labelOf: (t) => t.title,
-                onChanged: (t) => setSheet(() => type = t),
-              ),
-              const SizedBox(height: 12),
-              AppDateField(
-                value: opened,
-                label: 'Дата открытия',
-                firstDate: DateTime(2015),
-                lastDate: DateTime.now(),
-                onPicked: (d) => setSheet(() => opened = d),
-              ),
-              if (type.hasContributionDeduction) ...[
-                const SizedBox(height: 12),
-                Text('Ставка вычета', style: TextStyle(fontSize: 12, color: ctx.dim)),
-                const SizedBox(height: 6),
-                SegmentedToggle<int>(
-                  values: const [13, 15],
-                  selected: rate,
-                  labelOf: (r) => '$r%',
-                  onChanged: (r) => setSheet(() => rate = r),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '15% — если ваш доход за год больше 2,4 млн ₽. Вычет возвращается по той ставке, '
-                  'по которой вы платили налог.',
-                  style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
-                ),
-              ],
-              const SizedBox(height: 10),
-              Text(
-                'Правила ИИС — по данным на 2026 год: вычет со взносов до 400 000 ₽ в год; '
-                'у нового ИИС минимальный срок 5 лет для открытых в 2024–2026 годах, у старого — 3 года. '
-                'Точные условия уточняйте у брокера.',
-                style: TextStyle(fontSize: 11, height: 1.35, color: ctx.dim),
-              ),
-            ],
+            ..._iisFields(ctx, setSheet, draft),
             const SizedBox(height: 18),
             GradientButton(
               label: 'Сохранить',
               icon: Icons.check_rounded,
               onPressed: () async {
-                await IisService.save(
-                  portfolio.id,
-                  isIis ? IisSettings(type: type, openedAt: opened, ratePct: rate) : null,
-                );
+                await IisService.save(portfolio.id, draft.settings);
                 if (ctx.mounted) Navigator.pop(ctx);
+              },
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Новый портфель: название и сразу — ИИС ли это. Всё сохраняется одной
+/// кнопкой. Возвращает созданный портфель или null, если форму закрыли.
+Future<PortfolioMeta?> showNewPortfolioSheet(BuildContext context) {
+  final nameCtrl = TextEditingController();
+  final draft = _IisDraft(null);
+  String? error;
+
+  return showAppSheet<PortfolioMeta>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheet) => SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 14, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SheetHeader(
+              title: 'Новый портфель',
+              subtitle: 'Своя история сделок, выплат и планов',
+              trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+            ),
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: nameCtrl,
+              label: 'Название',
+              hint: 'Например, «Брокерский» или «ИИС»',
+              autofocus: true,
+              onChanged: (_) {
+                if (error != null) setSheet(() => error = null);
+              },
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 6),
+              Text(error!, style: const TextStyle(fontSize: 12, color: AppColors.negative)),
+            ],
+            const SizedBox(height: 6),
+            ..._iisFields(ctx, setSheet, draft),
+            const SizedBox(height: 18),
+            GradientButton(
+              label: 'Создать',
+              icon: Icons.add_rounded,
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) {
+                  setSheet(() => error = 'Введите название');
+                  return;
+                }
+                final meta = await PortfolioService.create(name);
+                final iis = draft.settings;
+                if (iis != null) await IisService.save(meta.id, iis);
+                if (ctx.mounted) Navigator.pop(ctx, meta);
               },
             ),
           ],

@@ -235,6 +235,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final taxDue = TaxService.enabled ? TaxService.totalTaxDue() : 0.0;
     final periodChange = AnalyticsService.portfolioChangeForPeriod(_period);
     final dayChange = AnalyticsService.portfolioDayChange();
+    // Изменение за сегодня — строкой сразу под стоимостью, как у брокеров:
+    // от закрытия прошлого торгового дня.
+    final Widget? dayLine = dayChange == null || holdings.isEmpty
+        ? null
+        : Builder(builder: (context) {
+            final text = '${dayChange.rub >= 0 ? '▲' : '▼'} ${Fmt.money(dayChange.rub.abs())} · '
+                '${dayChange.pct.abs().toStringAsFixed(2).replaceAll('.', ',')}%';
+            return HiddenAmount.forText(
+              text,
+              fontSize: 15,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: text,
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.pnl(dayChange.rub)),
+                      ),
+                      TextSpan(
+                        text: ' за сегодня',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.dim),
+                      ),
+                    ],
+                  ),
+                  maxLines: 1,
+                ),
+              ),
+            );
+          });
 
     final accent = context.accent;
     final isEmpty = holdings.isEmpty && totalIncome == 0 && realizedPnl == 0;
@@ -267,6 +298,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: _inspectHeader(context, inspect, timeline, currentValue,
                             secondRow: !isEmpty,
+                            dayKeeper: dayLine,
                             // Невидимая копия плашки периода держит высоту
                             // первой строки — карточка не дёргается.
                             heightKeeper: periodChange == null
@@ -318,6 +350,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1.5),
                           ),
                         ),
+                        if (dayLine != null) ...[
+                          const SizedBox(height: 4),
+                          dayLine,
+                        ],
                         if (!isEmpty) ...[
                           const SizedBox(height: 10),
                           Row(
@@ -346,30 +382,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ),
                                 ),
                               ),
-                              // Изменение портфеля за сегодня — рядом с общей
-                              // прибылью, мельче: от закрытия прошлого дня.
-                              if (dayChange != null) ...[
-                                const SizedBox(width: 10),
-                                Flexible(
-                                  child: HiddenAmount.forText(
-                                    Fmt.signedMoney(dayChange.rub),
-                                    fontSize: 12,
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        'сегодня ${Fmt.signedMoney(dayChange.rub)} · ${Fmt.pct(dayChange.pct, decimals: 2)}',
-                                        maxLines: 1,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.pnl(dayChange.rub),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              const SizedBox(width: 6),
+                              Text('за всё время', style: TextStyle(fontSize: 11.5, color: context.dim)),
                             ],
                           ),
                         ],
@@ -1349,6 +1363,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     double currentValue, {
     required bool secondRow,
     Widget? heightKeeper,
+    Widget? dayKeeper,
   }) {
     final dimStyle = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim);
     final String caption;
@@ -1413,6 +1428,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
       ),
+      // Невидимая строка «за сегодня» держит высоту, пока палец на графике.
+      if (dayKeeper != null) ...[
+        const SizedBox(height: 4),
+        Visibility(
+          visible: false,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: dayKeeper,
+        ),
+      ],
       if (secondRow) ...[
         const SizedBox(height: 10),
         Row(
@@ -1819,31 +1845,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 2),
-                    // Количество и цена, а после них — изменение за сегодня
-                    // цветной стрелкой. Оно следует тому же переключателю
-                    // «% / ₽», что и плашка справа.
-                    Text.rich(
-                      TextSpan(
-                        style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
-                        children: [
-                          TextSpan(text: _holdingSubtitle(ticker, h, weight)),
-                          if (day != null)
-                            TextSpan(
-                              text: ' · ${day.rub >= 0 ? '▲' : '▼'}'
-                                  '${_pnlUnitsRub ? (AppearanceService.amountsHidden ? '•••' : Fmt.money(day.rub.abs())) : '${day.pct.abs().toStringAsFixed(1)}%'}',
-                              style: TextStyle(color: AppColors.pnl(day.rub), fontWeight: FontWeight.w700),
-                            ),
-                        ],
-                      ),
+                    // Количество и цена. Изменение за сегодня — под мини-графиком.
+                    Text(
+                      _holdingSubtitle(ticker, h, weight),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
               ),
-              if (mini != null) ...[
+              // Столбик: график за 30 дней, под ним — изменение за сегодня.
+              // Без графика «сегодня» стоит на его месте. Следует тому же
+              // переключателю «% / ₽», что и плашка справа.
+              if (mini != null || day != null) ...[
                 const SizedBox(width: 8),
-                MiniSparkline(values: mini, width: 44, height: 20),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (mini != null) MiniSparkline(values: mini, width: 44, height: 20),
+                    if (mini != null && day != null) const SizedBox(height: 3),
+                    if (day != null)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 72),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            '${day.rub >= 0 ? '▲' : '▼'}'
+                            '${_pnlUnitsRub ? (AppearanceService.amountsHidden ? '•••' : Fmt.money(day.rub.abs())) : '${day.pct.abs().toStringAsFixed(1)}%'}',
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.pnl(day.rub),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ],
               const SizedBox(width: 8),
               // Сумма и плашка прибыли. Нажатие сюда переключает весь список

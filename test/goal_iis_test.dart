@@ -53,4 +53,25 @@ void main() {
       expect(IisService.minTermEnd(s(IisType.newType, 2025)), DateTime(2030, 3, 12));
     });
   });
+
+  group('сколько откладываете', () {
+    test('медиана не завышается одним крупным взносом', () {
+      expect(GoalService.median([20000, 20000, 25000, 15000, 20000, 2000000]), 20000);
+      expect(GoalService.median([10, 30]), 20);
+      expect(GoalService.median([]), 0);
+    });
+
+    test('когда цель будет достигнута', () {
+      expect(GoalService.monthsToReach(current: 0, target: 1000, monthly: 100, rate: 0), 10);
+      expect(GoalService.monthsToReach(current: 1000, target: 1000, monthly: 0, rate: 0), 0);
+      expect(GoalService.monthsToReach(current: 0, target: 1000, monthly: 0, rate: 0), isNull);
+    });
+
+    test('сумма «сколько откладываю» сохраняется в цели', () {
+      final g = FinancialGoal(amount: 7000000, deadline: DateTime(2030, 11), monthlySaving: 40000);
+      expect(FinancialGoal.fromJson(g.toJson())?.monthlySaving, 40000);
+      final old = FinancialGoal.fromJson({'a': 100, 'y': 2030, 'm': 1});
+      expect(old?.monthlySaving, isNull);
+    });
+  });
 }

@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:invest_tracker/services/backup_service.dart';
 import 'package:invest_tracker/services/currency_service.dart';
+import 'package:invest_tracker/services/goal_service.dart';
+import 'package:invest_tracker/services/iis_service.dart';
 import 'package:invest_tracker/services/manual_price_service.dart';
 import 'package:invest_tracker/services/online_price_service.dart';
 import 'package:invest_tracker/services/online_settings_service.dart';
@@ -59,6 +61,8 @@ void main() {
     await OnlineSettingsService.init();
     await OnlinePriceService.init();
     await SectorService.init();
+    await GoalService.init();
+    await IisService.init();
   });
 
   setUp(() async {
@@ -104,5 +108,57 @@ void main() {
       ])),
       throwsA(isA<FormatException>()),
     );
+  });
+
+  group('общий бэкап всех портфелей', () {
+    String fullBackup(List<Map<String, dynamic>> purchases) => jsonEncode({
+          'version': 5,
+          'exportedAt': DateTime(2026, 10, 1).toIso8601String(),
+          'portfolios': [
+            {
+              'name': 'Тестовый ИИС',
+              'status': 'active',
+              'purchases': purchases,
+              'customSectors': ['Мой сектор'],
+              'sectorAssignments': {'SU26228RMFS5': 'Мой сектор'},
+              'iis': {'t': 'newType', 'o': '2025-01-10T00:00:00.000', 'r': 13},
+              'goal': {'a': 1000000, 'y': 2030, 'm': 11, 's': 20000},
+            },
+          ],
+        });
+
+    PortfolioMeta portfolioNamed(String name) => PortfolioService.list.singleWhere((p) => p.name == name);
+
+    test('недостающий портфель создаётся, активный не меняется', () async {
+      final activeBefore = PortfolioService.activeId;
+      final result = await BackupService.importFromJson(fullBackup([
+        {...bondSale(fee: 10), 'id': 'buy-iis', 'isSell': false},
+      ]));
+
+      expect(result.portfolios, 1);
+      expect(PortfolioService.activeId, activeBefore);
+      final meta = portfolioNamed('Тестовый ИИС');
+      final records = await StorageService.readAllFor(meta.id);
+      expect(records.purchases.single.id, 'buy-iis');
+      final sectors = await SectorService.readFor(meta.id);
+      expect(sectors.custom, ['Мой сектор']);
+      expect(IisService.settingsFor(meta.id)?.type, IisType.newType);
+      expect(GoalService.goalFor(meta.id)?.monthlySaving, 20000);
+      // В активный портфель ничего не попало.
+      expect(StorageService.purchases, isEmpty);
+    });
+
+    test('портфель с тем же названием заменяется, а не дублируется', () async {
+      await BackupService.importFromJson(fullBackup([
+        {...bondSale(fee: 10), 'id': 'buy-1', 'isSell': false},
+      ]));
+      await BackupService.importFromJson(fullBackup([
+        {...bondSale(fee: 10), 'id': 'buy-2', 'isSell': false},
+      ]));
+
+      final meta = portfolioNamed('Тестовый ИИС');
+      final records = await StorageService.readAllFor(meta.id);
+      expect(records.purchases.map((p) => p.id), ['buy-2']);
+    });
   });
 }

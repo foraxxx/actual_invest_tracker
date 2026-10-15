@@ -114,9 +114,94 @@ class StorageService {
     final pBox = await Hive.openBox<Purchase>('purchases$s');
     final iBox = await Hive.openBox<Income>('incomes$s');
     final result = (purchases: pBox.values.toList(), incomes: iBox.values.toList());
-    await pBox.close();
-    await iBox.close();
+    if (portfolioId != PortfolioService.activeId) {
+      await pBox.close();
+      await iBox.close();
+    }
     return result;
+  }
+
+  /// Все данные портфеля (пополнения, сделки, выплаты, планы) — для общего
+  /// бэкапа. Активный портфель берётся из открытых боксов, остальные
+  /// читаются так же, как в [readDataFor], — в общей очереди.
+  static Future<
+      ({List<Deposit> deposits, List<Purchase> purchases, List<Income> incomes, List<Plan> plans})> readAllFor(
+    String portfolioId,
+  ) {
+    final next = _readQueue.then((_) => _readAllForNow(portfolioId));
+    _readQueue = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  static Future<
+      ({List<Deposit> deposits, List<Purchase> purchases, List<Income> incomes, List<Plan> plans})> _readAllForNow(
+    String portfolioId,
+  ) async {
+    if (portfolioId == PortfolioService.activeId) {
+      return (deposits: deposits, purchases: purchases, incomes: incomes, plans: plans);
+    }
+    final s = _suffix(portfolioId);
+    final dBox = await Hive.openBox<Deposit>('deposits$s');
+    final pBox = await Hive.openBox<Purchase>('purchases$s');
+    final iBox = await Hive.openBox<Income>('incomes$s');
+    final plBox = await Hive.openBox<Plan>('plans$s');
+    final result = (
+      deposits: dBox.values.toList(),
+      purchases: pBox.values.toList(),
+      incomes: iBox.values.toList(),
+      plans: plBox.values.toList(),
+    );
+    // Пока читали, портфель мог стать активным — тогда эти же боксы уже
+    // используются приложением, и закрывать их нельзя.
+    if (portfolioId != PortfolioService.activeId) {
+      await dBox.close();
+      await pBox.close();
+      await iBox.close();
+      await plBox.close();
+    }
+    return result;
+  }
+
+  /// Заменяет все данные указанного портфеля — для загрузки общего бэкапа.
+  /// Активный портфель меняется как обычно, остальные — напрямую в их
+  /// боксах, без переключения портфеля.
+  static Future<void> replaceFinancialDataFor(
+    String portfolioId, {
+    required List<Deposit> deposits,
+    required List<Purchase> purchases,
+    required List<Income> incomes,
+    required List<Plan> plans,
+  }) {
+    final next = _readQueue.then((_) async {
+      if (portfolioId == PortfolioService.activeId) {
+        await replaceFinancialData(deposits: deposits, purchases: purchases, incomes: incomes, plans: plans);
+        return;
+      }
+      final s = _suffix(portfolioId);
+      final dBox = await Hive.openBox<Deposit>('deposits$s');
+      final pBox = await Hive.openBox<Purchase>('purchases$s');
+      final iBox = await Hive.openBox<Income>('incomes$s');
+      final plBox = await Hive.openBox<Plan>('plans$s');
+      try {
+        await dBox.clear();
+        await pBox.clear();
+        await iBox.clear();
+        await plBox.clear();
+        await dBox.putAll({for (final v in deposits) v.id: v});
+        await pBox.putAll({for (final v in purchases) v.id: v});
+        await iBox.putAll({for (final v in incomes) v.id: v});
+        await plBox.putAll({for (final v in plans) v.id: v});
+      } finally {
+        if (portfolioId != PortfolioService.activeId) {
+          await dBox.close();
+          await pBox.close();
+          await iBox.close();
+          await plBox.close();
+        }
+      }
+    });
+    _readQueue = next.then((_) {}, onError: (_) {});
+    return next;
   }
 
   /// Тикеры из ВСЕХ портфелей сразу, а не только из активного.

@@ -36,6 +36,53 @@ class SectorService {
     await Hive.deleteBoxFromDisk(_boxName(portfolioId));
   }
 
+  static Future<void> _queue = Future.value();
+
+  /// Свои секторы и привязки бумаг любого портфеля — для общего бэкапа.
+  static Future<({List<String> custom, Map<String, String> assignments})> readFor(String portfolioId) {
+    final next = _queue.then((_) async {
+      if (portfolioId == PortfolioService.activeId) {
+        return (custom: customSectors, assignments: allAssignments);
+      }
+      final box = await Hive.openBox<String>(_boxName(portfolioId));
+      final result = _readBox(box);
+      if (portfolioId != PortfolioService.activeId) await box.close();
+      return result;
+    });
+    _queue = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  /// Заменяет секторы портфеля — для загрузки общего бэкапа.
+  static Future<void> replaceFor(String portfolioId, List<String> custom, Map<String, String> assignments) {
+    final next = _queue.then((_) async {
+      final isActive = portfolioId == PortfolioService.activeId;
+      final box = isActive ? _box : await Hive.openBox<String>(_boxName(portfolioId));
+      await box.clear();
+      if (custom.isNotEmpty) await box.put(_listKey, jsonEncode(custom));
+      await box.putAll({for (final e in assignments.entries) e.key.toUpperCase(): e.value});
+      if (isActive) {
+        version.value++;
+      } else if (portfolioId != PortfolioService.activeId) {
+        await box.close();
+      }
+    });
+    _queue = next.then((_) {}, onError: (_) {});
+    return next;
+  }
+
+  static ({List<String> custom, Map<String, String> assignments}) _readBox(Box<String> box) {
+    final raw = box.get(_listKey);
+    final custom = raw == null ? <String>[] : (jsonDecode(raw) as List).cast<String>();
+    final map = <String, String>{};
+    for (final key in box.keys) {
+      if (key == _listKey) continue;
+      final value = box.get(key);
+      if (value != null) map[key as String] = value;
+    }
+    return (custom: custom, assignments: map);
+  }
+
   static List<String> get customSectors {
     final raw = _box.get(_listKey);
     if (raw == null) return [];

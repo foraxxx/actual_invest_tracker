@@ -7,6 +7,7 @@ import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
+import '../services/appearance_service.dart';
 import '../services/goal_service.dart';
 
 const _gold = AppColors.gold;
@@ -30,15 +31,41 @@ String monthsText(int months) {
   return '$y г $m мес';
 }
 
-/// Главная мысль цели одной строкой.
+/// Короткая сумма для тесных мест: «5,43 млн», «540 тыс», «900 ₽».
+String goalShort(double v, {bool unit = true}) {
+  final abs = v.abs();
+  if (abs >= 1000000) {
+    var t = (v / 1000000).toStringAsFixed(abs >= 100000000 ? 0 : 2);
+    if (t.contains('.')) t = t.replaceFirst(RegExp(r'\.?0+$'), '');
+    return unit ? '${t.replaceAll('.', ',')} млн' : t.replaceAll('.', ',');
+  }
+  if (abs >= 1000) return unit ? '${(v / 1000).round()} тыс' : '${(v / 1000).round()}';
+  return Fmt.money(v);
+}
+
+/// «≈5,43 млн из 7» — сколько будет к сроку из суммы цели.
+String goalWillHave(GoalPlan p) {
+  final will = p.atDeadlineWithSaving;
+  final sameMln = will.abs() >= 1000000 && p.goal.amount.abs() >= 1000000;
+  return '≈${goalShort(will)} из ${goalShort(p.goal.amount, unit: !sameMln)}';
+}
+
+/// Главная мысль цели одной строкой — для свёрнутой карточки.
 String goalAdvice(GoalPlan p) {
   if (p.reached) return 'цель достигнута';
   if (p.overdue) return 'срок прошёл · осталось ${Fmt.money(p.remaining)}';
-  if (p.monthly <= 0.5) return 'успеваете и без новых взносов';
-  return 'вносите ≈${Fmt.money(_round100(p.monthly))}/мес';
+  final deadline = goalDeadlineText(p.goal.deadline);
+  if (p.monthly <= 0.5) return '$deadline · успеваете и без взносов';
+  if (p.savingEnough) {
+    final d = p.reachDate;
+    return d == null ? '$deadline · успеваете' : '$deadline · успеете ${goalDeadlineText(d)}';
+  }
+  return '$deadline · будет ${goalWillHave(p)}';
 }
 
 double _round100(double v) => (v / 100).ceil() * 100.0;
+
+String _capital(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
 /// Карточка цели на главной. Пока цели нет — тонкая строка «Поставить цель».
 ///
@@ -86,9 +113,7 @@ class GoalCard extends StatelessWidget {
         ? 'Цель · ${Fmt.money(p.goal.amount)}'
         : '${p.goal.name.trim()} · ${Fmt.money(p.goal.amount)}';
     final percent = '${(p.progress * 100).floor()}%';
-    final subtitle = p.reached
-        ? 'цель достигнута'
-        : '${goalDeadlineText(p.goal.deadline)} · ${goalAdvice(p)}';
+    final subtitle = goalAdvice(p);
 
     final header = GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -114,10 +139,20 @@ class GoalCard extends StatelessWidget {
                 const SizedBox(height: 1),
                 // Названия месяцев не обрезаются: если строка длинная, текст
                 // немного уменьшается.
-                AdaptiveSingleLineText(
-                  collapsed || p.reached ? subtitle : '${goalDeadlineText(p.goal.deadline)} · осталось ${monthsText(p.monthsLeft)}',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
-                ),
+                if (collapsed && !p.reached)
+                  HiddenAmount.forText(
+                    subtitle,
+                    fontSize: 11.5,
+                    child: AdaptiveSingleLineText(
+                      subtitle,
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
+                    ),
+                  )
+                else
+                  AdaptiveSingleLineText(
+                    p.reached ? subtitle : '${goalDeadlineText(p.goal.deadline)} · осталось ${monthsText(p.monthsLeft)}',
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
+                  ),
               ],
             ),
           ),
@@ -214,29 +249,63 @@ class GoalCard extends StatelessWidget {
               color: color.withOpacity(0.08),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  p.overdue
-                      ? 'Срок прошёл — цель можно продлить'
-                      : p.monthly <= 0.5
-                          ? 'Успеваете и без новых взносов'
-                          : 'Вносите ≈${Fmt.money(_round100(p.monthly))} в месяц',
-                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'с ростом по прогнозу ≈${p.annualGrowthPct.toStringAsFixed(0)}% годовых',
-                  style: TextStyle(fontSize: 11.5, color: context.dim),
-                ),
-              ],
-            ),
+            child: _advice(context, p, color),
           ),
         ],
       ],
     );
   }
+}
+
+/// Совет в развёрнутой карточке: хватает ли того, что человек откладывает.
+Widget _advice(BuildContext context, GoalPlan p, Color color) {
+  final title = TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color);
+  final dim = TextStyle(fontSize: 11.5, height: 1.35, color: context.dim);
+  final growth = 'с ростом по прогнозу ≈${p.annualGrowthPct.toStringAsFixed(0)}% годовых';
+
+  Widget line(String text, TextStyle style) => HiddenAmount.forText(
+        text,
+        fontSize: style.fontSize,
+        child: Text(text, style: style),
+      );
+
+  final lines = <Widget>[];
+  if (p.overdue) {
+    lines.add(Text('Срок прошёл — цель можно продлить', style: title));
+  } else if (p.monthly <= 0.5) {
+    lines
+      ..add(Text('Успеваете и без новых взносов', style: title))
+      ..add(const SizedBox(height: 3))
+      ..add(Text(growth, style: dim));
+  } else if (p.savingEnough) {
+    final d = p.reachDate;
+    lines
+      ..add(line(
+        'Откладываете ${Fmt.money(p.saving)}/мес — успеете${d == null ? '' : ' ${goalDeadlineText(d)}'}',
+        title,
+      ))
+      ..add(const SizedBox(height: 3))
+      ..add(Text(growth, style: dim));
+  } else {
+    final need = _round100(p.monthly);
+    final pct = p.goal.amount <= 0 ? 0 : (p.atDeadlineWithSaving / p.goal.amount * 100).floor();
+    final d = p.reachDate;
+    lines
+      ..add(line('Нужно ≈${Fmt.money(need)}/мес', title))
+      ..add(const SizedBox(height: 3))
+      ..add(line(
+        p.saving > 0
+            ? 'откладываете ${Fmt.money(p.saving)} — не хватает ${Fmt.money(_round100(p.savingShortfall))}'
+            : 'сколько откладываете, можно указать в цели',
+        dim,
+      ))
+      ..add(line(
+        '${_capital(goalDeadlineText(p.goal.deadline))} накопите ≈${Fmt.money((p.atDeadlineWithSaving / 1000).round() * 1000.0)} — $pct% цели',
+        dim,
+      ));
+    if (d != null && p.saving > 0) lines.add(line('С вашими взносами цель — ${goalDeadlineText(d)}', dim));
+  }
+  return Column(crossAxisAlignment: CrossAxisAlignment.start, children: lines);
 }
 
 /// Постановка или правка цели.
@@ -246,6 +315,9 @@ Future<void> showGoalEditSheet(BuildContext context) {
     text: existing == null ? '' : existing.amount.toStringAsFixed(0),
   );
   final nameCtrl = TextEditingController(text: existing?.name ?? '');
+  final suggested = GoalService.suggestedMonthlySaving();
+  final initialSaving = existing?.monthlySaving ?? suggested;
+  final savingCtrl = TextEditingController(text: initialSaving > 0 ? initialSaving.toStringAsFixed(0) : '');
   final now = DateTime.now();
   var month = existing?.deadline.month ?? 12;
   var year = existing?.deadline.year ?? now.year + 2;
@@ -256,7 +328,12 @@ Future<void> showGoalEditSheet(BuildContext context) {
     'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
   ];
 
-  double? parse() => double.tryParse(amountCtrl.text.replaceAll(' ', '').replaceAll(' ', '').replaceAll(',', '.'));
+  double? parseText(String t) => double.tryParse(t.replaceAll(' ', '').replaceAll(' ', '').replaceAll(',', '.'));
+  double? parse() => parseText(amountCtrl.text);
+  double? parseSaving() {
+    final v = parseText(savingCtrl.text);
+    return v == null || v < 0 ? null : v;
+  }
 
   return showAppSheet(
     context: context,
@@ -265,7 +342,11 @@ Future<void> showGoalEditSheet(BuildContext context) {
         final keyboard = MediaQuery.of(ctx).viewInsets.bottom;
         final amount = parse();
         final preview = amount != null && amount > 0
-            ? GoalService.plan(FinancialGoal(amount: amount, deadline: DateTime(year, month)))
+            ? GoalService.plan(FinancialGoal(
+                amount: amount,
+                deadline: DateTime(year, month),
+                monthlySaving: parseSaving() ?? 0,
+              ))
             : null;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(20, 14, 20, keyboard + 24),
@@ -326,6 +407,20 @@ Future<void> showGoalEditSheet(BuildContext context) {
                 ],
               ),
               const SizedBox(height: 12),
+              AppTextField(
+                controller: savingCtrl,
+                label: 'Откладываю в месяц, ₽',
+                number: true,
+                onChanged: (_) => setSheet(() {}),
+              ),
+              if (suggested > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'По вашим пополнениям за полгода — обычно ≈${Fmt.money(suggested)} в месяц',
+                  style: TextStyle(fontSize: 11.5, color: ctx.dim),
+                ),
+              ],
+              const SizedBox(height: 12),
               AppTextField(controller: nameCtrl, label: 'Название (необязательно)', hint: 'Например, «Квартира»'),
               if (preview != null) ...[
                 const SizedBox(height: 12),
@@ -336,7 +431,8 @@ Future<void> showGoalEditSheet(BuildContext context) {
                     preview.reached
                         ? 'В портфеле уже ${Fmt.money(preview.current)} — цель достигнута.'
                         : 'Сейчас в портфеле ${Fmt.money(preview.current)} — это ${(preview.progress * 100).floor()}%.\n'
-                            '${preview.monthsLeft <= 0 ? 'Срок уже наступил.' : preview.monthly <= 0.5 ? 'Успеваете и без новых взносов.' : 'Чтобы успеть, нужно вносить ≈${Fmt.money(_round100(preview.monthly))} в месяц.'}',
+                            '${preview.monthsLeft <= 0 ? 'Срок уже наступил.' : preview.monthly <= 0.5 ? 'Успеваете и без новых взносов.' : 'Чтобы успеть, нужно вносить ≈${Fmt.money(_round100(preview.monthly))} в месяц.'}'
+                            '${preview.monthsLeft > 0 && preview.monthly > 0.5 ? (preview.savingEnough ? '\nС вашими взносами успеете${preview.reachDate == null ? '' : ' ${goalDeadlineText(preview.reachDate!)}'}.' : '\nС вашими взносами к сроку будет ${goalWillHave(preview)}.') : ''}',
                     style: const TextStyle(fontSize: 13, height: 1.4),
                   ),
                 ),
@@ -359,7 +455,12 @@ Future<void> showGoalEditSheet(BuildContext context) {
                     setSheet(() => error = 'Срок уже прошёл — выберите месяц позже');
                     return;
                   }
-                  await GoalService.save(FinancialGoal(amount: a, deadline: DateTime(year, month), name: nameCtrl.text.trim()));
+                  await GoalService.save(FinancialGoal(
+                    amount: a,
+                    deadline: DateTime(year, month),
+                    name: nameCtrl.text.trim(),
+                    monthlySaving: parseSaving() ?? 0,
+                  ));
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -416,10 +517,12 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
                 height: 170,
                 child: CustomPaint(
                   painter: _GoalChartPainter(
-                    withContrib: p.pathWith,
+                    needed: p.monthly > 0.5 ? p.pathWith : const [],
+                    saving: p.saving > 0 ? p.pathSaving : const [],
                     without: p.pathWithout,
                     target: goal.amount,
                     grid: ctx.hairline,
+                    hidden: AppearanceService.amountsHidden,
                   ),
                   size: Size.infinite,
                 ),
@@ -428,18 +531,19 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
               Wrap(
                 spacing: 14,
                 children: [
-                  _legend(ctx, _gold, monthly > 0 ? 'с взносами ${Fmt.money(monthly)}/мес' : 'путь к цели', dashed: false),
-                  _legend(ctx, AppColors.violet, 'без новых взносов', dashed: true),
+                  if (monthly > 0) _legend(ctx, _gold, 'нужно ${Fmt.money(monthly)}/мес', dashed: false),
+                  if (p.saving > 0) _legend(ctx, _savingColor, 'ваши ${Fmt.money(p.saving)}/мес', dashed: false),
+                  _legend(ctx, AppColors.violet, 'без взносов', dashed: true),
                 ],
               ),
               const SizedBox(height: 14),
             ],
             row(ctx, 'Сейчас', '${Fmt.money(p.current)} · ${(p.progress * 100).floor()}%'),
             if (!p.reached && p.monthsLeft > 0) ...[
-              row(ctx, 'Без новых взносов к сроку', '≈${Fmt.money(p.withoutContributions)}'),
-              row(ctx, 'Нужно вносить', monthly > 0 ? '≈${Fmt.money(monthly)}/мес' : 'не нужно', color: _gold),
+              if (monthly > 0) _savingScale(ctx, p, monthly) else row(ctx, 'Нужно вносить', 'не нужно', color: _gold),
+              if (monthly > 0 && p.reachDate != null && p.saving > 0)
+                row(ctx, 'С вашими взносами цель', goalDeadlineText(p.reachDate!)),
             ],
-            if (p.averageMonthly > 0) row(ctx, 'Вы вносили в среднем', '≈${Fmt.money(_round100(p.averageMonthly))}/мес'),
             const SizedBox(height: 4),
             Text(
               'Рост — по реалистичному сценарию прогноза стоимости (≈${p.annualGrowthPct.toStringAsFixed(1)}% годовых): '
@@ -491,6 +595,92 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
   );
 }
 
+/// Шкала взноса: сколько из нужного в месяц человек уже откладывает.
+Widget _savingScale(BuildContext context, GoalPlan p, double needed) {
+  final enough = p.savingEnough;
+  final share = needed <= 0 ? 1.0 : (p.saving / needed).clamp(0.0, 1.0).toDouble();
+  final color = enough ? AppColors.positive : _savingColor;
+  final top = '${Fmt.group(p.saving)} из ${Fmt.money(needed)}';
+  final bottom = enough
+      ? 'хватает, чтобы успеть'
+      : p.saving > 0
+          ? 'не хватает ${Fmt.money(_round100(p.savingShortfall))}/мес'
+          : 'укажите в цели, сколько откладываете';
+  return Container(
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+    decoration: BoxDecoration(
+      color: context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Взнос в месяц', style: TextStyle(fontSize: 12.5, color: context.dim))),
+            HiddenAmount.forText(
+              top,
+              fontSize: 14,
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: Fmt.group(p.saving)),
+                  TextSpan(
+                    text: ' из ${Fmt.money(needed)}',
+                    style: TextStyle(color: context.dim, fontWeight: FontWeight.w600),
+                  ),
+                ]),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 9),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(5),
+          child: LinearProgressIndicator(
+            value: share,
+            minHeight: 9,
+            backgroundColor: context.hairline,
+            valueColor: AlwaysStoppedAnimation(color),
+          ),
+        ),
+        const SizedBox(height: 7),
+        Row(
+          children: [
+            Text(
+              '${(share * 100).floor()}% нужного',
+              style: TextStyle(fontSize: 11.5, color: context.dim),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: HiddenAmount.forText(
+                  bottom,
+                  fontSize: 11.5,
+                  child: AdaptiveSingleLineText(
+                    bottom,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: enough
+                          ? AppColors.positive
+                          : p.saving > 0
+                              ? AppColors.negative
+                              : context.dim,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 Widget _legend(BuildContext context, Color color, String text, {required bool dashed}) {
   return Row(
     mainAxisSize: MainAxisSize.min,
@@ -509,33 +699,47 @@ Widget _legend(BuildContext context, Color color, String text, {required bool da
   );
 }
 
+const _savingColor = AppColors.info;
+
 class _GoalChartPainter extends CustomPainter {
-  final List<double> withContrib;
+  /// Нужный путь к цели (с нужными взносами). Пусто — успеваете и так.
+  final List<double> needed;
+
+  /// Путь с тем, что человек откладывает. Пусто — взносы не указаны.
+  final List<double> saving;
   final List<double> without;
   final double target;
   final Color grid;
+  final bool hidden;
 
-  _GoalChartPainter({required this.withContrib, required this.without, required this.target, required this.grid});
+  _GoalChartPainter({
+    required this.needed,
+    required this.saving,
+    required this.without,
+    required this.target,
+    required this.grid,
+    required this.hidden,
+  });
+
+  static const _labelSpace = 66.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (withContrib.length < 2) return;
-    final all = [...withContrib, ...without, target];
+    if (without.length < 2) return;
+    // Справа оставляем место под подписи сумм у концов линий.
+    final w = size.width - _labelSpace;
+    final all = [...needed, ...saving, ...without, target];
     final lo = all.reduce(math.min) * 0.95;
     final hi = all.reduce(math.max) * 1.05;
     double y(double v) => size.height - (v - lo) / (hi - lo) * size.height;
-    double x(int i) => i / (withContrib.length - 1) * size.width;
+    double x(int i) => i / (without.length - 1) * w;
 
-    void dashedH(double yy, Color c) {
-      final p = Paint()
-        ..color = c
-        ..strokeWidth = 1.4;
-      for (double xx = 0; xx < size.width; xx += 10) {
-        canvas.drawLine(Offset(xx, yy), Offset(math.min(xx + 6, size.width), yy), p);
-      }
+    final dashH = Paint()
+      ..color = _gold.withOpacity(0.9)
+      ..strokeWidth = 1.4;
+    for (double xx = 0; xx < w; xx += 10) {
+      canvas.drawLine(Offset(xx, y(target)), Offset(math.min(xx + 6, w), y(target)), dashH);
     }
-
-    dashedH(y(target), _gold.withOpacity(0.9));
 
     Path pathOf(List<double> v) {
       final path = Path()..moveTo(x(0), y(v[0]));
@@ -555,18 +759,61 @@ class _GoalChartPainter extends CustomPainter {
         canvas.drawPath(m.extractPath(d, math.min(d + 5, m.length)), dashPaint);
       }
     }
-    canvas.drawPath(
-      pathOf(withContrib),
-      Paint()
-        ..color = _gold
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.6
-        ..strokeCap = StrokeCap.round,
-    );
-    canvas.drawCircle(Offset(x(0), y(withContrib.first)), 4.5, Paint()..color = Colors.white);
+    Paint solid(Color c, double width) => Paint()
+      ..color = c
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round;
+    if (needed.length > 1) canvas.drawPath(pathOf(needed), solid(_gold, 2.6));
+    if (saving.length > 1) canvas.drawPath(pathOf(saving), solid(_savingColor, 2.4));
+    canvas.drawCircle(Offset(x(0), y(without.first)), 4.5, Paint()..color = Colors.white);
+
+    // Подписи у концов линий: цель, с вашими взносами, без взносов. Если
+    // концы рядом, подписи раздвигаются, чтобы не налезать друг на друга.
+    final labels = <({double value, String text, Color color})>[
+      (value: target, text: goalShort(target), color: _gold),
+      if (saving.length > 1 && (saving.last - target).abs() > (hi - lo) * 0.02)
+        (value: saving.last, text: '≈${goalShort(saving.last)}', color: _savingColor),
+      (value: without.last, text: '≈${goalShort(without.last)}', color: AppColors.violet),
+    ];
+    final painters = [
+      for (final l in labels)
+        TextPainter(
+          text: TextSpan(
+            text: hidden ? '•••' : l.text,
+            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: l.color),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: _labelSpace - 6),
+    ];
+    final order = List.generate(labels.length, (i) => i)..sort((a, b) => y(labels[a].value).compareTo(y(labels[b].value)));
+    final tops = List<double>.filled(labels.length, 0);
+    const gap = 2.0;
+    double prevBottom = -double.infinity;
+    for (final i in order) {
+      final h = painters[i].height;
+      var top = (y(labels[i].value) - h / 2).clamp(0.0, size.height - h).toDouble();
+      if (top < prevBottom + gap) top = prevBottom + gap;
+      tops[i] = top;
+      prevBottom = top + h;
+    }
+    // Если вылезли за низ — сдвигаем всю стопку вверх.
+    final overflow = prevBottom - size.height;
+    if (overflow > 0) {
+      for (int i = 0; i < tops.length; i++) {
+        tops[i] = math.max(0, tops[i] - overflow);
+      }
+    }
+    for (int i = 0; i < labels.length; i++) {
+      painters[i].paint(canvas, Offset(w + 6, tops[i]));
+    }
   }
 
   @override
   bool shouldRepaint(_GoalChartPainter old) =>
-      old.target != target || old.withContrib.length != withContrib.length;
+      old.target != target ||
+      old.hidden != hidden ||
+      old.needed.length != needed.length ||
+      old.saving.length != saving.length ||
+      old.without.length != without.length;
 }

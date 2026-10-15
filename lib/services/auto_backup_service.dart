@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'appearance_service.dart';
+import 'goal_service.dart';
+import 'iis_service.dart';
+import 'portfolio_service.dart';
 import 'storage_service.dart';
 import 'backup_service.dart';
 import 'backup_settings_service.dart';
@@ -15,8 +19,8 @@ import 'logo_service.dart';
 /// паузу после последнего изменения (дебаунс), чтобы не писать файл на
 /// каждую отдельную мелкую правку, если их несколько подряд.
 ///
-/// Бэкапит только АКТИВНЫЙ на момент сохранения портфель (как и ручной
-/// экспорт) — один и тот же файл перезаписывается, а не копится.
+/// Бэкапит ВСЕ портфели одним файлом (как и ручной экспорт) — один и тот же
+/// файл перезаписывается, а не копится.
 class AutoBackupService {
   static Timer? _debounce;
   static bool _attached = false;
@@ -30,6 +34,11 @@ class AutoBackupService {
     SectorService.version.addListener(_onChange);
     FavoritesService.version.addListener(_onChange);
     LogoService.version.addListener(_onChange);
+    GoalService.version.addListener(_onChange);
+    IisService.version.addListener(_onChange);
+    PortfolioService.version.addListener(_onChange);
+    // Часть оформления тоже входит в бэкап.
+    AppearanceService.version.addListener(_onChange);
   }
 
   static void _onChange() {
