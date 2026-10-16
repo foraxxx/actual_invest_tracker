@@ -135,6 +135,10 @@ class GoalPlan {
   /// откладывать [saving]. null — не достигается и за 50 лет.
   final int? reachMonths;
 
+  /// Через сколько месяцев цель будет достигнута совсем без взносов — только
+  /// ростом портфеля. null — не за 50 лет.
+  final int? reachWithoutMonths;
+
   const GoalPlan({
     required this.goal,
     required this.current,
@@ -147,7 +151,16 @@ class GoalPlan {
     required this.pathWith,
     required this.pathSaving,
     required this.reachMonths,
+    this.reachWithoutMonths,
   });
+
+  /// Примерный месяц, когда цель будет достигнута без взносов.
+  DateTime? get reachWithoutDate {
+    final m = reachWithoutMonths;
+    if (m == null) return null;
+    final now = DateTime.now();
+    return DateTime(now.year, now.month + m);
+  }
 
   /// Сколько будет к сроку, если откладывать [saving].
   double get atDeadlineWithSaving => pathSaving.isEmpty ? current : pathSaving.last;
@@ -297,6 +310,7 @@ class GoalService {
       pathWith: withContrib,
       pathSaving: withSaving,
       reachMonths: monthsToReach(current: current, target: goal.amount, monthly: saving, rate: rate),
+      reachWithoutMonths: monthsToReach(current: current, target: goal.amount, monthly: 0, rate: rate),
     );
   }
 

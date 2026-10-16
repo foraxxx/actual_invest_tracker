@@ -67,6 +67,17 @@ void main() {
     expect(p.reachMonths, (p.toBuy / 40000).ceil());
   });
 
+  test('вехи идут по возрастанию, последняя — когда цель достигнута', () {
+    final p = plan(PassiveMode.average);
+    final m = p.milestones();
+    expect(m.map((e) => e.$1), [0.25, 0.5, 0.75, 1.0]);
+    final months = m.map((e) => e.$2!).toList();
+    for (int i = 1; i < months.length; i++) {
+      expect(months[i] >= months[i - 1], isTrue);
+    }
+    expect(months.last, p.reachMonths);
+  });
+
   test('со сроком считается, сколько откладывать', () {
     final now = DateTime.now();
     final p = plan(PassiveMode.average, deadline: DateTime(now.year + 10, now.month));

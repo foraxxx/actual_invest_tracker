@@ -59,7 +59,10 @@ String goalAdvice(GoalPlan p) {
   if (p.reached) return 'цель достигнута';
   if (p.overdue) return 'срок прошёл · осталось ${Fmt.money(p.remaining)}';
   final deadline = goalDeadlineText(p.goal.deadline);
-  if (p.monthly <= 0.5) return '$deadline · успеваете и без взносов';
+  if (p.monthly <= 0.5) {
+    final d = p.reachWithoutDate;
+    return d == null ? '$deadline · успеваете и без взносов' : '$deadline · без взносов — ${goalDeadlineText(d)}';
+  }
   if (p.savingEnough) {
     final d = p.reachDate;
     return d == null ? '$deadline · успеваете' : '$deadline · успеете ${goalDeadlineText(d)}';
@@ -278,7 +281,12 @@ Widget _advice(BuildContext context, GoalPlan p, Color color) {
     lines.add(Text('Срок прошёл — цель можно продлить', style: title));
   } else if (p.monthly <= 0.5) {
     lines
-      ..add(Text('Успеваете и без новых взносов', style: title))
+      ..add(Text(
+        p.reachWithoutDate == null
+            ? 'Успеваете и без новых взносов'
+            : 'Без новых взносов — примерно ${goalDeadlineText(p.reachWithoutDate!)}',
+        style: title,
+      ))
       ..add(const SizedBox(height: 3))
       ..add(Text(growth, style: dim));
   } else if (p.savingEnough) {
@@ -330,11 +338,6 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
   final passiveNameCtrl = TextEditingController(text: existingPassive?.name ?? '');
   var passiveMode = existingPassive?.mode ?? PassiveMode.average;
   DateTime? passiveDeadline = existingPassive?.deadline;
-  final yieldCtrl = TextEditingController(
-    text: existingPassive?.newYieldPct == null
-        ? ''
-        : existingPassive!.newYieldPct!.toStringAsFixed(1).replaceAll('.0', '').replaceAll('.', ','),
-  );
   PassiveGoalService.refreshInBackground();
   final amountCtrl = TextEditingController(
     text: existing == null ? '' : existing.amount.toStringAsFixed(0),
@@ -380,7 +383,6 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
             onMode: (m) => setSheet(() => passiveMode = m),
             deadline: passiveDeadline,
             onDeadline: (d) => setSheet(() => passiveDeadline = d),
-            yieldCtrl: yieldCtrl,
             onChanged: () => setSheet(() => error = null),
             error: error,
             parseText: parseText,
@@ -482,7 +484,7 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
                     preview.reached
                         ? 'В портфеле уже ${Fmt.money(preview.current)} — цель достигнута.'
                         : 'Сейчас в портфеле ${Fmt.money(preview.current)} — это ${(preview.progress * 100).floor()}%.\n'
-                            '${preview.monthsLeft <= 0 ? 'Срок уже наступил.' : preview.monthly <= 0.5 ? 'Успеваете и без новых взносов.' : 'Чтобы успеть, нужно вносить ≈${Fmt.money(_round100(preview.monthly))} в месяц.'}'
+                            '${preview.monthsLeft <= 0 ? 'Срок уже наступил.' : preview.monthly <= 0.5 ? 'Успеваете и без новых взносов${preview.reachWithoutDate == null ? '' : ' — примерно ${goalDeadlineText(preview.reachWithoutDate!)}'}.' : 'Чтобы успеть, нужно вносить ≈${Fmt.money(_round100(preview.monthly))} в месяц.'}'
                             '${preview.monthsLeft > 0 && preview.monthly > 0.5 ? (preview.savingEnough ? '\nС вашими взносами успеете${preview.reachDate == null ? '' : ' ${goalDeadlineText(preview.reachDate!)}'}.' : '\nС вашими взносами к сроку будет ${goalWillHave(preview)}.') : ''}',
                     style: const TextStyle(fontSize: 13, height: 1.4),
                   ),
@@ -530,8 +532,6 @@ const _monthNom = [
   'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
 ];
 
-String _pct(double v) => '${v.toStringAsFixed(1).replaceAll('.', ',')}%';
-
 Widget _kindToggle(GoalKind selected, ValueChanged<GoalKind> onChanged) => SegmentedToggle<GoalKind>(
       values: GoalKind.values,
       selected: selected,
@@ -553,7 +553,6 @@ Widget _passiveForm(
   required ValueChanged<PassiveMode> onMode,
   required DateTime? deadline,
   required ValueChanged<DateTime?> onDeadline,
-  required TextEditingController yieldCtrl,
   required VoidCallback onChanged,
   required String? error,
   required double? Function(String) parseText,
@@ -561,15 +560,12 @@ Widget _passiveForm(
 }) {
   final income = parseText(incomeCtrl.text);
   final saving = parseText(savingCtrl.text);
-  final ownYield = parseText(yieldCtrl.text);
-  final market = PassiveGoalService.marketYield;
   final preview = income != null && income > 0
       ? PassiveGoalService.plan(PassiveGoal(
           monthly: income,
           mode: mode,
           monthlySaving: saving == null || saving < 0 ? 0 : saving,
           deadline: deadline,
-          newYieldPct: ownYield == null || ownYield <= 0 ? null : ownYield,
         ))
       : null;
   final now = DateTime.now();
@@ -579,7 +575,7 @@ Widget _passiveForm(
     final d = p.reachDate;
     final req = p.requiredMonthly;
     return 'Сейчас $cur — это ${(p.progress * 100).floor()}%. '
-        'Докупить ≈${goalShortRub(p.toBuy)} под ${_pct(p.newYieldPct)}.'
+        'Докупить ≈${goalShortRub(p.toBuy)}.'
         '${req != null && p.goal.deadline != null ? '\nЧтобы успеть ${goalDeadlineText(p.goal.deadline!)}, откладывать ≈${Fmt.money(_round100(req))}/мес.' : ''}'
         '${d != null && p.saving > 0 ? '\nОткладывая ${Fmt.money(p.saving)}/мес, дойдёте ${goalDeadlineText(d)}.' : ''}';
   }
@@ -673,22 +669,6 @@ Widget _passiveForm(
           ),
         ],
         const SizedBox(height: 12),
-        AppTextField(
-          controller: yieldCtrl,
-          label: 'Доходность новых покупок, % годовых',
-          hint: 'авто · ${_pct(market ?? fallbackNewYieldPct)}',
-          number: true,
-          onChanged: (_) => onChanged(),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          market == null
-              ? 'Пусто — автоматически. Рынок облигаций пока не загрузился, беру ${_pct(fallbackNewYieldPct)}'
-              : 'Пусто — автоматически по рынку облигаций: купон к цене сейчас ≈${_pct(market)}. '
-                  'Под неё считаю, сколько докупить',
-          style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
-        ),
-        const SizedBox(height: 12),
         AppTextField(controller: nameCtrl, label: 'Название (необязательно)', hint: 'Например, «Вторая зарплата»'),
         if (preview != null) ...[
           const SizedBox(height: 12),
@@ -720,14 +700,12 @@ Widget _passiveForm(
               onError('Срок уже прошёл — выберите месяц позже');
               return;
             }
-            final y = parseText(yieldCtrl.text);
             await GoalService.savePassive(PassiveGoal(
               monthly: i,
               mode: mode,
               monthlySaving: sv == null || sv < 0 ? 0 : sv,
               name: nameCtrl.text.trim(),
               deadline: deadline,
-              newYieldPct: y == null || y <= 0 ? null : y,
             ));
             // Цель одна — прежняя цель накопить сумму заменяется.
             await GoalService.delete();
@@ -808,6 +786,9 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
             row(ctx, 'Сейчас', '${Fmt.money(p.current)} · ${(p.progress * 100).floor()}%'),
             if (!p.reached && p.monthsLeft > 0) ...[
               if (monthly > 0) _savingScale(ctx, p, monthly) else row(ctx, 'Нужно вносить', 'не нужно', color: _gold),
+              // Успевает и без взносов — показываем, когда примерно.
+              if (monthly <= 0 && p.reachWithoutDate != null)
+                row(ctx, 'Без взносов цель', 'примерно ${goalDeadlineText(p.reachWithoutDate!)}'),
               if (monthly > 0 && p.reachDate != null && p.saving > 0)
                 row(ctx, 'С вашими взносами цель', goalDeadlineText(p.reachDate!)),
             ],

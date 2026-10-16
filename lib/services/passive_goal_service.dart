@@ -63,6 +63,9 @@ class PassivePlan {
   /// Портфель — ИИС: налог с купонов не удерживается.
   final bool iis;
 
+  /// Сколько из стоимости портфеля лежит в бумагах, которые платят выплаты.
+  final double payingValue;
+
   const PassivePlan({
     required this.goal,
     required this.months,
@@ -72,7 +75,40 @@ class PassivePlan {
     required this.newYieldPct,
     required this.newYieldAuto,
     this.iis = false,
+    this.payingValue = 0,
   });
+
+  /// Доходность выплат тех бумаг, что платят, % годовых.
+  double get payingYieldPct => payingValue <= 0 ? 0 : annual / payingValue * 100;
+
+  /// Доход в месяц, если портфель станет [capital]: нынешние выплаты плюс
+  /// докупленное под доходность новых покупок.
+  double incomeAt(double capital) => current + math.max(0, capital - value) * newYieldPct / 100 / 12;
+
+  /// Вехи пути: доля цели → через сколько месяцев (null — не за 50 лет).
+  List<(double, int?)> milestones() {
+    final targets = [0.25, 0.5, 0.75, 1.0];
+    final result = <(double, int?)>[];
+    var v = value;
+    var i = 0;
+    for (final t in targets) {
+      if (current >= goal.monthly * t) {
+        result.add((t, 0));
+        continue;
+      }
+      int? found;
+      while (i <= 600) {
+        if (incomeAt(v) >= goal.monthly * t - 0.5) {
+          found = i;
+          break;
+        }
+        v = v * (1 + rate) + saving;
+        i++;
+      }
+      result.add((t, found));
+    }
+    return result;
+  }
 
   double get annual => months.fold(0.0, (a, m) => a + m.total);
   double get average => months.isEmpty ? 0 : annual / months.length;
@@ -163,13 +199,23 @@ class PassiveGoalService {
       value: value,
       saving: saving,
       rate: GoalService.monthlyGrowthRate(60, value),
-      newYieldPct: goal.newYieldPct ?? market ?? fallbackNewYieldPct,
-      newYieldAuto: goal.newYieldPct == null,
+      // Доходность новых покупок всегда автоматически — по рынку.
+      newYieldPct: market ?? fallbackNewYieldPct,
+      newYieldAuto: true,
       iis: IisService.current != null,
+      payingValue: _payingValue(),
     );
     _cacheKey = key;
     _cache = result;
     return result;
+  }
+
+  static double _payingValue() {
+    double sum = 0;
+    for (final e in AnalyticsService.currentHoldings().entries) {
+      if (PayoutForecastService.forecastForTicker(e.key).rub > 0) sum += e.value.valueRub;
+    }
+    return sum;
   }
 
   // --- Доходность рынка облигаций ---

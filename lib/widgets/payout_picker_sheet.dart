@@ -32,9 +32,15 @@ enum _Filter { inMonth, monthly, ofz, corp }
 
 /// Подбор бумаг с выплатами в месяце [month]: облигации по графику биржи и
 /// акции по вашей истории дивидендов. [deficit] — сколько не хватает до цели.
-Future<void> showPayoutPickerSheet(BuildContext context, {required DateTime month, required double deficit}) {
+Future<void> showPayoutPickerSheet(
+  BuildContext context, {
+  required DateTime month,
+  required double deficit,
+  bool monthlyOnly = false,
+}) {
   var tab = 0; // 0 — облигации, 1 — акции
-  var filter = _Filter.inMonth;
+  // Из цели «докупить» — сразу облигации с ежемесячным купоном.
+  var filter = monthlyOnly ? _Filter.monthly : _Filter.inMonth;
   final bondsFuture = PayoutPickerService.bondsFor(month);
   final stocks = PayoutPickerService.stocksFor(month);
   final monthIn = monthNamesIn[month.month - 1];
@@ -54,8 +60,10 @@ Future<void> showPayoutPickerSheet(BuildContext context, {required DateTime mont
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
             children: [
               SheetHeader(
-                title: 'Выплаты в $monthIn',
-                subtitle: deficit > 0.5 ? 'не хватает ${Fmt.money(deficit)}' : 'до цели хватает — можно добавить запас',
+                title: monthlyOnly ? 'Выплаты каждый месяц' : 'Выплаты в $monthIn',
+                subtitle: deficit > 0.5
+                    ? 'не хватает ${Fmt.money(deficit)}${monthlyOnly ? ' в месяц' : ''}'
+                    : 'до цели хватает — можно добавить запас',
                 trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
               ),
               const SizedBox(height: 12),

@@ -55,7 +55,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   PeriodFilter _period = PeriodFilter.all;
-  /// Год в календаре «Дивиденды и купоны».
+  /// Год в календаре «Выплаты».
   int _incomeYear = DateTime.now().year;
   // Вкладка «Распределения» запоминается между запусками.
   _AllocationMode _alloc = _AllocationMode.values.firstWhere(
@@ -711,27 +711,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ));
     }
 
-    // --- Доход по месяцам: календарь ---
-    // Прошедшие месяцы — полученное, остаток года — прогноз пунктиром.
-    if (StorageService.incomes.isNotEmpty || hasPayouts) {
-      final years = PayoutCalendarService.years();
+    // --- Выплаты по месяцам: календарь ---
+    // Только полученное — за прошлые годы и текущий. Прогноз живёт в
+    // карточке «Прогноз» и в цели по пассивному доходу.
+    if (StorageService.incomes.isNotEmpty) {
+      final years = PayoutCalendarService.years(withForecast: false);
       if (!years.contains(_incomeYear)) _incomeYear = DateTime.now().year;
-      final cells = PayoutCalendarService.year(_incomeYear);
+      final cells = PayoutCalendarService.year(_incomeYear, withForecast: false);
       final yearTotal = cells.fold(0.0, (s, c) => s + c.total);
-      final yearHasForecast = cells.any((c) => c.hasForecast);
       children.add(const SizedBox(height: 20));
       final payCollapsed = sectionsCollapsed.contains(_secPayouts);
       children.add(_section(
         context,
         id: _secPayouts,
         icon: Icons.calendar_month_rounded,
-        title: 'Дивиденды и купоны',
-        subtitle: yearTotal <= 0
-            ? 'Выплат за $_incomeYear год нет'
-            : '${yearHasForecast ? 'Получено и ожидается' : 'Получено'} за $_incomeYear',
-        trailing: yearTotal <= 0
-            ? null
-            : _moneyText('${yearHasForecast ? '≈' : ''}${Fmt.money(yearTotal)}', color: AppColors.positive),
+        title: 'Выплаты',
+        subtitle: yearTotal <= 0 ? 'Выплат за $_incomeYear год нет' : 'Получено за $_incomeYear',
+        trailing: yearTotal <= 0 ? null : _moneyText(Fmt.money(yearTotal), color: AppColors.positive),
         collapsed: payCollapsed,
         preview: () => _monthsPreview(context, cells),
         body: Column(
@@ -1660,8 +1656,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// Превью «Дивидендов и купонов»: 12 квадратиков месяцев, чем ярче — тем
-  /// больше выплат, прогноз обведён.
+  /// Превью «Выплат»: 12 квадратиков месяцев, чем ярче — тем больше выплат.
   Widget _monthsPreview(BuildContext context, List<PayoutMonthCell> cells) {
     final maxTotal = cells.fold(0.0, (m, c) => math.max(m, c.total));
     final empty = context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh;
@@ -1694,9 +1689,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('янв', style: TextStyle(fontSize: 10, color: context.dim)),
+            Text('январь', style: TextStyle(fontSize: 10, color: context.dim)),
             Text('по месяцам', style: TextStyle(fontSize: 10, color: context.dim)),
-            Text('дек', style: TextStyle(fontSize: 10, color: context.dim)),
+            Text('декабрь', style: TextStyle(fontSize: 10, color: context.dim)),
           ],
         ),
       ],
