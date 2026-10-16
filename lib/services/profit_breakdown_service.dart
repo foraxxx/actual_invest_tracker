@@ -3,7 +3,7 @@ import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'storage_service.dart';
 
-/// Из чего сложилась прибыль за период.
+/// Из чего сложилась прибыль за период — в целом и по каждой бумаге.
 ///
 /// Части всегда в сумме дают ровно ту же прибыль, что на плитке «Прибыль»
 /// (AnalyticsService.profitForPeriod):
@@ -11,41 +11,40 @@ import 'storage_service.dart';
 class ProfitBreakdown {
   final double total;
 
-  /// Переоценка бумаг и результат продаж — всё, что не выплаты и не
-  /// комиссии.
-  final double priceGrowth;
+  /// Бумага → переоценка и результат продаж за период.
+  final Map<String, double> priceByTicker;
 
-  /// Купоны и дивиденды до налога.
-  final double coupons;
-  final double dividends;
+  /// Бумага → купоны / дивиденды до налога.
+  final Map<String, double> couponsByTicker;
+  final Map<String, double> dividendsByTicker;
 
-  /// Комиссии брокера вместе с НКД облигаций: в отчёте брокера они идут одной
-  /// суммой, и разделить их задним числом нельзя. Уплаченный при покупке НКД
-  /// возвращается в ближайшем купоне.
-  final double feesAndAccrued;
+  /// Бумага → комиссии брокера вместе с НКД облигаций (в отчёте брокера они
+  /// идут одной суммой). Положительное число — расход.
+  final Map<String, double> feesByTicker;
 
-  /// Налог, удержанный с купонов и дивидендов.
-  final double tax;
+  /// Бумага → налог, удержанный с купонов и дивидендов.
+  final Map<String, double> taxByTicker;
 
-  /// Уже получено деньгами: выплаты после налога и результат продаж.
-  final double inPocket;
-
-  /// Остальное — рост того, что ещё держите.
-  double get onPaper => total - inPocket;
-
-  /// Начало периода; null — с первой сделки.
+  /// Начало периода; null — неизвестно (нет сделок).
   final DateTime? from;
 
   const ProfitBreakdown({
     required this.total,
-    required this.priceGrowth,
-    required this.coupons,
-    required this.dividends,
-    required this.feesAndAccrued,
-    required this.tax,
-    required this.inPocket,
+    required this.priceByTicker,
+    required this.couponsByTicker,
+    required this.dividendsByTicker,
+    required this.feesByTicker,
+    required this.taxByTicker,
     required this.from,
   });
+
+  static double _sum(Map<String, double> m) => m.values.fold(0.0, (a, v) => a + v);
+
+  double get priceGrowth => _sum(priceByTicker);
+  double get coupons => _sum(couponsByTicker);
+  double get dividends => _sum(dividendsByTicker);
+  double get feesAndAccrued => _sum(feesByTicker);
+  double get tax => _sum(taxByTicker);
 }
 
 class ProfitBreakdownService {
@@ -57,40 +56,70 @@ class ProfitBreakdownService {
     final total = AnalyticsService.profitForPeriod(f);
 
     bool inPeriod(DateTime d) => (start == null || d.isAfter(start)) && !d.isAfter(end);
+    String key(String t) => t.toUpperCase();
+    void add(Map<String, double> m, String t, double v) => m[key(t)] = (m[key(t)] ?? 0) + v;
 
-    double coupons = 0, dividends = 0, tax = 0;
+    final coupons = <String, double>{};
+    final dividends = <String, double>{};
+    final tax = <String, double>{};
     for (final i in StorageService.incomes) {
       if (!inPeriod(i.date)) continue;
       final gross = CurrencyService.toRub(i.amountGross, i.currency, date: i.date);
       final paid = CurrencyService.toRub(i.taxPaid, i.currency, date: i.date);
-      if (i.type == IncomeType.coupon) {
-        coupons += gross;
-      } else {
-        dividends += gross;
-      }
-      tax += paid;
+      add(i.type == IncomeType.coupon ? coupons : dividends, i.ticker, gross);
+      if (paid.abs() > 0.005) add(tax, i.ticker, paid);
     }
 
-    double fees = 0;
+    // Рост цен по бумаге: стоимость в конце − в начале + деньги от сделок
+    // (продажи плюсом, покупки минусом) + комиссии, которые показываем
+    // отдельной строкой. Так части по всем бумагам складываются ровно в
+    // прибыль за период.
+    final fees = <String, double>{};
+    final price = <String, double>{};
     for (final p in StorageService.purchases) {
       if (!inPeriod(p.date)) continue;
-      fees += CurrencyService.toRub(p.fee, p.currency, date: p.date);
+      final amount = CurrencyService.toRub(p.settlementAmount, p.currency, date: p.date);
+      add(price, p.ticker, p.isSell ? amount : -amount);
+      final fee = CurrencyService.toRub(p.fee, p.currency, date: p.date);
+      if (fee.abs() > 0.005) {
+        add(fees, p.ticker, fee);
+        add(price, p.ticker, fee);
+      }
     }
+    for (final e in AnalyticsService.currentHoldings().entries) {
+      add(price, e.key, e.value.valueRub);
+    }
+    if (start != null) {
+      for (final e in AnalyticsService.holdingsAt(date: start).entries) {
+        add(price, e.key, -e.value.valueRub);
+      }
+    }
+    price.removeWhere((_, v) => v.abs() < 0.5);
 
-    final payoutsNet = coupons + dividends - tax;
-    // Всё остальное — изменение цен (включая результат продаж). Комиссии в
-    // прибыли уже вычтены, поэтому возвращаем их сюда, чтобы показать
-    // отдельной строкой.
-    final price = total - payoutsNet + fees;
+    // Погрешность округления курсов кладём в самую крупную строку, чтобы
+    // итог буквально совпадал с плиткой «Прибыль».
+    final parts = price.values.fold(0.0, (a, v) => a + v) +
+        coupons.values.fold(0.0, (a, v) => a + v) +
+        dividends.values.fold(0.0, (a, v) => a + v) -
+        fees.values.fold(0.0, (a, v) => a + v) -
+        tax.values.fold(0.0, (a, v) => a + v);
+    final diff = total - parts;
+    if (diff.abs() >= 0.5) {
+      if (price.isEmpty) {
+        price['—'] = diff;
+      } else {
+        final biggest = price.entries.reduce((a, b) => a.value.abs() >= b.value.abs() ? a : b).key;
+        price[biggest] = price[biggest]! + diff;
+      }
+    }
 
     return ProfitBreakdown(
       total: total,
-      priceGrowth: price,
-      coupons: coupons,
-      dividends: dividends,
-      feesAndAccrued: fees,
-      tax: tax,
-      inPocket: payoutsNet + realizedPnlRub(from: start, to: end),
+      priceByTicker: price,
+      couponsByTicker: coupons,
+      dividendsByTicker: dividends,
+      feesByTicker: fees,
+      taxByTicker: tax,
       from: start ?? _firstTradeDate(),
     );
   }
@@ -101,40 +130,5 @@ class ProfitBreakdownService {
       if (first == null || p.date.isBefore(first)) first = p.date;
     }
     return first;
-  }
-
-  /// Результат продаж за период по средней цене входа — тот же метод, что в
-  /// AnalyticsService.totalRealizedPnlRub, только продажи берутся из периода.
-  static double realizedPnlRub({DateTime? from, DateTime? to}) {
-    final purchases = [...StorageService.purchases]..sort(AnalyticsService.compareTrades);
-    final qty = <String, double>{};
-    final costBasisRub = <String, double>{};
-    double realized = 0;
-    for (final p in purchases) {
-      final t = p.ticker;
-      qty.putIfAbsent(t, () => 0);
-      costBasisRub.putIfAbsent(t, () => 0);
-      if (p.isSell) {
-        final curQty = qty[t]!;
-        final sellQty = p.quantity > curQty ? curQty : p.quantity;
-        if (curQty > 0) {
-          final avg = costBasisRub[t]! / curQty;
-          final cost = sellQty * avg;
-          final counted = (from == null || p.date.isAfter(from)) && (to == null || !p.date.isAfter(to));
-          if (counted) {
-            final proceeds = CurrencyService.toRub(sellQty * p.pricePerUnit - p.fee, p.currency, date: p.date);
-            realized += proceeds - cost;
-          }
-          costBasisRub[t] = costBasisRub[t]! - cost;
-        }
-        final newQty = curQty - sellQty;
-        qty[t] = newQty < 0 ? 0 : newQty;
-      } else {
-        costBasisRub[t] = costBasisRub[t]! +
-            CurrencyService.toRub(p.quantity * p.pricePerUnit + p.fee, p.currency, date: p.date);
-        qty[t] = qty[t]! + p.quantity;
-      }
-    }
-    return realized;
   }
 }

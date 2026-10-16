@@ -1,10 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-import '../design/format.dart';
 import '../design/fields.dart';
+import '../design/format.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/analytics_service.dart';
+import '../services/payout_calendar_service.dart';
 import '../services/profit_breakdown_service.dart';
 
 const _periods = [
@@ -31,10 +34,15 @@ String _periodText(PeriodFilter f) => switch (f) {
       PeriodFilter.all => 'за всё время',
     };
 
+/// Строки окна. Каждая раскрывается списком бумаг.
+enum _Part { price, coupons, dividends, fees, tax }
+
 /// Окно «Из чего прибыль»: по нажатию на плитку «Прибыль» на главной.
-/// Открывается на том периоде, что выбран на графике.
+/// Открывается на том периоде, что выбран на графике. Нажатие на строку
+/// раскрывает под ней все бумаги этой части — за выбранный период.
 Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
   var period = initial;
+  _Part? open;
   return showAppSheet(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -50,75 +58,78 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
                 : '${_periodText(period)} · ${Fmt.date(from)} — ${Fmt.date(now)}';
 
         // Полоса долей — только из того, что дало плюс.
-        final parts = <(String, double, Color)>[
-          ('Рост цен', b.priceGrowth, AppColors.info),
-          ('Купоны', b.coupons, AppColors.positive),
-          ('Дивиденды', b.dividends, AppColors.gold),
+        final parts = <(_Part, double, Color)>[
+          (_Part.price, b.priceGrowth, AppColors.info),
+          (_Part.coupons, b.coupons, AppColors.positive),
+          (_Part.dividends, b.dividends, AppColors.gold),
         ];
         final plusTotal = parts.fold(0.0, (s, p) => s + (p.$2 > 0 ? p.$2 : 0));
 
-        Widget line(String label, double value, Color dot, {bool showShare = false}) {
+        Widget line(_Part part, String label, double value, Color dot, Map<String, double> byTicker,
+            {bool showShare = false, bool expense = false}) {
           final share = showShare && value > 0 && plusTotal > 0 ? '${(value / plusTotal * 100).round()}%' : null;
-          final text = Fmt.signedMoney(value);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 9),
-            child: Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(color: dot, borderRadius: BorderRadius.circular(3)),
-                ),
-                const SizedBox(width: 9),
-                Text(label, style: const TextStyle(fontSize: 13.5)),
-                if (share != null) ...[
-                  const SizedBox(width: 6),
-                  Text(share, style: TextStyle(fontSize: 12.5, color: ctx.dim)),
-                ],
-                const Spacer(),
-                HiddenAmount.forText(
-                  text,
-                  fontSize: 13.5,
-                  child: Text(
-                    text,
-                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: AppColors.pnl(value)),
+          final shown = expense ? -value : value;
+          final text = Fmt.signedMoney(shown);
+          final isOpen = open == part;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setSheet(() => open = isOpen ? null : part),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  margin: const EdgeInsets.only(bottom: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isOpen
+                        ? (ctx.isDark ? Colors.white.withOpacity(0.05) : AppColors.lightSurfaceHigh)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        Widget plate(String title, double value, String hint) => Expanded(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                decoration: BoxDecoration(
-                  color: ctx.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: TextStyle(fontSize: 11.5, color: ctx.dim)),
-                    const SizedBox(height: 3),
-                    HiddenAmount.forText(
-                      Fmt.money(value),
-                      fontSize: 15,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(color: dot, borderRadius: BorderRadius.circular(3)),
+                      ),
+                      const SizedBox(width: 9),
+                      Text(label, style: const TextStyle(fontSize: 13.5)),
+                      if (share != null) ...[
+                        const SizedBox(width: 6),
+                        Text(share, style: TextStyle(fontSize: 12.5, color: ctx.dim)),
+                      ],
+                      const Spacer(),
+                      HiddenAmount.forText(
+                        text,
+                        fontSize: 13.5,
                         child: Text(
-                          Fmt.signedMoney(value),
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                          text,
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: AppColors.pnl(shown)),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(hint, style: TextStyle(fontSize: 10.5, color: ctx.dim)),
-                  ],
+                      const SizedBox(width: 4),
+                      Icon(
+                        isOpen ? Icons.expand_less_rounded : Icons.chevron_right_rounded,
+                        size: 18,
+                        color: ctx.dim,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            );
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: isOpen
+                    ? _tickers(ctx, byTicker, dot, expense: expense)
+                    : const SizedBox(width: double.infinity),
+              ),
+            ],
+          );
+        }
 
         return SafeArea(
           child: SingleChildScrollView(
@@ -129,7 +140,11 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
                 SheetHeader(
                   title: 'Из чего прибыль',
                   subtitle: subtitle,
-                  trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.info_outline_rounded),
+                    tooltip: 'Как считается',
+                    onPressed: () => _showHowSheet(ctx),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 SegmentedToggle<PeriodFilter>(
@@ -163,10 +178,7 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
                     if (change != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          Fmt.pct(change.changePct),
-                          style: TextStyle(fontSize: 12.5, color: ctx.dim),
-                        ),
+                        child: Text(Fmt.pct(change.changePct), style: TextStyle(fontSize: 12.5, color: ctx.dim)),
                       ),
                   ],
                 ),
@@ -182,42 +194,150 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
                             if (p.$2 > 0)
                               Expanded(
                                 flex: (p.$2 / plusTotal * 1000).round().clamp(1, 1000),
-                                child: Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                                  color: p.$3,
+                                // Раскрытая часть ярче, остальные приглушены.
+                                child: AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 150),
+                                  opacity: open == null || open == p.$1 ? 1 : 0.3,
+                                  child: Container(margin: const EdgeInsets.symmetric(horizontal: 1), color: p.$3),
                                 ),
                               ),
                         ],
                       ),
                     ),
                   ),
-                const SizedBox(height: 14),
-                line('Рост цен', b.priceGrowth, AppColors.info, showShare: true),
-                if (b.coupons.abs() > 0.5) line('Купоны', b.coupons, AppColors.positive, showShare: true),
-                if (b.dividends.abs() > 0.5) line('Дивиденды', b.dividends, AppColors.gold, showShare: true),
-                if (b.feesAndAccrued.abs() > 0.5) line('Комиссии и НКД', -b.feesAndAccrued, AppColors.negative),
-                if (b.tax > 0.5) line('Налог с выплат', -b.tax, AppColors.negative),
-                Divider(height: 14, color: ctx.hairline),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    plate('Уже в кармане', b.inPocket, 'продажи и выплаты'),
-                    const SizedBox(width: 8),
-                    plate('На бумаге', b.onPaper, 'рост того, что держите'),
-                  ],
-                ),
                 const SizedBox(height: 10),
-                Text(
-                  'Купоны и дивиденды — до налога, налог показан отдельно. «Рост цен» включает результат '
-                  'продаж. НКД, уплаченный при покупке облигаций, брокер записывает вместе с комиссией — '
-                  'он возвращается в ближайшем купоне.',
-                  style: TextStyle(fontSize: 11, height: 1.4, color: ctx.dim),
-                ),
+                line(_Part.price, 'Рост цен', b.priceGrowth, AppColors.info, b.priceByTicker, showShare: true),
+                if (b.coupons.abs() > 0.5)
+                  line(_Part.coupons, 'Купоны', b.coupons, AppColors.positive, b.couponsByTicker, showShare: true),
+                if (b.dividends.abs() > 0.5)
+                  line(_Part.dividends, 'Дивиденды', b.dividends, AppColors.gold, b.dividendsByTicker,
+                      showShare: true),
+                if (b.feesAndAccrued.abs() > 0.5)
+                  line(_Part.fees, 'Комиссии и НКД', b.feesAndAccrued, AppColors.negative, b.feesByTicker,
+                      expense: true),
+                if (b.tax > 0.5)
+                  line(_Part.tax, 'Налог с выплат', b.tax, AppColors.negative, b.taxByTicker, expense: true),
               ],
             ),
           ),
         );
       },
+    ),
+  );
+}
+
+/// Все бумаги части: название, полоска относительно самой крупной и сумма.
+Widget _tickers(BuildContext ctx, Map<String, double> byTicker, Color color, {required bool expense}) {
+  final items = byTicker.entries.where((e) => e.value.abs() >= 0.5).toList()
+    ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
+  if (items.isEmpty) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(27, 2, 8, 10),
+      child: Text('За этот период ничего нет', style: TextStyle(fontSize: 12.5, color: ctx.dim)),
+    );
+  }
+  final maxAbs = items.fold(0.0, (m, e) => math.max(m, e.value.abs()));
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(27, 2, 8, 8),
+    child: Column(
+      children: [
+        for (final e in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 5,
+                  child: Text(
+                    PayoutCalendarService.nameOf(e.key),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 4,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: maxAbs <= 0 ? 0 : e.value.abs() / maxAbs,
+                      minHeight: 6,
+                      backgroundColor: ctx.hairline,
+                      // Бумага, которая в этой части дала минус, — красным.
+                      valueColor: AlwaysStoppedAnimation(
+                        !expense && e.value < 0 ? AppColors.negative : color,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 84,
+                  child: HiddenAmount.forText(
+                    Fmt.money(e.value),
+                    fontSize: 12.5,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        Fmt.signedMoney(expense ? -e.value : e.value),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.pnl(expense ? -e.value : e.value),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+/// Окно «Как считается» — пояснения, чтобы не загромождать окно прибыли.
+Future<void> _showHowSheet(BuildContext context) {
+  Widget part(String title, String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text.rich(
+          TextSpan(children: [
+            TextSpan(text: '$title — ', style: const TextStyle(fontWeight: FontWeight.w800)),
+            TextSpan(text: text),
+          ]),
+          style: const TextStyle(fontSize: 13, height: 1.45),
+        ),
+      );
+  return showAppSheet(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SheetHeader(
+              title: 'Как считается',
+              trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+            ),
+            const SizedBox(height: 12),
+            part('Рост цен',
+                'насколько подорожали или подешевели бумаги за период, вместе с результатом продаж.'),
+            part('Купоны и дивиденды', 'полученные выплаты до налога.'),
+            part('Комиссии и НКД',
+                'брокер записывает их одной суммой. Уплаченный при покупке облигации НКД возвращается '
+                    'в ближайшем купоне.'),
+            part('Налог с выплат', 'удержанный с купонов и дивидендов, если он был.'),
+            Text(
+              'Все строки вместе дают прибыль сверху. Нажмите на строку — покажу, какие бумаги её дали.',
+              style: TextStyle(fontSize: 12, height: 1.4, color: ctx.dim),
+            ),
+          ],
+        ),
+      ),
     ),
   );
 }

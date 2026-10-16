@@ -21,7 +21,9 @@ String _passiveTitle(PassivePlan p) {
 
 String _passiveSubtitle(PassivePlan p) {
   if (p.reached) return 'цель достигнута · ≈${Fmt.money(p.current)}/мес';
-  final now = 'сейчас ≈${Fmt.money(p.current)}';
+  final now = p.goal.mode == PassiveMode.everyMonth
+      ? 'в среднем ≈${Fmt.money(p.average)}'
+      : 'сейчас ≈${Fmt.money(p.current)}';
   final deadline = p.goal.deadline;
   if (deadline != null) {
     return p.savingEnough
@@ -70,7 +72,13 @@ class PassiveGoalCard extends StatelessWidget {
     final p = plan;
     final title = _passiveTitle(p);
     final subtitle = _passiveSubtitle(p);
-    final percent = '${(p.progress * 100).floor()}%';
+    final everyMonth = p.goal.mode == PassiveMode.everyMonth;
+    // В режиме «каждый месяц» вместо процента — сколько месяцев выполняют
+    // цель: процент по самому слабому месяцу рядом со средним сбивал бы.
+    final percent = everyMonth ? '${p.monthsReached}/${p.months.length}' : '${(p.progress * 100).floor()}%';
+    final fill = everyMonth
+        ? (p.months.isEmpty ? 0.0 : p.monthsReached / p.months.length)
+        : p.progress;
 
     final header = GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -125,7 +133,7 @@ class PassiveGoalCard extends StatelessWidget {
         gradient: collapsed
             ? LinearGradient(
                 colors: [_green.withOpacity(0.16), _green.withOpacity(0.16), base, base],
-                stops: [0, p.progress, p.progress, 1],
+                stops: [0, fill, fill, 1],
               )
             : null,
         color: collapsed ? null : base,
@@ -156,19 +164,40 @@ class PassiveGoalCard extends StatelessWidget {
   }
 
   Widget _expanded(BuildContext context, PassivePlan p) {
-    final now = '≈${Fmt.money(p.current)}';
+    final everyMonth = p.goal.mode == PassiveMode.everyMonth;
+    final now = '≈${Fmt.money(everyMonth ? p.average : p.current)}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(5),
-          child: LinearProgressIndicator(
-            value: p.progress,
-            minHeight: 9,
-            backgroundColor: context.hairline,
-            valueColor: const AlwaysStoppedAnimation(_green),
+        if (everyMonth)
+          // Полоса из делений — по одному на месяц; закрашены те, что
+          // выполняют цель.
+          Row(
+            children: [
+              for (int i = 0; i < p.months.length; i++) ...[
+                if (i > 0) const SizedBox(width: 3),
+                Expanded(
+                  child: Container(
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: p.months[i].total >= p.goal.monthly - 0.5 ? _green : context.hairline,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          )
+        else
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: LinearProgressIndicator(
+              value: p.progress,
+              minHeight: 9,
+              backgroundColor: context.hairline,
+              valueColor: const AlwaysStoppedAnimation(_green),
+            ),
           ),
-        ),
         const SizedBox(height: 7),
         Row(
           children: [
@@ -177,12 +206,17 @@ class PassiveGoalCard extends StatelessWidget {
               fontSize: 12.5,
               child: Text.rich(TextSpan(children: [
                 TextSpan(text: now, style: const TextStyle(fontWeight: FontWeight.w800)),
-                TextSpan(text: ' /мес сейчас', style: TextStyle(color: context.dim)),
+                TextSpan(
+                  text: everyMonth ? ' /мес в среднем' : ' /мес сейчас',
+                  style: TextStyle(color: context.dim),
+                ),
               ]), style: const TextStyle(fontSize: 12.5)),
             ),
             const Spacer(),
             Text(
-              p.goal.mode == PassiveMode.average ? 'в среднем за год' : 'в самый слабый месяц',
+              everyMonth
+                  ? '${p.monthsReached} из ${p.months.length} ${Fmt.plural(p.months.length, 'месяца', 'месяцев', 'месяцев')} ≥ цели'
+                  : 'в среднем за год',
               style: TextStyle(fontSize: 11.5, color: context.dim),
             ),
           ],
@@ -297,8 +331,6 @@ Future<void> showPassiveGoalDetailsSheet(BuildContext context) {
                         }
                       }),
                     ),
-                    const SizedBox(height: 4),
-                    Text(_gridSummary(p), style: TextStyle(fontSize: 11.5, color: ctx.dim)),
                   ],
                   if (open == _Open.month && month != null && month! < p.months.length) ...[
                     const SizedBox(height: 10),
@@ -360,7 +392,16 @@ int? _firstPaying(PassivePlan p) {
 }
 
 Widget _headline(BuildContext ctx, PassivePlan p) {
-  final now = '≈${Fmt.money(p.current)}';
+  final everyMonth = p.goal.mode == PassiveMode.everyMonth;
+  // Крупно — всегда средний доход. В режиме «каждый месяц» рядом — сколько
+  // месяцев выполняют цель, а не процент по самому слабому месяцу.
+  final now = '≈${Fmt.money(p.average)}';
+  final n = p.monthsReached;
+  final caption = p.reached
+      ? 'цель достигнута'
+      : everyMonth
+          ? 'в среднем · цель в $n из ${p.months.length} ${Fmt.plural(p.months.length, 'месяца', 'месяцев', 'месяцев')}'
+          : 'из ${Fmt.money(p.goal.monthly)}/мес · ${(p.progress * 100).floor()}%';
   return Row(
     crossAxisAlignment: CrossAxisAlignment.baseline,
     textBaseline: TextBaseline.alphabetic,
@@ -368,14 +409,15 @@ Widget _headline(BuildContext ctx, PassivePlan p) {
       HiddenAmount.forText(
         now,
         fontSize: 24,
-        child: Text(now, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+        child: Text(now, maxLines: 1, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
       ),
-      const Spacer(),
-      Text(
-        p.reached
-            ? 'цель достигнута'
-            : 'из ${Fmt.money(p.goal.monthly)}/мес · ${(p.progress * 100).floor()}%',
-        style: TextStyle(fontSize: 12.5, color: p.reached ? _green : ctx.dim),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          caption,
+          textAlign: TextAlign.right,
+          style: TextStyle(fontSize: 12.5, color: p.reached ? _green : ctx.dim),
+        ),
       ),
     ],
   );
@@ -864,19 +906,6 @@ Future<void> _showHowSheet(BuildContext context, PassivePlan p) {
       ),
     ),
   );
-}
-
-String _gridSummary(PassivePlan p) {
-  final n = p.monthsReached;
-  final w = p.weakest;
-  final reached = n == 0
-      ? 'Все месяцы ниже цели'
-      : n == p.months.length
-          ? 'Все месяцы выполняют цель'
-          : 'Цель выполняют $n ${Fmt.plural(n, 'месяц', 'месяца', 'месяцев')} из ${p.months.length}';
-  if (w == null || n == p.months.length) return reached;
-  final pct = p.goal.monthly <= 0 ? 0 : (w.total / p.goal.monthly * 100).floor();
-  return '$reached. Самый слабый — ${monthNamesNom[w.month.month - 1]}, $pct%';
 }
 
 /// Сетка 3×4: месяц, сумма, доля от цели месяца полоской и процентом. Ниже
