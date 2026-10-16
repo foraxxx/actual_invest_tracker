@@ -1015,6 +1015,27 @@ class MoexService {
     );
   }
 
+  /// Строки режима торгов облигациями для подбора выплат: данные бумаги и
+  /// рынка в одной записи. Один запрос на весь режим.
+  static Future<List<Map<String, dynamic>>> bondBoardRows(String board) async {
+    final uri = Uri.https(_host, '/iss/engines/stock/markets/bonds/boards/$board/securities.json', {
+      'iss.meta': 'off',
+      'iss.only': 'securities,marketdata',
+      'securities.columns': 'SECID,SHORTNAME,COUPONVALUE,NEXTCOUPON,COUPONPERIOD,MATDATE,OFFERDATE,'
+          'LISTLEVEL,FACEVALUE,FACEUNIT,PREVPRICE,ACCRUEDINT,COUPONPERCENT',
+      'marketdata.columns': 'SECID,LAST,YIELD,VALTODAY',
+    });
+    final json = await _getJson(uri);
+    final market = <String, Map<String, dynamic>>{
+      for (final row in _table(json, 'marketdata'))
+        if (row['SECID'] is String) row['SECID'] as String: row,
+    };
+    return [
+      for (final row in _table(json, 'securities'))
+        if (row['SECID'] is String) {...row, ...?market[row['SECID']], 'BOARD': board},
+    ];
+  }
+
   static Future<Map<String, dynamic>> _getJson(Uri uri) async {
     final http.Response response;
     try {

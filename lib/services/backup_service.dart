@@ -66,6 +66,8 @@ class BackupService {
       try {
         final goal = GoalService.goalFor(meta.id);
         if (goal != null) entry['goal'] = goal.toJson();
+        final passive = GoalService.passiveFor(meta.id);
+        if (passive != null) entry['passiveGoal'] = passive.toJson();
         final iis = IisService.settingsFor(meta.id);
         if (iis != null) entry['iis'] = iis.toJson();
       } catch (_) {}
@@ -352,6 +354,11 @@ class BackupService {
         await GoalService.saveFor(
           meta.id,
           goalRaw is Map ? FinancialGoal.fromJson(Map<String, dynamic>.from(goalRaw)) : null,
+        );
+        final passiveRaw = src['passiveGoal'];
+        await GoalService.savePassiveFor(
+          meta.id,
+          passiveRaw is Map ? PassiveGoal.fromJson(Map<String, dynamic>.from(passiveRaw)) : null,
         );
         final iisRaw = src['iis'];
         await IisService.save(

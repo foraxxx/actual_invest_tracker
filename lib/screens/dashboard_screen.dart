@@ -31,6 +31,9 @@ import '../widgets/payout_forecast_sheet.dart';
 import '../widgets/value_forecast_sheet.dart';
 import '../widgets/updated_ago.dart';
 import '../widgets/goal_widgets.dart';
+import '../widgets/profit_sheet.dart';
+import '../widgets/passive_goal_widgets.dart';
+import '../services/passive_goal_service.dart';
 import '../widgets/iis_widgets.dart';
 import '../services/goal_service.dart';
 import '../services/iis_service.dart';
@@ -431,6 +434,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 secondLabel: 'из них выплаты',
                 secondText: Fmt.money(periodCash.payouts),
                 secondColor: AppColors.positive,
+                // Из чего сложилась прибыль — за тот же период, что на графике.
+                onTap: () => showProfitSheet(context, _period),
               ),
             ),
           ],
@@ -571,12 +576,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Сразу после плиток: это «зачем» портфеля, а ниже — из чего он состоит.
     if (!isEmpty) {
       final goal = GoalService.current;
+      final passive = GoalService.passive;
       children.add(const SizedBox(height: 14));
-      children.add(GoalCard(
-        plan: goal == null ? null : GoalService.plan(goal),
-        collapsed: sectionsCollapsed.contains(_secGoal),
-        onToggle: () => _toggleSection(_secGoal, sectionsCollapsed.contains(_secGoal)),
-      ));
+      // Две цели могут быть одновременно: накопить сумму и пассивный доход.
+      // Пока нет ни одной — одна строка «Поставить цель» с выбором вида.
+      if (goal != null || passive == null) {
+        children.add(GoalCard(
+          plan: goal == null ? null : GoalService.plan(goal),
+          collapsed: sectionsCollapsed.contains(_secGoal),
+          onToggle: () => _toggleSection(_secGoal, sectionsCollapsed.contains(_secGoal)),
+        ));
+      }
+      if (passive != null) {
+        if (goal != null) children.add(const SizedBox(height: 10));
+        children.add(PassiveGoalCard(
+          plan: PassiveGoalService.plan(passive),
+          collapsed: sectionsCollapsed.contains(_secPassive),
+          onToggle: () => _toggleSection(_secPassive, sectionsCollapsed.contains(_secPassive)),
+        ));
+      }
+      if (goal != null && passive == null) children.add(const GoalAddLine(kind: GoalKind.passive));
+      if (goal == null && passive != null) children.add(const GoalAddLine(kind: GoalKind.sum));
       final iis = IisService.current;
       if (iis != null) {
         children.add(const SizedBox(height: 10));
@@ -1492,6 +1512,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   static const _secAlloc = 'sec_alloc';
   static const _secGoal = 'sec_goal';
+  static const _secPassive = 'sec_passive';
   static const _secIis = 'sec_iis';
 
   Future<void> _toggleSection(String id, bool collapsed) async {

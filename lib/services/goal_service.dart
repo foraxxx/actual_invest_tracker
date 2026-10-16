@@ -46,6 +46,44 @@ class FinancialGoal {
   }
 }
 
+/// Как считать пассивный доход: в среднем за год (выплаты за год ÷ 12) или
+/// так, чтобы даже самый слабый месяц дотягивал до цели.
+enum PassiveMode { average, everyMonth }
+
+/// Цель по пассивному доходу: получать [monthly] ₽ в месяц выплатами.
+class PassiveGoal {
+  final double monthly;
+  final PassiveMode mode;
+  final double? monthlySaving;
+  final String name;
+
+  const PassiveGoal({
+    required this.monthly,
+    this.mode = PassiveMode.average,
+    this.monthlySaving,
+    this.name = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'i': monthly,
+        'md': mode.name,
+        if (monthlySaving != null) 's': monthlySaving,
+        if (name.isNotEmpty) 'n': name,
+      };
+
+  static PassiveGoal? fromJson(Map<String, dynamic> j) {
+    final i = (j['i'] as num?)?.toDouble();
+    if (i == null || i <= 0) return null;
+    final s = (j['s'] as num?)?.toDouble();
+    return PassiveGoal(
+      monthly: i,
+      mode: j['md'] == PassiveMode.everyMonth.name ? PassiveMode.everyMonth : PassiveMode.average,
+      monthlySaving: s == null || s < 0 ? null : s,
+      name: '${j['n'] ?? ''}',
+    );
+  }
+}
+
 /// Расчёт по цели на сегодня.
 class GoalPlan {
   final FinancialGoal goal;
@@ -208,17 +246,7 @@ class GoalService {
     // Рост — по реалистичному сценарию прогноза на то, что уже есть в
     // портфеле: купоны, погашения, дивиденды, рост акций. Берём из него
     // среднемесячный темп и применяем к текущей стоимости.
-    double rate = 0;
-    if (months > 0 && current > 0) {
-      try {
-        final path = ValueForecastService.realisticPath(months);
-        if (path.length > 1 && path.first.value > 0 && path.last.value > 0) {
-          rate = math.pow(path.last.value / path.first.value, 1 / (path.length - 1)).toDouble() - 1;
-        }
-      } catch (_) {
-        rate = 0;
-      }
-    }
+    final rate = monthlyGrowthRate(months, current);
     final growth = math.pow(1 + rate, months).toDouble();
     final monthly = requiredMonthly(current: current, target: goal.amount, months: months, rate: rate);
 
@@ -254,9 +282,49 @@ class GoalService {
     );
   }
 
+  /// Среднемесячный темп роста по реалистичному сценарию прогноза стоимости
+  /// на [months] месяцев вперёд. 0 — если прогноз посчитать нельзя.
+  static double monthlyGrowthRate(int months, double current) {
+    if (months <= 0 || current <= 0) return 0;
+    try {
+      final path = ValueForecastService.realisticPath(months);
+      if (path.length > 1 && path.first.value > 0 && path.last.value > 0) {
+        return math.pow(path.last.value / path.first.value, 1 / (path.length - 1)).toDouble() - 1;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
+  // --- Цель по пассивному доходу ---
+  // Хранится в том же боксе, ключ — id портфеля с суффиксом.
+
+  static String _passiveKey(String portfolioId) => '$portfolioId#passive';
+
+  static PassiveGoal? get passive => passiveFor(PortfolioService.activeId);
+
+  static PassiveGoal? passiveFor(String portfolioId) {
+    final raw = _box.get(_passiveKey(portfolioId));
+    if (raw == null) return null;
+    try {
+      return PassiveGoal.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> savePassive(PassiveGoal? goal) => savePassiveFor(PortfolioService.activeId, goal);
+
+  static Future<void> savePassiveFor(String portfolioId, PassiveGoal? goal) async {
+    if (goal == null) {
+      await _box.delete(_passiveKey(portfolioId));
+    } else {
+      await _box.put(_passiveKey(portfolioId), jsonEncode(goal.toJson()));
+    }
+    version.value++;
+  }
+
   /// Через сколько месяцев из [current] получится [target], если каждый
   /// месяц добавлять [monthly] при росте [rate]. null — не за 50 лет.
-  @visibleForTesting
   static int? monthsToReach({
     required double current,
     required double target,

@@ -9,6 +9,7 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/appearance_service.dart';
 import '../services/goal_service.dart';
+import '../services/passive_goal_service.dart';
 
 const _gold = AppColors.gold;
 
@@ -42,6 +43,9 @@ String goalShort(double v, {bool unit = true}) {
   if (abs >= 1000) return unit ? '${(v / 1000).round()} тыс' : '${(v / 1000).round()}';
   return Fmt.money(v);
 }
+
+/// То же с рублём: «2,54 млн ₽», «540 тыс ₽», «900 ₽».
+String goalShortRub(double v) => v.abs() >= 1000 ? '${goalShort(v)} ₽' : Fmt.money(v);
 
 /// «≈5,43 млн из 7» — сколько будет к сроку из суммы цели.
 String goalWillHave(GoalPlan p) {
@@ -308,15 +312,28 @@ Widget _advice(BuildContext context, GoalPlan p, Color color) {
   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: lines);
 }
 
-/// Постановка или правка цели.
-Future<void> showGoalEditSheet(BuildContext context) {
+/// Вид финансовой цели.
+enum GoalKind { sum, passive }
+
+/// Постановка или правка цели. [kind] — какой вид открыть; без него, если
+/// целей ещё нет, сверху есть выбор «Накопить сумму / Пассивный доход».
+Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
   final existing = GoalService.current;
+  final existingPassive = GoalService.passive;
+  final allowSwitch = kind == null && existing == null && existingPassive == null;
+  var goalKind = kind ?? (existing == null && existingPassive != null ? GoalKind.passive : GoalKind.sum);
+  final incomeCtrl = TextEditingController(
+    text: existingPassive == null ? '' : existingPassive.monthly.toStringAsFixed(0),
+  );
+  final passiveNameCtrl = TextEditingController(text: existingPassive?.name ?? '');
+  var passiveMode = existingPassive?.mode ?? PassiveMode.average;
   final amountCtrl = TextEditingController(
     text: existing == null ? '' : existing.amount.toStringAsFixed(0),
   );
   final nameCtrl = TextEditingController(text: existing?.name ?? '');
   final suggested = GoalService.suggestedMonthlySaving();
-  final initialSaving = existing?.monthlySaving ?? suggested;
+  final initialSaving = (goalKind == GoalKind.passive ? existingPassive?.monthlySaving : existing?.monthlySaving) ??
+      suggested;
   final savingCtrl = TextEditingController(text: initialSaving > 0 ? initialSaving.toStringAsFixed(0) : '');
   final now = DateTime.now();
   var month = existing?.deadline.month ?? 12;
@@ -340,6 +357,24 @@ Future<void> showGoalEditSheet(BuildContext context) {
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSheet) {
         final keyboard = MediaQuery.of(ctx).viewInsets.bottom;
+        if (goalKind == GoalKind.passive) {
+          return _passiveForm(
+            ctx,
+            keyboard: keyboard,
+            allowSwitch: allowSwitch,
+            onSwitch: (k) => setSheet(() => goalKind = k),
+            incomeCtrl: incomeCtrl,
+            savingCtrl: savingCtrl,
+            nameCtrl: passiveNameCtrl,
+            suggested: suggested,
+            mode: passiveMode,
+            onMode: (m) => setSheet(() => passiveMode = m),
+            onChanged: () => setSheet(() => error = null),
+            error: error,
+            parseText: parseText,
+            onError: (e) => setSheet(() => error = e),
+          );
+        }
         final amount = parse();
         final preview = amount != null && amount > 0
             ? GoalService.plan(FinancialGoal(
@@ -358,6 +393,10 @@ Future<void> showGoalEditSheet(BuildContext context) {
                 subtitle: 'Сколько и к какому сроку хотите накопить в этом портфеле',
                 trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
               ),
+              if (allowSwitch) ...[
+                const SizedBox(height: 12),
+                _kindToggle(GoalKind.sum, (k) => setSheet(() => goalKind = k)),
+              ],
               const SizedBox(height: 16),
               AppTextField(
                 controller: amountCtrl,
@@ -468,6 +507,142 @@ Future<void> showGoalEditSheet(BuildContext context) {
           ),
         );
       },
+    ),
+  );
+}
+
+Widget _kindToggle(GoalKind selected, ValueChanged<GoalKind> onChanged) => SegmentedToggle<GoalKind>(
+      values: GoalKind.values,
+      selected: selected,
+      labelOf: (k) => k == GoalKind.sum ? 'Накопить сумму' : 'Пассивный доход',
+      onChanged: onChanged,
+    );
+
+/// Форма цели «пассивный доход».
+Widget _passiveForm(
+  BuildContext ctx, {
+  required double keyboard,
+  required bool allowSwitch,
+  required ValueChanged<GoalKind> onSwitch,
+  required TextEditingController incomeCtrl,
+  required TextEditingController savingCtrl,
+  required TextEditingController nameCtrl,
+  required double suggested,
+  required PassiveMode mode,
+  required ValueChanged<PassiveMode> onMode,
+  required VoidCallback onChanged,
+  required String? error,
+  required double? Function(String) parseText,
+  required ValueChanged<String> onError,
+}) {
+  final income = parseText(incomeCtrl.text);
+  final saving = parseText(savingCtrl.text);
+  final preview = income != null && income > 0
+      ? PassiveGoalService.plan(PassiveGoal(
+          monthly: income,
+          mode: mode,
+          monthlySaving: saving == null || saving < 0 ? 0 : saving,
+        ))
+      : null;
+  String previewText(PassivePlan p) {
+    final now = '≈${Fmt.money(p.current)}/мес';
+    if (p.reached) return 'Сейчас $now — цель уже достигнута.';
+    final need = p.shortfall;
+    final d = p.reachDate;
+    return 'Сейчас $now — это ${(p.progress * 100).floor()}%.'
+        '${need == null ? '\nПока выплат нет — расчёт появится, когда они будут.' : '\nНужно ещё ≈${goalShortRub(need)} вложений'}'
+        '${need != null && d != null && p.saving > 0 ? '; откладывая ${Fmt.money(p.saving)}/мес, дойдёте ${goalDeadlineText(d)}.' : need != null ? '.' : ''}';
+  }
+
+  return SingleChildScrollView(
+    padding: EdgeInsets.fromLTRB(20, 14, 20, keyboard + 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SheetHeader(
+          title: 'Финансовая цель',
+          subtitle: 'Какой доход в месяц хотите получать выплатами',
+          trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+        ),
+        if (allowSwitch) ...[
+          const SizedBox(height: 12),
+          _kindToggle(GoalKind.passive, onSwitch),
+        ],
+        const SizedBox(height: 16),
+        AppTextField(
+          controller: incomeCtrl,
+          label: 'Доход в месяц, ₽',
+          number: true,
+          onChanged: (_) => onChanged(),
+        ),
+        const SizedBox(height: 12),
+        Text('Как считать', style: TextStyle(fontSize: 12, color: ctx.dim)),
+        const SizedBox(height: 6),
+        SegmentedToggle<PassiveMode>(
+          values: PassiveMode.values,
+          selected: mode,
+          labelOf: (m) => m == PassiveMode.average ? 'В среднем за год' : 'Каждый месяц',
+          onChanged: onMode,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          mode == PassiveMode.average
+              ? 'Выплаты за год ÷ 12. Купоны и дивиденды приходят неравномерно — так обычно и считают пассивный доход.'
+              : 'Даже в самый слабый месяц — не меньше цели. Нужно намного больше вложений.',
+          style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
+        ),
+        const SizedBox(height: 12),
+        AppTextField(
+          controller: savingCtrl,
+          label: 'Откладываю в месяц, ₽',
+          number: true,
+          onChanged: (_) => onChanged(),
+        ),
+        if (suggested > 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            'По вашим пополнениям за полгода — обычно ≈${Fmt.money(suggested)} в месяц',
+            style: TextStyle(fontSize: 11.5, color: ctx.dim),
+          ),
+        ],
+        const SizedBox(height: 12),
+        AppTextField(controller: nameCtrl, label: 'Название (необязательно)', hint: 'Например, «Вторая зарплата»'),
+        if (preview != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.positive.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(previewText(preview), style: const TextStyle(fontSize: 13, height: 1.4)),
+          ),
+        ],
+        if (error != null) ...[
+          const SizedBox(height: 10),
+          Text(error, style: const TextStyle(fontSize: 12, color: AppColors.negative)),
+        ],
+        const SizedBox(height: 18),
+        GradientButton(
+          label: 'Сохранить цель',
+          icon: Icons.check_rounded,
+          onPressed: () async {
+            final i = parseText(incomeCtrl.text);
+            if (i == null || i <= 0) {
+              onError('Укажите доход в месяц');
+              return;
+            }
+            final sv = parseText(savingCtrl.text);
+            await GoalService.savePassive(PassiveGoal(
+              monthly: i,
+              mode: mode,
+              monthlySaving: sv == null || sv < 0 ? 0 : sv,
+              name: nameCtrl.text.trim(),
+            ));
+            if (ctx.mounted) Navigator.pop(ctx);
+          },
+        ),
+      ],
     ),
   );
 }
