@@ -6,7 +6,6 @@ import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
-import '../services/appearance_service.dart';
 import '../services/goal_service.dart';
 import '../services/passive_goal_service.dart';
 import '../services/payout_calendar_service.dart';
@@ -14,35 +13,6 @@ import 'goal_widgets.dart';
 import 'payout_picker_sheet.dart';
 
 const _green = AppColors.positive;
-
-/// Тонкая строка «+ Цель …» под карточкой цели — чтобы поставить вторую цель
-/// другого вида.
-class GoalAddLine extends StatelessWidget {
-  final GoalKind kind;
-
-  const GoalAddLine({super.key, required this.kind});
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      onTap: () => showGoalEditSheet(context, kind: kind),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add_rounded, size: 16, color: context.dim),
-            const SizedBox(width: 4),
-            Text(
-              kind == GoalKind.passive ? 'Цель по пассивному доходу' : 'Цель накопить сумму',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 String _passiveTitle(PassivePlan p) {
   final target = '${Fmt.money(p.goal.monthly)}/мес';
@@ -52,10 +22,38 @@ String _passiveTitle(PassivePlan p) {
 String _passiveSubtitle(PassivePlan p) {
   if (p.reached) return 'цель достигнута · ≈${Fmt.money(p.current)}/мес';
   final now = 'сейчас ≈${Fmt.money(p.current)}';
+  final deadline = p.goal.deadline;
+  if (deadline != null) {
+    return p.savingEnough
+        ? '${goalDeadlineText(deadline)} · успеваете'
+        : '${goalDeadlineText(deadline)} · нужно ≈${Fmt.money(_round100(p.requiredMonthly ?? 0))}/мес';
+  }
   final d = p.reachDate;
   if (d != null && p.saving > 0) return '$now · успеете ${goalDeadlineText(d)}';
-  final need = p.shortfall;
-  return need == null ? now : '$now · ещё ≈${goalShortRub(need)} вложений';
+  return '$now · докупить ≈${goalShortRub(p.toBuy)}';
+}
+
+double _round100(double v) => (v / 100).ceil() * 100.0;
+
+/// Строка «как успеваете»: со сроком — сколько откладывать и хватает ли,
+/// без срока — когда цель будет достигнута.
+String _pace(PassivePlan p) {
+  final d = p.reachDate;
+  final deadline = p.goal.deadline;
+  final req = p.requiredMonthly;
+  if (deadline != null && req != null) {
+    if (p.savingEnough) {
+      return 'Откладываете ${Fmt.money(p.saving)}/мес — успеете${d == null ? '' : ' ${goalDeadlineText(d)}'}';
+    }
+    final gap = _round100(req - p.saving);
+    return 'Чтобы успеть ${goalDeadlineText(deadline)}, нужно ≈${Fmt.money(_round100(req))}/мес — '
+        '${p.saving > 0 ? 'не хватает ${Fmt.money(gap)}/мес' : 'укажите в цели, сколько откладываете'}'
+        '${d != null && p.saving > 0 ? '. С вашими взносами — ${goalDeadlineText(d)}' : ''}';
+  }
+  if (p.saving <= 0) return 'Сколько откладываете, можно указать в цели';
+  return d == null
+      ? 'Откладываете ${Fmt.money(p.saving)}/мес — дольше 50 лет'
+      : 'Откладываете ${Fmt.money(p.saving)}/мес — успеете ${goalDeadlineText(d)}';
 }
 
 /// Карточка цели «пассивный доход» на главной. Сворачивается так же, как
@@ -159,8 +157,6 @@ class PassiveGoalCard extends StatelessWidget {
 
   Widget _expanded(BuildContext context, PassivePlan p) {
     final now = '≈${Fmt.money(p.current)}';
-    final need = p.shortfall;
-    final d = p.reachDate;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -200,26 +196,19 @@ class PassiveGoalCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 HiddenAmount.forText(
-                  need == null ? '' : goalShortRub(need),
+                  goalShortRub(p.toBuy),
                   fontSize: 13.5,
                   child: Text(
-                    need == null
-                        ? 'Пока нет выплат — расчёт появится с ними'
-                        : 'Не хватает ≈${goalShortRub(need)} вложений',
+                    'Докупить ≈${goalShortRub(p.toBuy)} под ${_pctText(p.newYieldPct)}',
                     style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: _green),
                   ),
                 ),
-                if (need != null) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    p.saving > 0
-                        ? d == null
-                            ? 'Откладываете ${Fmt.money(p.saving)}/мес — дольше 50 лет'
-                            : 'Откладываете ${Fmt.money(p.saving)}/мес — успеете ${goalDeadlineText(d)}'
-                        : 'Сколько откладываете, можно указать в цели',
-                    style: TextStyle(fontSize: 11.5, height: 1.35, color: context.dim),
-                  ),
-                ],
+                const SizedBox(height: 3),
+                HiddenAmount.forText(
+                  _pace(p),
+                  fontSize: 11.5,
+                  child: Text(_pace(p), style: TextStyle(fontSize: 11.5, height: 1.35, color: context.dim)),
+                ),
               ],
             ),
           ),
@@ -229,10 +218,13 @@ class PassiveGoalCard extends StatelessWidget {
   }
 }
 
+String _pctText(double v) => '${v.toStringAsFixed(1).replaceAll('.', ',')}%';
+
 /// Подробности цели «пассивный доход»: выплаты по месяцам на год вперёд
-/// (столбики нажимаются), сколько нужно вложить и когда дойдёте.
+/// (клетки нажимаются), сколько докупить и когда успеете.
 Future<void> showPassiveGoalDetailsSheet(BuildContext context) {
   if (GoalService.passive == null) return Future.value();
+  PassiveGoalService.refreshInBackground();
   int? selected;
   return showAppSheet(
     context: context,
@@ -243,6 +235,8 @@ Future<void> showPassiveGoalDetailsSheet(BuildContext context) {
           final goal = GoalService.passive;
           if (goal == null) return const SizedBox.shrink();
           final p = PassiveGoalService.plan(goal);
+          final first = p.months.isEmpty ? null : p.months.first.month;
+          final last = p.months.isEmpty ? null : p.months.last.month;
           return SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
@@ -252,33 +246,25 @@ Future<void> showPassiveGoalDetailsSheet(BuildContext context) {
                   SheetHeader(
                     title: goal.name.trim().isEmpty ? 'Пассивный доход' : goal.name.trim(),
                     subtitle: '${Fmt.money(goal.monthly)}/мес · '
-                        '${goal.mode == PassiveMode.average ? 'в среднем за год' : 'каждый месяц'}',
+                        '${goal.mode == PassiveMode.average ? 'в среднем за год' : 'каждый месяц'}'
+                        '${goal.deadline == null ? '' : ' · ${goalDeadlineText(goal.deadline!)}'}',
                     trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
                   ),
                   const SizedBox(height: 12),
-                  if (p.months.isNotEmpty)
+                  if (first != null && last != null)
                     Text(
-                      'Выплаты ${monthNamesNom[p.months.first.month.month - 1]} ${p.months.first.month.year} — '
-                      '${monthNamesNom[p.months.last.month.month - 1]} ${p.months.last.month.year}',
+                      'Выплаты ${monthNamesNom[first.month - 1]} ${first.year} — '
+                      '${monthNamesNom[last.month - 1]} ${last.year} · доля от цели месяца',
                       style: TextStyle(fontSize: 12, color: ctx.dim),
                     ),
                   const SizedBox(height: 8),
-                  _PassiveBars(
+                  _MonthGrid(
                     plan: p,
                     selected: selected,
                     onSelect: (i) => setSheet(() => selected = (selected == i ? null : i)),
                   ),
-                  const SizedBox(height: 4),
-                  _monthLabels(ctx, p),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
-                    children: [
-                      _legend(ctx, _green, 'купоны и объявленные дивиденды'),
-                      _legend(ctx, _green, 'дивиденды по прошлому году', hatched: true),
-                    ],
-                  ),
+                  Text(_gridSummary(p), style: TextStyle(fontSize: 11.5, color: ctx.dim)),
                   const SizedBox(height: 12),
                   if (selected != null && selected! < p.months.length)
                     ..._monthDetails(context, ctx, p, p.months[selected!])
@@ -332,76 +318,111 @@ Future<void> showPassiveGoalDetailsSheet(BuildContext context) {
   );
 }
 
-Widget _legend(BuildContext ctx, Color color, String text, {bool hatched = false}) => Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 12,
-          height: 12,
-          child: CustomPaint(painter: _SwatchPainter(color, hatched)),
-        ),
-        const SizedBox(width: 6),
-        Text(text, style: TextStyle(fontSize: 11, color: ctx.dim)),
-      ],
-    );
-
-class _SwatchPainter extends CustomPainter {
-  final Color color;
-  final bool hatched;
-
-  _SwatchPainter(this.color, this.hatched);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final r = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(3));
-    if (!hatched) {
-      canvas.drawRRect(r, Paint()..color = color);
-      return;
-    }
-    canvas.drawRRect(r, Paint()..color = color.withOpacity(0.25));
-    canvas.save();
-    canvas.clipRRect(r);
-    _hatch(canvas, Offset.zero & size, color);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_SwatchPainter old) => old.color != color || old.hatched != hatched;
+String _gridSummary(PassivePlan p) {
+  final n = p.monthsReached;
+  final w = p.weakest;
+  final reached = n == 0
+      ? 'Все месяцы ниже цели'
+      : n == p.months.length
+          ? 'Все месяцы выполняют цель'
+          : 'Цель выполняют $n ${Fmt.plural(n, 'месяц', 'месяца', 'месяцев')} из ${p.months.length}';
+  if (w == null || n == p.months.length) return reached;
+  final pct = p.goal.monthly <= 0 ? 0 : (w.total / p.goal.monthly * 100).floor();
+  return '$reached. Самый слабый — ${monthNamesNom[w.month.month - 1]}, $pct%';
 }
 
-void _hatch(Canvas canvas, Rect rect, Color color) {
-  final paint = Paint()
-    ..color = color
-    ..strokeWidth = 1.6;
-  for (double x = rect.left - rect.height; x < rect.right; x += 5) {
-    canvas.drawLine(Offset(x, rect.bottom), Offset(x + rect.height, rect.top), paint);
-  }
-}
+/// Сетка 3×4: месяц, сумма, доля от цели месяца полоской и процентом. Ниже
+/// цели — красным, выполнил — зелёным. Дивиденды по прошлому году
+/// помечены «≈».
+class _MonthGrid extends StatelessWidget {
+  final PassivePlan plan;
+  final int? selected;
+  final ValueChanged<int> onSelect;
 
-Widget _monthLabels(BuildContext ctx, PassivePlan p) {
-  // Полные названия — каждый третий месяц, чтобы помещались.
-  return LayoutBuilder(
-    builder: (c, box) {
-      final n = p.months.length;
-      if (n == 0) return const SizedBox.shrink();
-      final w = box.maxWidth / n;
-      return SizedBox(
-        height: 14,
-        child: Stack(
+  const _MonthGrid({required this.plan, required this.selected, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final target = plan.goal.monthly;
+    final rows = <Widget>[];
+    for (int r = 0; r * 3 < plan.months.length; r++) {
+      rows.add(Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
           children: [
-            for (int i = 0; i < n; i += 3)
-              Positioned(
-                left: i * w,
-                child: Text(
-                  monthNamesNom[p.months[i].month.month - 1],
-                  style: TextStyle(fontSize: 10.5, color: ctx.dim),
-                ),
+            for (int c = 0; c < 3; c++) ...[
+              if (c > 0) const SizedBox(width: 6),
+              Expanded(
+                child: r * 3 + c < plan.months.length
+                    ? _cell(context, r * 3 + c, plan.months[r * 3 + c], target)
+                    : const SizedBox.shrink(),
               ),
+            ],
           ],
         ),
-      );
-    },
-  );
+      ));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _cell(BuildContext context, int index, PassiveMonth m, double target) {
+    final share = target <= 0 ? 0.0 : m.total / target;
+    final ok = share >= 1 - 1e-9;
+    final color = ok ? _green : AppColors.negative;
+    final isSelected = selected == index;
+    final amount = '${m.estimatedTotal > 0 ? '≈' : ''}${Fmt.group(m.total)}';
+    return Pressable(
+      onTap: () => onSelect(index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
+        decoration: BoxDecoration(
+          color: context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? (context.isDark ? Colors.white : Colors.black87) : Colors.transparent,
+            width: 1.4,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: AdaptiveSingleLineText(
+                    monthNamesNom[m.month.month - 1],
+                    style: TextStyle(fontSize: 11, color: context.dim),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${(share * 100).floor()}%',
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: color),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            HiddenAmount.forText(
+              amount,
+              fontSize: 13,
+              child: AdaptiveSingleLineText(amount, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: share.clamp(0.0, 1.0).toDouble(),
+                minHeight: 4,
+                backgroundColor: context.hairline,
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 Widget _row(BuildContext ctx, String label, String value, {Color? color}) => Padding(
@@ -409,6 +430,7 @@ Widget _row(BuildContext ctx, String label, String value, {Color? color}) => Pad
       child: Row(
         children: [
           Expanded(child: Text(label, style: TextStyle(fontSize: 12.5, color: ctx.dim))),
+          const SizedBox(width: 8),
           HiddenAmount.forText(
             value,
             fontSize: 13.5,
@@ -424,11 +446,7 @@ BoxDecoration _boxDeco(BuildContext ctx, {Color? fill}) => BoxDecoration(
     );
 
 List<Widget> _summary(BuildContext ctx, PassivePlan p) {
-  final need = p.neededCapital;
-  final short = p.shortfall;
-  final d = p.reachDate;
   final weakest = p.weakest;
-  final sumGoal = GoalService.current;
   return [
     Container(
       padding: const EdgeInsets.fromLTRB(12, 11, 12, 4),
@@ -437,98 +455,50 @@ List<Widget> _summary(BuildContext ctx, PassivePlan p) {
         children: [
           _row(ctx, 'Сейчас в среднем', '≈${Fmt.money(p.average)}/мес'),
           if (weakest != null)
-            _row(
-              ctx,
-              'Самый слабый месяц',
-              '${monthNamesNom[weakest.month.month - 1]} · ${Fmt.money(weakest.total)}',
-            ),
-          _row(ctx, 'Доходность выплат', '${p.yieldPct.toStringAsFixed(1).replaceAll('.', ',')}% в год'),
+            _row(ctx, 'Самый слабый месяц', '${monthNamesNom[weakest.month.month - 1]} · ${Fmt.money(weakest.total)}'),
+          _row(ctx, 'Цель', '${Fmt.money(p.goal.monthly)}/мес'),
+          if (p.couponTaxYear > 0.5)
+            _row(ctx, 'Налог с купонов в конце года', '≈${Fmt.money(p.couponTaxYear)}'),
         ],
       ),
     ),
     const SizedBox(height: 8),
-    if (need != null)
+    if (!p.reached)
       Container(
         padding: const EdgeInsets.all(12),
         decoration: _boxDeco(ctx),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Сколько нужно вложить', style: TextStyle(fontSize: 12, color: ctx.dim)),
+            Text('Чтобы добрать ${Fmt.money(p.monthlyGap)}/мес', style: TextStyle(fontSize: 12, color: ctx.dim)),
             const SizedBox(height: 6),
-            _row(ctx, 'Для ${Fmt.money(p.goal.monthly)}/мес', '≈${goalShortRub(need)}'),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(5),
-              child: LinearProgressIndicator(
-                value: (p.value / need).clamp(0.0, 1.0).toDouble(),
-                minHeight: 9,
-                backgroundColor: ctx.hairline,
-                valueColor: const AlwaysStoppedAnimation(_green),
-              ),
-            ),
-            const SizedBox(height: 7),
-            Row(
-              children: [
-                Expanded(
-                  child: HiddenAmount.forText(
-                    goalShortRub(p.value),
-                    fontSize: 11.5,
-                    child: Text('в портфеле ${goalShortRub(p.value)}', style: TextStyle(fontSize: 11.5, color: ctx.dim)),
-                  ),
-                ),
-                if (short != null && short > 0.5)
-                  HiddenAmount.forText(
-                    goalShortRub(short),
-                    fontSize: 11.5,
-                    child: Text(
-                      'не хватает ≈${goalShortRub(short)}',
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.negative),
-                    ),
-                  )
-                else
-                  const Text('хватает',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _green)),
-              ],
+            _row(ctx, 'Докупить под ${_pctText(p.newYieldPct)}', '≈${goalShortRub(p.toBuy)}'),
+            Text(
+              'Это ${Fmt.money(p.monthlyGap * 12)} в год ÷ ${_pctText(p.newYieldPct)}. '
+              '${p.newYieldAuto ? 'Доходность — купон к цене по рынку облигаций, автоматически.' : 'Доходность — ваша, из цели.'} '
+              'Нынешние выплаты остаются и учтены.',
+              style: TextStyle(fontSize: 11.5, height: 1.4, color: ctx.dim),
             ),
           ],
         ),
-      )
-    else
-      Text('Пока выплат в прогнозе нет — посчитать, сколько вложить, нельзя.',
-          style: TextStyle(fontSize: 12.5, color: ctx.dim)),
-    if (need != null && !p.reached) ...[
-      const SizedBox(height: 8),
-      Container(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 4),
-        decoration: _boxDeco(ctx),
-        child: _row(
-          ctx,
-          p.saving > 0 ? 'Откладываете ${Fmt.money(p.saving)}/мес' : 'Без новых взносов',
-          d == null ? 'дольше 50 лет' : goalDeadlineText(d),
-        ),
       ),
-    ],
-    if (sumGoal != null && p.current > 0) ...[
+    if (!p.reached) ...[
       const SizedBox(height: 8),
       Container(
         padding: const EdgeInsets.all(12),
-        decoration: _boxDeco(ctx, fill: AppColors.gold.withOpacity(0.08)),
+        decoration: _boxDeco(ctx, fill: (p.savingEnough ? _green : AppColors.warning).withOpacity(0.08)),
         child: HiddenAmount.forText(
-          goalShortRub(sumGoal.amount),
+          _pace(p),
           fontSize: 12.5,
-          child: Text(
-            'Когда накопите ${goalShortRub(sumGoal.amount)} (цель ${goalDeadlineText(sumGoal.deadline)}), '
-            'пассивный доход будет ≈${Fmt.money(p.incomeAt(sumGoal.amount))}/мес',
-            style: const TextStyle(fontSize: 12.5, height: 1.35),
-          ),
+          child: Text(_pace(p), style: const TextStyle(fontSize: 12.5, height: 1.4, fontWeight: FontWeight.w600)),
         ),
       ),
     ],
     const SizedBox(height: 8),
     Text(
-      'Расчёт — по нынешнему составу портфеля: купоны и дивиденды по прогнозу, после налога 13%. '
-      'Дивиденды, которые компании ещё не объявили, — по прошлому году (штриховка). '
-      'Если реинвестировать выплаты, дойдёте раньше. Нажмите на месяц, чтобы увидеть его выплаты.',
+      'Купоны — полной суммой, как приходят на счёт${p.iis ? ' (на ИИС налог с них не удерживается)' : '; налог с них брокер удержит в конце года'}. '
+      'Дивиденды — после налога. Ещё не объявленные дивиденды — по прошлому году, со знаком «≈». '
+      'Нажмите на месяц, чтобы увидеть его выплаты.',
       style: TextStyle(fontSize: 11, height: 1.4, color: ctx.dim),
     ),
   ];
@@ -537,8 +507,8 @@ List<Widget> _summary(BuildContext ctx, PassivePlan p) {
 List<Widget> _monthDetails(BuildContext outer, BuildContext ctx, PassivePlan p, PassiveMonth m) {
   final target = p.goal.monthly;
   final deficit = math.max(0.0, target - m.total);
-  final title = '${monthNamesNom[m.month.month - 1][0].toUpperCase()}${monthNamesNom[m.month.month - 1].substring(1)} '
-      '${m.month.year}';
+  final name = monthNamesNom[m.month.month - 1];
+  final title = '${name[0].toUpperCase()}${name.substring(1)} ${m.month.year}';
   final items = <(String, double, bool)>[
     for (final e in m.sure.entries) (e.key, e.value, false),
     for (final e in m.estimated.entries) (e.key, e.value, true),
@@ -611,153 +581,11 @@ List<Widget> _monthDetails(BuildContext outer, BuildContext ctx, PassivePlan p, 
             ),
     ),
     const SizedBox(height: 10),
+    // Надпись длинная — переносится на вторую строку, а не обрезается.
     GradientButton(
       label: 'Подобрать бумаги с выплатами в $monthIn',
-      icon: Icons.search_rounded,
+      maxLines: 2,
       onPressed: () => showPayoutPickerSheet(outer, month: m.month, deficit: deficit),
     ),
   ];
-}
-
-/// Столбики выплат по месяцам. Нажатие или ведение пальцем выбирает месяц.
-class _PassiveBars extends StatelessWidget {
-  final PassivePlan plan;
-  final int? selected;
-  final ValueChanged<int> onSelect;
-
-  const _PassiveBars({required this.plan, required this.selected, required this.onSelect});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (c, box) {
-        final n = plan.months.length;
-        int indexAt(double dx) => n == 0 ? 0 : (dx / box.maxWidth * n).floor().clamp(0, n - 1);
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (d) => onSelect(indexAt(d.localPosition.dx)),
-          onHorizontalDragUpdate: (d) {
-            final i = indexAt(d.localPosition.dx);
-            if (i != selected) onSelect(i);
-          },
-          child: SizedBox(
-            height: 130,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: _BarsPainter(
-                months: plan.months,
-                target: plan.goal.monthly,
-                average: plan.average,
-                selected: selected,
-                everyMonth: plan.goal.mode == PassiveMode.everyMonth,
-                hidden: AppearanceService.amountsHidden,
-                textColor: context.isDark ? Colors.white : Colors.black87,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _BarsPainter extends CustomPainter {
-  final List<PassiveMonth> months;
-  final double target;
-  final double average;
-  final int? selected;
-  final bool everyMonth;
-  final bool hidden;
-  final Color textColor;
-
-  _BarsPainter({
-    required this.months,
-    required this.target,
-    required this.average,
-    required this.selected,
-    required this.everyMonth,
-    required this.hidden,
-    required this.textColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (months.isEmpty) return;
-    final maxValue = [target, average, ...months.map((m) => m.total)].reduce(math.max) * 1.12;
-    if (maxValue <= 0) return;
-    double y(double v) => size.height - v / maxValue * size.height;
-    final slot = size.width / months.length;
-    const gap = 4.0;
-
-    for (int i = 0; i < months.length; i++) {
-      final m = months[i];
-      final dim = selected != null && selected != i;
-      final below = everyMonth && m.total < target - 0.5;
-      final base = below ? AppColors.negative : _green;
-      final color = dim ? base.withOpacity(0.35) : base;
-      final left = i * slot + gap / 2;
-      final right = (i + 1) * slot - gap / 2;
-      // Известная часть — снизу сплошная, оценка — сверху штриховкой.
-      final sureTop = y(m.sureTotal);
-      final allTop = y(m.total);
-      if (m.sureTotal > 0) {
-        canvas.drawRRect(
-          RRect.fromRectAndCorners(
-            Rect.fromLTRB(left, sureTop, right, size.height),
-            topLeft: Radius.circular(m.estimatedTotal > 0 ? 0 : 3),
-            topRight: Radius.circular(m.estimatedTotal > 0 ? 0 : 3),
-          ),
-          Paint()..color = color,
-        );
-      }
-      if (m.estimatedTotal > 0) {
-        final rect = Rect.fromLTRB(left, allTop, right, sureTop);
-        final rr = RRect.fromRectAndCorners(rect, topLeft: const Radius.circular(3), topRight: const Radius.circular(3));
-        canvas.drawRRect(rr, Paint()..color = color.withOpacity(dim ? 0.1 : 0.25));
-        canvas.save();
-        canvas.clipRRect(rr);
-        _hatch(canvas, rect, color);
-        canvas.restore();
-      }
-      if (selected == i) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(Rect.fromLTRB(left - 1.5, allTop - 1.5, right + 1.5, size.height), const Radius.circular(4)),
-          Paint()
-            ..color = textColor
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5,
-        );
-      }
-    }
-
-    void dashed(double value, Color c, String label) {
-      final yy = y(value);
-      final p = Paint()
-        ..color = c
-        ..strokeWidth = 1.4;
-      for (double x = 0; x < size.width; x += 9) {
-        canvas.drawLine(Offset(x, yy), Offset(math.min(x + 5, size.width), yy), p);
-      }
-      final tp = TextPainter(
-        text: TextSpan(text: label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: c)),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(size.width - tp.width, math.max(0, yy - tp.height - 1)));
-    }
-
-    dashed(target, _green, 'цель ${hidden ? '•••' : Fmt.group(target)}');
-    // Линия среднего — если она не сливается с линией цели.
-    if ((average - target).abs() / maxValue > 0.08) {
-      dashed(average, textColor.withOpacity(0.7), '≈${hidden ? '•••' : Fmt.group(average)}');
-    }
-  }
-
-  @override
-  bool shouldRepaint(_BarsPainter old) =>
-      old.selected != selected ||
-      old.target != target ||
-      old.average != average ||
-      old.months.length != months.length ||
-      old.hidden != hidden ||
-      old.everyMonth != everyMonth;
 }

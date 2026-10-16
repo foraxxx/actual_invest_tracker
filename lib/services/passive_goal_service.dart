@@ -1,15 +1,23 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'analytics_service.dart';
 import 'goal_service.dart';
+import 'iis_service.dart';
 import 'payout_forecast_service.dart';
+import 'payout_picker_service.dart';
 
-/// Налог с купонов и дивидендов: прогноз выплат считается до налога, а
-/// пассивный доход — это то, что придёт на счёт.
-const passiveTaxRate = 0.13;
+/// Налог с дивидендов: компания удерживает его сразу, на счёт приходит сумма
+/// после налога. Купоны приходят целиком — налог с них брокер удерживает в
+/// конце года (на ИИС не удерживает).
+const dividendTaxRate = 0.13;
 
-/// Один месяц прогноза выплат для цели по пассивному доходу. Суммы — после
-/// налога.
+/// Доходность новых покупок, если рынок недоступен и своей нет.
+const fallbackNewYieldPct = 14.0;
+
+/// Один месяц прогноза выплат для цели по пассивному доходу — суммы, которые
+/// придут на счёт: купоны целиком, дивиденды после налога.
 class PassiveMonth {
   final DateTime month;
 
@@ -20,7 +28,10 @@ class PassiveMonth {
   /// прошлым выплатам.
   final Map<String, double> estimated;
 
-  const PassiveMonth({required this.month, required this.sure, required this.estimated});
+  /// Сколько из этого — купоны (с них в конце года удержат налог).
+  final double coupons;
+
+  const PassiveMonth({required this.month, required this.sure, required this.estimated, this.coupons = 0});
 
   double get sureTotal => sure.values.fold(0.0, (a, v) => a + v);
   double get estimatedTotal => estimated.values.fold(0.0, (a, v) => a + v);
@@ -28,6 +39,10 @@ class PassiveMonth {
 }
 
 /// Расчёт по цели «пассивный доход».
+///
+/// То, что портфель уже платит, остаётся как есть. Недостающий доход
+/// считается под доходность новых покупок: сколько нужно докупить облигаций,
+/// чтобы они добрали разницу.
 class PassivePlan {
   final PassiveGoal goal;
   final List<PassiveMonth> months;
@@ -41,12 +56,22 @@ class PassivePlan {
   /// Среднемесячный рост стоимости по реалистичному сценарию.
   final double rate;
 
+  /// Доходность новых покупок, % годовых, и откуда она.
+  final double newYieldPct;
+  final bool newYieldAuto;
+
+  /// Портфель — ИИС: налог с купонов не удерживается.
+  final bool iis;
+
   const PassivePlan({
     required this.goal,
     required this.months,
     required this.value,
     required this.saving,
     required this.rate,
+    required this.newYieldPct,
+    required this.newYieldAuto,
+    this.iis = false,
   });
 
   double get annual => months.fold(0.0, (a, m) => a + m.total);
@@ -66,28 +91,49 @@ class PassivePlan {
   double get progress => goal.monthly <= 0 ? 0 : (current / goal.monthly).clamp(0.0, 1.0).toDouble();
   bool get reached => current >= goal.monthly - 0.5;
 
-  /// Доходность выплат после налога, в процентах годовых.
+  /// Сколько месяцев из 12 уже дотягивают до цели.
+  int get monthsReached => months.where((m) => m.total >= goal.monthly - 0.5).length;
+
+  /// Налог, который брокер удержит с купонов за год. На ИИС — 0.
+  double get couponTaxYear => iis ? 0 : months.fold(0.0, (a, m) => a + m.coupons) * dividendTaxRate;
+
+  /// Доходность выплат нынешнего портфеля, % годовых.
   double get yieldPct => value <= 0 ? 0 : annual / value * 100;
 
-  /// Сколько должно быть в портфеле, чтобы выплаты дотянули до цели при
-  /// нынешнем составе. null — выплат нет, посчитать нельзя.
-  double? get neededCapital {
-    if (current <= 0 || value <= 0) return null;
-    return value * goal.monthly / current;
+  /// Сколько дохода в месяц не хватает до цели.
+  double get monthlyGap => math.max(0, goal.monthly - current);
+
+  /// Сколько докупить под доходность новых покупок, чтобы добрать разницу.
+  /// Новые бумаги считаем платящими равномерно (как облигации с частым
+  /// купоном), поэтому для режима «каждый месяц» добирается разница самого
+  /// слабого месяца.
+  double get toBuy => newYieldPct <= 0 ? 0 : monthlyGap * 12 / (newYieldPct / 100);
+
+  /// Каким должен стать портфель.
+  double get neededCapital => value + toBuy;
+
+  int? get monthsLeft {
+    final d = goal.deadline;
+    if (d == null) return null;
+    return GoalService.monthsUntil(d);
   }
 
-  double? get shortfall {
-    final n = neededCapital;
-    return n == null ? null : math.max(0, n - value);
+  /// Сколько откладывать в месяц, чтобы успеть к сроку. null — срока нет.
+  double? get requiredMonthly {
+    final m = monthsLeft;
+    if (m == null) return null;
+    return GoalService.requiredMonthly(current: value, target: neededCapital, months: m, rate: rate);
   }
 
-  /// Через сколько месяцев портфель дорастёт до [neededCapital] с
-  /// взносами [saving]. null — не за 50 лет или посчитать нельзя.
-  int? get reachMonths {
-    final n = neededCapital;
-    if (n == null) return null;
-    return GoalService.monthsToReach(current: value, target: n, monthly: saving, rate: rate);
+  /// Хватает ли того, что откладывается, чтобы успеть к сроку.
+  bool get savingEnough {
+    final r = requiredMonthly;
+    return r == null || saving >= r - 0.5;
   }
+
+  /// Через сколько месяцев портфель дорастёт до нужного с взносами [saving].
+  int? get reachMonths =>
+      reached ? 0 : GoalService.monthsToReach(current: value, target: neededCapital, monthly: saving, rate: rate);
 
   DateTime? get reachDate {
     final m = reachMonths;
@@ -95,10 +141,6 @@ class PassivePlan {
     final now = DateTime.now();
     return DateTime(now.year, now.month + m);
   }
-
-  /// Какой будет доход в месяц при стоимости портфеля [capital] — для связки
-  /// с целью «накопить сумму».
-  double incomeAt(double capital) => value <= 0 ? 0 : current * capital / value;
 }
 
 class PassiveGoalService {
@@ -110,8 +152,9 @@ class PassiveGoalService {
   static PassivePlan plan(PassiveGoal goal) {
     final value = AnalyticsService.currentPortfolioValueRub();
     final today = DateTime.now();
-    final key = '${goal.toJson()}|${(value / 1000).round()}|${PayoutForecastService.version.value}|'
-        '${today.year}-${today.month}-${today.day}';
+    final market = marketYield;
+    final key = '${jsonEncode(goal.toJson())}|${(value / 1000).round()}|${PayoutForecastService.version.value}|'
+        '$market|${today.year}-${today.month}-${today.day}';
     if (key == _cacheKey && _cache != null) return _cache!;
     final saving = goal.monthlySaving ?? GoalService.suggestedMonthlySaving();
     final result = PassivePlan(
@@ -120,49 +163,109 @@ class PassiveGoalService {
       value: value,
       saving: saving,
       rate: GoalService.monthlyGrowthRate(60, value),
+      newYieldPct: goal.newYieldPct ?? market ?? fallbackNewYieldPct,
+      newYieldAuto: goal.newYieldPct == null,
+      iis: IisService.current != null,
     );
     _cacheKey = key;
     _cache = result;
     return result;
   }
 
-  /// 12 месяцев со следующего: прогноз выплат после налога, с разделением на
-  /// точно известное и оценку.
+  // --- Доходность рынка облигаций ---
+
+  /// Последняя известная купонная доходность рынка, % годовых.
+  static double? get marketYield {
+    final raw = GoalService.meta('marketYield');
+    if (raw == null) return null;
+    try {
+      final j = jsonDecode(raw) as Map<String, dynamic>;
+      return (j['v'] as num?)?.toDouble();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static DateTime? get _marketYieldAt {
+    final raw = GoalService.meta('marketYield');
+    if (raw == null) return null;
+    try {
+      return DateTime.tryParse('${(jsonDecode(raw) as Map)['at']}');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static bool _refreshing = false;
+  static DateTime? _lastAttempt;
+
+  /// Обновляет доходность рынка, если она старше суток. Ничего не делает без
+  /// сети — остаётся прошлое значение.
+  static Future<void> refreshMarketYield({bool force = false}) async {
+    if (_refreshing) return;
+    final at = _marketYieldAt;
+    if (!force && at != null && DateTime.now().difference(at) < const Duration(hours: 24)) return;
+    // Без сети не стучимся на каждой перерисовке — не чаще раза в полчаса.
+    final last = _lastAttempt;
+    if (!force && last != null && DateTime.now().difference(last) < const Duration(minutes: 30)) return;
+    _lastAttempt = DateTime.now();
+    _refreshing = true;
+    try {
+      final v = await PayoutPickerService.marketCouponYield();
+      if (v != null) {
+        await GoalService.setMeta('marketYield', jsonEncode({'v': v, 'at': DateTime.now().toIso8601String()}));
+        GoalService.version.value++;
+      }
+    } catch (_) {
+      // Нет связи — считаем по прошлому значению.
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  /// 12 месяцев со следующего: суммы, которые придут на счёт, с разделением
+  /// на точно известное и оценку.
   static List<PassiveMonth> forecastMonths({DateTime? now}) {
     final today = now ?? DateTime.now();
     final detail = PayoutForecastService.portfolioForecastByMonthDetailed(from: today);
     final first = DateTime(today.year, today.month + 1);
+    final isBond = <String, bool>{};
+    final fromHistory = <String, bool>{};
     final result = <PassiveMonth>[];
     for (int i = 0; i < 12; i++) {
       final month = DateTime(first.year, first.month + i);
       final key = '${month.year}-${month.month.toString().padLeft(2, '0')}';
       final sure = <String, double>{};
       final estimated = <String, double>{};
+      double coupons = 0;
       for (final e in (detail[key] ?? const <String, double>{}).entries) {
-        final net = e.value * (1 - passiveTaxRate);
-        if (net <= 0.5) continue;
-        if (_isKnown(e.key, month)) {
-          sure[e.key] = net;
+        final ticker = e.key;
+        final bond = isBond[ticker] ??= PayoutForecastService.payoutsFor(ticker).any((p) => p.kind == 'Купон');
+        // Прогноз по вашим прошлым выплатам уже после налога — второй раз
+        // не вычитаем.
+        final history = fromHistory[ticker] ??=
+            PayoutForecastService.forecastForTicker(ticker).source == 'по моим выплатам';
+        final amount = bond || history ? e.value : e.value * (1 - dividendTaxRate);
+        if (amount <= 0.5) continue;
+        if (bond) coupons += amount;
+        if (bond || _dividendAnnounced(ticker, month)) {
+          sure[ticker] = amount;
         } else {
-          estimated[e.key] = net;
+          estimated[ticker] = amount;
         }
       }
-      result.add(PassiveMonth(month: month, sure: sure, estimated: estimated));
+      result.add(PassiveMonth(month: month, sure: sure, estimated: estimated, coupons: coupons));
     }
     return result;
   }
 
-  /// Купоны известны по графику биржи. Дивиденд известен, только если
-  /// компания уже объявила выплату в этом месяце — иначе это оценка по
-  /// прошлым выплатам.
-  static bool _isKnown(String ticker, DateTime month) {
-    final payouts = PayoutForecastService.payoutsFor(ticker);
-    if (payouts.any((p) => p.kind == 'Купон')) return true;
-    return payouts.any((p) =>
-        p.kind == 'Дивиденд' &&
-        p.dateKnown &&
-        p.amount > 0 &&
-        p.date.year == month.year &&
-        p.date.month == month.month);
-  }
+  static bool _dividendAnnounced(String ticker, DateTime month) => PayoutForecastService.payoutsFor(ticker).any((p) =>
+      p.kind == 'Дивиденд' &&
+      p.dateKnown &&
+      p.amount > 0 &&
+      p.date.year == month.year &&
+      p.date.month == month.month);
+
+  /// Запускает обновление доходности рынка без ожидания.
+  static void refreshInBackground() => unawaited(refreshMarketYield());
 }

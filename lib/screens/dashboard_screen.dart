@@ -578,25 +578,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final goal = GoalService.current;
       final passive = GoalService.passive;
       children.add(const SizedBox(height: 14));
-      // Две цели могут быть одновременно: накопить сумму и пассивный доход.
-      // Пока нет ни одной — одна строка «Поставить цель» с выбором вида.
-      if (goal != null || passive == null) {
+      // Цель у портфеля одна: накопить сумму или пассивный доход. Пока её
+      // нет — строка «Поставить цель» с выбором вида.
+      if (passive != null) {
+        PassiveGoalService.refreshInBackground();
+        children.add(PassiveGoalCard(
+          plan: PassiveGoalService.plan(passive),
+          collapsed: sectionsCollapsed.contains(_secPassive),
+          onToggle: () => _toggleSection(_secPassive, sectionsCollapsed.contains(_secPassive)),
+        ));
+      } else {
         children.add(GoalCard(
           plan: goal == null ? null : GoalService.plan(goal),
           collapsed: sectionsCollapsed.contains(_secGoal),
           onToggle: () => _toggleSection(_secGoal, sectionsCollapsed.contains(_secGoal)),
         ));
       }
-      if (passive != null) {
-        if (goal != null) children.add(const SizedBox(height: 10));
-        children.add(PassiveGoalCard(
-          plan: PassiveGoalService.plan(passive),
-          collapsed: sectionsCollapsed.contains(_secPassive),
-          onToggle: () => _toggleSection(_secPassive, sectionsCollapsed.contains(_secPassive)),
-        ));
-      }
-      if (goal != null && passive == null) children.add(const GoalAddLine(kind: GoalKind.passive));
-      if (goal == null && passive != null) children.add(const GoalAddLine(kind: GoalKind.sum));
       final iis = IisService.current;
       if (iis != null) {
         children.add(const SizedBox(height: 10));

@@ -57,11 +57,21 @@ class PassiveGoal {
   final double? monthlySaving;
   final String name;
 
+  /// Необязательный срок — месяц и год. null — считаем, когда цель будет
+  /// достигнута.
+  final DateTime? deadline;
+
+  /// Доходность новых покупок, % годовых. null — автоматически по рынку
+  /// облигаций.
+  final double? newYieldPct;
+
   const PassiveGoal({
     required this.monthly,
     this.mode = PassiveMode.average,
     this.monthlySaving,
     this.name = '',
+    this.deadline,
+    this.newYieldPct,
   });
 
   Map<String, dynamic> toJson() => {
@@ -69,17 +79,25 @@ class PassiveGoal {
         'md': mode.name,
         if (monthlySaving != null) 's': monthlySaving,
         if (name.isNotEmpty) 'n': name,
+        if (deadline != null) 'y': deadline!.year,
+        if (deadline != null) 'm': deadline!.month,
+        if (newYieldPct != null) 'r': newYieldPct,
       };
 
   static PassiveGoal? fromJson(Map<String, dynamic> j) {
     final i = (j['i'] as num?)?.toDouble();
     if (i == null || i <= 0) return null;
     final s = (j['s'] as num?)?.toDouble();
+    final y = (j['y'] as num?)?.toInt();
+    final m = (j['m'] as num?)?.toInt();
+    final r = (j['r'] as num?)?.toDouble();
     return PassiveGoal(
       monthly: i,
       mode: j['md'] == PassiveMode.everyMonth.name ? PassiveMode.everyMonth : PassiveMode.average,
       monthlySaving: s == null || s < 0 ? null : s,
       name: '${j['n'] ?? ''}',
+      deadline: y == null || m == null ? null : DateTime(y, m),
+      newYieldPct: r == null || r <= 0 ? null : r,
     );
   }
 }
@@ -299,6 +317,10 @@ class GoalService {
   // Хранится в том же боксе, ключ — id портфеля с суффиксом.
 
   static String _passiveKey(String portfolioId) => '$portfolioId#passive';
+
+  /// Служебные значения в том же боксе (например, доходность рынка).
+  static String? meta(String key) => _box.get('_meta#$key');
+  static Future<void> setMeta(String key, String value) => _box.put('_meta#$key', value);
 
   static PassiveGoal? get passive => passiveFor(PortfolioService.activeId);
 

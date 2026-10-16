@@ -320,13 +320,22 @@ enum GoalKind { sum, passive }
 Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
   final existing = GoalService.current;
   final existingPassive = GoalService.passive;
-  final allowSwitch = kind == null && existing == null && existingPassive == null;
+  // Цель у портфеля одна: либо накопить сумму, либо пассивный доход. Вид
+  // можно сменить прямо в форме — прежняя цель при сохранении заменится.
+  const allowSwitch = true;
   var goalKind = kind ?? (existing == null && existingPassive != null ? GoalKind.passive : GoalKind.sum);
   final incomeCtrl = TextEditingController(
     text: existingPassive == null ? '' : existingPassive.monthly.toStringAsFixed(0),
   );
   final passiveNameCtrl = TextEditingController(text: existingPassive?.name ?? '');
   var passiveMode = existingPassive?.mode ?? PassiveMode.average;
+  DateTime? passiveDeadline = existingPassive?.deadline;
+  final yieldCtrl = TextEditingController(
+    text: existingPassive?.newYieldPct == null
+        ? ''
+        : existingPassive!.newYieldPct!.toStringAsFixed(1).replaceAll('.0', '').replaceAll('.', ','),
+  );
+  PassiveGoalService.refreshInBackground();
   final amountCtrl = TextEditingController(
     text: existing == null ? '' : existing.amount.toStringAsFixed(0),
   );
@@ -369,6 +378,9 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
             suggested: suggested,
             mode: passiveMode,
             onMode: (m) => setSheet(() => passiveMode = m),
+            deadline: passiveDeadline,
+            onDeadline: (d) => setSheet(() => passiveDeadline = d),
+            yieldCtrl: yieldCtrl,
             onChanged: () => setSheet(() => error = null),
             error: error,
             parseText: parseText,
@@ -500,6 +512,8 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
                     name: nameCtrl.text.trim(),
                     monthlySaving: parseSaving() ?? 0,
                   ));
+                  // Цель одна — прежняя цель по доходу заменяется.
+                  await GoalService.savePassive(null);
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -510,6 +524,13 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
     ),
   );
 }
+
+const _monthNom = [
+  'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+  'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
+];
+
+String _pct(double v) => '${v.toStringAsFixed(1).replaceAll('.', ',')}%';
 
 Widget _kindToggle(GoalKind selected, ValueChanged<GoalKind> onChanged) => SegmentedToggle<GoalKind>(
       values: GoalKind.values,
@@ -530,6 +551,9 @@ Widget _passiveForm(
   required double suggested,
   required PassiveMode mode,
   required ValueChanged<PassiveMode> onMode,
+  required DateTime? deadline,
+  required ValueChanged<DateTime?> onDeadline,
+  required TextEditingController yieldCtrl,
   required VoidCallback onChanged,
   required String? error,
   required double? Function(String) parseText,
@@ -537,21 +561,27 @@ Widget _passiveForm(
 }) {
   final income = parseText(incomeCtrl.text);
   final saving = parseText(savingCtrl.text);
+  final ownYield = parseText(yieldCtrl.text);
+  final market = PassiveGoalService.marketYield;
   final preview = income != null && income > 0
       ? PassiveGoalService.plan(PassiveGoal(
           monthly: income,
           mode: mode,
           monthlySaving: saving == null || saving < 0 ? 0 : saving,
+          deadline: deadline,
+          newYieldPct: ownYield == null || ownYield <= 0 ? null : ownYield,
         ))
       : null;
+  final now = DateTime.now();
   String previewText(PassivePlan p) {
-    final now = '≈${Fmt.money(p.current)}/мес';
-    if (p.reached) return 'Сейчас $now — цель уже достигнута.';
-    final need = p.shortfall;
+    final cur = '≈${Fmt.money(p.current)}/мес';
+    if (p.reached) return 'Сейчас $cur — цель уже достигнута.';
     final d = p.reachDate;
-    return 'Сейчас $now — это ${(p.progress * 100).floor()}%.'
-        '${need == null ? '\nПока выплат нет — расчёт появится, когда они будут.' : '\nНужно ещё ≈${goalShortRub(need)} вложений'}'
-        '${need != null && d != null && p.saving > 0 ? '; откладывая ${Fmt.money(p.saving)}/мес, дойдёте ${goalDeadlineText(d)}.' : need != null ? '.' : ''}';
+    final req = p.requiredMonthly;
+    return 'Сейчас $cur — это ${(p.progress * 100).floor()}%. '
+        'Докупить ≈${goalShortRub(p.toBuy)} под ${_pct(p.newYieldPct)}.'
+        '${req != null && p.goal.deadline != null ? '\nЧтобы успеть ${goalDeadlineText(p.goal.deadline!)}, откладывать ≈${Fmt.money(_round100(req))}/мес.' : ''}'
+        '${d != null && p.saving > 0 ? '\nОткладывая ${Fmt.money(p.saving)}/мес, дойдёте ${goalDeadlineText(d)}.' : ''}';
   }
 
   return SingleChildScrollView(
@@ -592,6 +622,43 @@ Widget _passiveForm(
           style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
         ),
         const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: AppDropdown<int>(
+                value: deadline?.month ?? 0,
+                label: 'Срок · месяц',
+                items: [
+                  const DropdownMenuItem(value: 0, child: Text('без срока')),
+                  for (int i = 1; i <= 12; i++) DropdownMenuItem(value: i, child: Text(_monthNom[i - 1])),
+                ],
+                onChanged: (v) => onDeadline(
+                  v == null || v == 0 ? null : DateTime(deadline?.year ?? now.year + 5, v),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: AppDropdown<int>(
+                value: deadline?.year ?? 0,
+                label: 'год',
+                items: [
+                  const DropdownMenuItem(value: 0, child: Text('—')),
+                  for (int y = now.year; y <= now.year + 40; y++) DropdownMenuItem(value: y, child: Text('$y')),
+                ],
+                onChanged: (v) => onDeadline(v == null || v == 0 ? null : DateTime(v, deadline?.month ?? 12)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          deadline == null ? 'Без срока — покажу, когда цель будет достигнута' : 'Посчитаю, сколько откладывать, чтобы успеть',
+          style: TextStyle(fontSize: 11.5, color: ctx.dim),
+        ),
+        const SizedBox(height: 12),
         AppTextField(
           controller: savingCtrl,
           label: 'Откладываю в месяц, ₽',
@@ -605,6 +672,22 @@ Widget _passiveForm(
             style: TextStyle(fontSize: 11.5, color: ctx.dim),
           ),
         ],
+        const SizedBox(height: 12),
+        AppTextField(
+          controller: yieldCtrl,
+          label: 'Доходность новых покупок, % годовых',
+          hint: 'авто · ${_pct(market ?? fallbackNewYieldPct)}',
+          number: true,
+          onChanged: (_) => onChanged(),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          market == null
+              ? 'Пусто — автоматически. Рынок облигаций пока не загрузился, беру ${_pct(fallbackNewYieldPct)}'
+              : 'Пусто — автоматически по рынку облигаций: купон к цене сейчас ≈${_pct(market)}. '
+                  'Под неё считаю, сколько докупить',
+          style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
+        ),
         const SizedBox(height: 12),
         AppTextField(controller: nameCtrl, label: 'Название (необязательно)', hint: 'Например, «Вторая зарплата»'),
         if (preview != null) ...[
@@ -633,12 +716,21 @@ Widget _passiveForm(
               return;
             }
             final sv = parseText(savingCtrl.text);
+            if (deadline != null && deadline.isBefore(DateTime(now.year, now.month))) {
+              onError('Срок уже прошёл — выберите месяц позже');
+              return;
+            }
+            final y = parseText(yieldCtrl.text);
             await GoalService.savePassive(PassiveGoal(
               monthly: i,
               mode: mode,
               monthlySaving: sv == null || sv < 0 ? 0 : sv,
               name: nameCtrl.text.trim(),
+              deadline: deadline,
+              newYieldPct: y == null || y <= 0 ? null : y,
             ));
+            // Цель одна — прежняя цель накопить сумму заменяется.
+            await GoalService.delete();
             if (ctx.mounted) Navigator.pop(ctx);
           },
         ),

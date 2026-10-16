@@ -790,6 +790,9 @@ class GradientButton extends StatelessWidget {
   final List<Color>? colors;
   final bool expand;
 
+  /// Длинная надпись может переноситься на вторую строку, а не обрезаться.
+  final int maxLines;
+
   const GradientButton({
     super.key,
     required this.label,
@@ -797,6 +800,7 @@ class GradientButton extends StatelessWidget {
     this.onPressed,
     this.colors,
     this.expand = true,
+    this.maxLines = 1,
   });
 
   @override
@@ -825,8 +829,9 @@ class GradientButton extends StatelessWidget {
             Flexible(
               child: Text(
                 label,
-                maxLines: 1,
+                maxLines: maxLines,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
               ),
             ),

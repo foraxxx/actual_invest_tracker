@@ -72,8 +72,8 @@ Future<void> showPayoutPickerSheet(BuildContext context, {required DateTime mont
                 ..._stocksTab(ctx, stocks, month),
               const SizedBox(height: 10),
               Text(
-                'Подбор — не рекомендация купить. Данные облигаций — с Мосбиржи на момент открытия, '
-                'купоны после налога 13%.',
+                'Подбор — не рекомендация купить. Данные облигаций — с Мосбиржи на момент открытия. '
+                'Купоны — полной суммой, как приходят; дивиденды — после налога.',
                 style: TextStyle(fontSize: 10.5, height: 1.4, color: ctx.dim),
               ),
             ],
@@ -146,7 +146,7 @@ List<Widget> _bondsTab(
         }
         // Сколько вложить, чтобы закрыть месяц, — по первой надёжной бумаге.
         final best = list.firstWhere((b) => !b.risky, orElse: () => list.first);
-        final closeAll = deficit > 0.5 && best.couponNet > 0 ? (deficit / best.couponNet).ceil() * best.price : null;
+        final closeAll = deficit > 0.5 && best.coupon > 0 ? (deficit / best.coupon).ceil() * best.price : null;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -314,7 +314,7 @@ class _BondRow extends StatelessWidget {
       tag: b.yieldPct == null ? null : '${b.yieldPct!.toStringAsFixed(1).replaceAll('.', ',')}%',
       tagColor: b.risky ? AppColors.warning : AppColors.positive,
       warning: b.risky ? 'Доходность заметно выше ОФЗ или низкий уровень листинга — повышенный риск' : null,
-      calc: '$qty шт ≈ ${Fmt.money(qty * b.price)} → +${Fmt.money(qty * b.couponNet)} в $monthIn',
+      calc: '$qty шт ≈ ${Fmt.money(qty * b.price)} → +${Fmt.money(qty * b.coupon)} в $monthIn',
       onPlan: () => _showPlanSheet(
         context,
         ticker: b.secid,
@@ -324,7 +324,7 @@ class _BondRow extends StatelessWidget {
         price: b.price,
         // Купить нужно до даты фиксации — за рабочий день до купона.
         buyBy: b.couponDate.subtract(const Duration(days: 2)),
-        perUnitNet: b.couponNet,
+        perUnitNet: b.coupon,
         payDate: b.couponDate,
       ),
     );
@@ -442,7 +442,7 @@ Future<void> _showPlanSheet(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '≈${Fmt.money(q * p)} → +${Fmt.money(q * perUnitNet)} выплатой после налога',
+                    '≈${Fmt.money(q * p)} → +${Fmt.money(q * perUnitNet)} выплатой на счёт',
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),

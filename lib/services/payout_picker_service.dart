@@ -4,7 +4,6 @@ import '../models/income.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
 import 'moex_service.dart';
-import 'passive_goal_service.dart';
 import 'storage_service.dart';
 
 /// Облигация с купоном в нужном месяце.
@@ -47,7 +46,6 @@ class BondPick {
 
   bool get ofz => board == 'TQOB';
   bool get monthly => periodDays >= 28 && periodDays <= 31;
-  double get couponNet => coupon * (1 - passiveTaxRate);
 }
 
 /// Акция, по которой вы уже получали дивиденды в этом месяце.
@@ -185,6 +183,36 @@ class PayoutPickerService {
       return (b.yieldPct ?? 0).compareTo(a.yieldPct ?? 0);
     });
     return result;
+  }
+
+  /// Средняя купонная доходность облигаций на рынке: годовой купон к цене,
+  /// % годовых. Именно купон, а не доходность к погашению: для пассивного
+  /// дохода важны деньги, которые приходят выплатами.
+  static Future<double?> marketCouponYield() async => marketCouponYieldFromRows(await _loadRows());
+
+  static double? marketCouponYieldFromRows(List<Map<String, dynamic>> rows, {DateTime? now}) {
+    final today = now ?? DateTime.now();
+    final values = <double>[];
+    for (final r in rows) {
+      final unit = '${r['FACEUNIT'] ?? ''}'.toUpperCase();
+      if (unit != 'SUR' && unit != 'RUB') continue;
+      // Только надёжные и не короткие: третий уровень и бумаги, которые
+      // гасятся в ближайший год, сильно искажают среднее.
+      if ((_num(r['LISTLEVEL'])?.round() ?? 3) >= 3) continue;
+      final maturity = _date(r['MATDATE']);
+      if (maturity != null && maturity.isBefore(today.add(const Duration(days: 365)))) continue;
+      final coupon = _num(r['COUPONVALUE']);
+      final period = _num(r['COUPONPERIOD']);
+      final face = _num(r['FACEVALUE']);
+      final pricePct = _num(r['LAST']) ?? _num(r['PREVPRICE']);
+      if (coupon == null || coupon <= 0 || period == null || period <= 0) continue;
+      if (face == null || face <= 0 || pricePct == null || pricePct <= 0) continue;
+      final y = coupon * 365 / period / (pricePct * face / 100) * 100;
+      if (y > 2 && y < 40) values.add(y);
+    }
+    if (values.length < 5) return null;
+    values.sort();
+    return values[values.length ~/ 2];
   }
 
   /// Акции, по которым вы получали дивиденды в месяце [month] (любого года).

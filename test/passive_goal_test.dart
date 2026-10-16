@@ -11,21 +11,33 @@ void main() {
         estimated: {if (est > 0) 'B': est},
       );
 
-  PassivePlan plan(PassiveMode mode) => PassivePlan(
-        goal: PassiveGoal(monthly: 30000, mode: mode),
+  PassivePlan plan(PassiveMode mode, {DateTime? deadline}) => PassivePlan(
+        goal: PassiveGoal(monthly: 30000, mode: mode, deadline: deadline),
         months: [for (int m = 1; m <= 12; m++) month(m, m == 1 ? 4600 : 12000, m == 6 ? 2000 : 0)],
         value: 1900000,
         saving: 40000,
         rate: 0,
+        newYieldPct: 14.5,
+        newYieldAuto: true,
       );
 
   test('цель сохраняется и читается', () {
-    const g = PassiveGoal(monthly: 30000, mode: PassiveMode.everyMonth, monthlySaving: 40000, name: 'Вторая зарплата');
+    final g = PassiveGoal(
+      monthly: 30000,
+      mode: PassiveMode.everyMonth,
+      monthlySaving: 40000,
+      name: 'Вторая зарплата',
+      deadline: DateTime(2032, 12),
+      newYieldPct: 15,
+    );
     final back = PassiveGoal.fromJson(g.toJson())!;
     expect(back.monthly, 30000);
     expect(back.mode, PassiveMode.everyMonth);
     expect(back.monthlySaving, 40000);
     expect(back.name, 'Вторая зарплата');
+    expect(back.deadline, DateTime(2032, 12));
+    expect(back.newYieldPct, 15);
+    expect(PassiveGoal.fromJson({'i': 30000})?.deadline, isNull);
     expect(PassiveGoal.fromJson({'i': 0}), isNull);
   });
 
@@ -33,20 +45,52 @@ void main() {
     final p = plan(PassiveMode.average);
     expect(p.annual, 4600 + 12000 * 11 + 2000);
     expect(p.current, closeTo(p.annual / 12, 1e-6));
-    expect(p.neededCapital, closeTo(1900000 * 30000 / p.current, 1e-3));
+  });
+
+  test('докупить — недостающий доход за год под доходность новых покупок', () {
+    final p = plan(PassiveMode.average);
+    final gapYear = (30000 - p.current) * 12;
+    expect(p.toBuy, closeTo(gapYear / 0.145, 1e-6));
+    expect(p.neededCapital, closeTo(1900000 + gapYear / 0.145, 1e-6));
   });
 
   test('каждый месяц — по самому слабому месяцу', () {
     final p = plan(PassiveMode.everyMonth);
     expect(p.weakest?.month.month, 1);
     expect(p.current, 4600);
-    expect(p.neededCapital! > plan(PassiveMode.average).neededCapital!, isTrue);
+    expect(p.toBuy > plan(PassiveMode.average).toBuy, isTrue);
+    expect(p.monthsReached, 0);
   });
 
   test('без роста дорастаем взносами', () {
     final p = plan(PassiveMode.average);
-    final need = p.neededCapital! - p.value;
-    expect(p.reachMonths, (need / 40000).ceil());
+    expect(p.reachMonths, (p.toBuy / 40000).ceil());
+  });
+
+  test('со сроком считается, сколько откладывать', () {
+    final now = DateTime.now();
+    final p = plan(PassiveMode.average, deadline: DateTime(now.year + 10, now.month));
+    expect(p.monthsLeft, 120);
+    expect(p.requiredMonthly, closeTo(p.toBuy / 120, 1e-6));
+    expect(p.savingEnough, p.toBuy / 120 <= 40000);
+  });
+
+  test('доходность рынка — медиана купона к цене', () {
+    final rows = [
+      for (int i = 0; i < 7; i++)
+        {
+          'FACEUNIT': 'SUR',
+          'FACEVALUE': 1000,
+          'COUPONVALUE': 30.0 + i * 5,
+          'COUPONPERIOD': 182,
+          'MATDATE': '2032-01-01',
+          'PREVPRICE': 100.0,
+          'LISTLEVEL': 1,
+        },
+    ];
+    // Купон 45 ₽ дважды в год к цене 1000 ₽ ≈ 9%.
+    final y = PayoutPickerService.marketCouponYieldFromRows(rows, now: DateTime(2026, 10, 16))!;
+    expect(y, closeTo(45 * 365 / 182 / 1000 * 100, 1e-6));
   });
 
   test('облигация попадает в месяц по графику купонов', () {
