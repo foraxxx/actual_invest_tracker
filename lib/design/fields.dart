@@ -302,15 +302,23 @@ class SegmentedToggle<T> extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 6),
                               ],
+                              // Длинная надпись уменьшается, а не обрезается
+                              // многоточием: «Последний день» должен читаться
+                              // целиком даже на узком экране.
                               Flexible(
-                                child: Text(
-                                  labelOf(v),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: v == selected ? Colors.white : context.dim,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      labelOf(v),
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: v == selected ? Colors.white : context.dim,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),

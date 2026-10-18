@@ -67,7 +67,7 @@ String _sourceLabel(BudgetSource s, BudgetConfig config) => switch (s) {
     };
 
 String _sourceHint(BudgetSource s, BudgetConfig config) => switch (s) {
-      BudgetSource.auto => 'Приложение само выберет выплату, с которой отложить: ту, где после остальных трат '
+      BudgetSource.auto => 'Приложение само выберет выплату, с которой отложить: ту, где после остальных сумм '
           'остаётся больше денег. Разделит сумму, только если целиком она не помещается.',
       BudgetSource.half => 'Поровну с обеих выплат.',
       BudgetSource.salary => 'Вся сумма — с выплаты «${config.names[0]}».',
@@ -159,14 +159,14 @@ class _BudgetScreenState extends State<BudgetScreen> {
         PageTourStep(
           anchor: 'budget_pay',
           title: 'Зарплата и аванс',
-          text: 'Сколько приходит и когда. Кнопка «Отложить всё» отмечает разом все траты этой выплаты.',
+          text: 'Сколько приходит и когда. Кнопка «Отложить всё» отмечает разом всё, что откладывается с этой выплаты.',
         ),
         PageTourStep(
           anchor: 'budget_row',
-          title: 'Траты',
+          title: 'Отложить',
           text: 'Что отложить в этом месяце и с какой выплаты. Нажмите на сумму — она отмечена как отложенная, '
-              'ещё раз — отметка снимется. Нажмите на название, чтобы изменить трату или перенести её на '
-              'следующий месяц. Смахните строку влево, чтобы убрать трату.',
+              'ещё раз — отметка снимется. Нажмите на название, чтобы изменить сумму или перенести её на '
+              'следующий месяц. Смахните строку влево, чтобы убрать категорию из месяца.',
         ),
         PageTourStep(
           anchor: 'budget_foot',
@@ -297,7 +297,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
         title: '${_cap(_monthsNom[_m - 1])} ещё не заполнен',
         subtitle: prev == null
             ? 'Укажите зарплату, аванс и что нужно отложить в этом месяце.'
-            : 'Скопируйте ${_monthsNom[prev.$2 - 1]}: зарплату, аванс, сумму на жизнь и все траты. '
+            : 'Скопируйте ${_monthsNom[prev.$2 - 1]}: зарплату, аванс, сумму на жизнь и что откладывать. '
                 'Потом поправьте то, что изменилось. Или заполните месяц с нуля.',
         action: Column(
           mainAxisSize: MainAxisSize.min,
@@ -356,7 +356,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
       result.add(const SizedBox(height: 10));
       result.add(InfoBanner(
         text: 'Укажите, сколько приходит в ${names[0].toLowerCase()} и ${names[1].toLowerCase()} и сколько '
-            'оставлять на жизнь — тогда приложение разложит траты по выплатам.',
+            'оставлять на жизнь — тогда приложение разложит суммы по выплатам.',
         icon: Icons.edit_note_rounded,
         color: AppColors.info,
         onTap: () => _incomeSheet(v),
@@ -367,7 +367,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
     result.add(_progressCard(v));
 
     result.add(const SizedBox(height: 18));
-    result.add(_sectionTitle('Траты', '+ Трата', () => _itemSheet(v)));
+    result.add(_sectionTitle('Отложить', '+ Добавить', () => _itemSheet(v)));
     result.add(_table(v));
 
     result.add(const SizedBox(height: 22));
@@ -466,7 +466,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
     final count = v.lines.where((l) => l.left(i) > 0.5).length;
     final ok = await _confirm(
       title: 'Отложить всё с выплаты «${v.config.names[i]}»?',
-      text: '${_rub(left)} — ${count == 1 ? 'одна трата' : '$count ${Fmt.plural(count, 'трата', 'траты', 'трат')}'}. '
+      text: '${_rub(left)} — ${count == 1 ? 'одна категория' : '$count ${Fmt.plural(count, 'категория', 'категории', 'категорий')}'}. '
           'Каждую отметку потом можно снять отдельно.',
       action: 'Отложить ${_num(left)}',
       positive: true,
@@ -576,7 +576,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
       rows.add(Padding(
         padding: const EdgeInsets.all(12),
         child: Text(
-          'Пока ничего не запланировано. Нажмите «+ Трата», выберите категорию и сумму, которую нужно отложить '
+          'Пока ничего не запланировано. Нажмите «+ Добавить», выберите категорию и сумму, которую нужно отложить '
           'в $_monthIn.',
           style: TextStyle(fontSize: 12.5, color: context.dim, height: 1.4),
         ),
@@ -616,7 +616,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
     }
 
     rows.add(Container(height: 1.5, color: context.dim.withOpacity(0.35)));
-    rows.add(TourSpot(id: 'budget_foot', child: footRow('Отложить', v.planned(0), v.planned(1), bold: true)));
+    rows.add(TourSpot(id: 'budget_foot', child: footRow('Итого отложить', v.planned(0), v.planned(1), bold: true)));
     rows.add(_divider());
     rows.add(GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -629,8 +629,8 @@ class _BudgetScreenState extends State<BudgetScreen> {
       rows.add(Padding(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
         child: Text(
-          'Запланировано больше, чем приходит. Уменьшите траты или сумму на жизнь, '
-          'либо перенесите часть трат на следующий месяц.',
+          'Запланировано больше, чем приходит. Уменьшите суммы или сумму на жизнь, '
+          'либо перенесите часть на следующий месяц.',
           style: TextStyle(fontSize: 11.5, color: AppColors.negative.withOpacity(0.9), height: 1.35),
         ),
       ));
@@ -643,7 +643,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
             style: TextButton.styleFrom(foregroundColor: AppColors.gold, visualDensity: VisualDensity.compact),
             onPressed: () => _distributeSheet(v),
             icon: const Icon(Icons.call_split_rounded, size: 16),
-            label: Text('Добавить ${_num(v.freeTotal)} к трате', style: const TextStyle(fontWeight: FontWeight.w700)),
+            label: Text('Добавить ${_num(v.freeTotal)} к категории', style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
         ),
       ));
@@ -682,7 +682,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
         final before = BudgetService.monthData(_y, _m);
         await BudgetService.removeItem(_y, _m, id);
         if (!mounted) return;
-        _snack('«${l.category.name}» убрана из трат на ${_monthsNom[_m - 1]}',
+        _snack('«${l.category.name}» убрана из ${_monthsGen[_m - 1]}',
             undo: before == null ? null : () => BudgetService.restoreMonth(before));
       },
       child: _row(v, l),
@@ -967,13 +967,13 @@ class _BudgetScreenState extends State<BudgetScreen> {
               _menuAction(
                 ctx,
                 icon: Icons.copy_rounded,
-                title: 'Скопировать траты из ${_monthsGen[prev.$2 - 1]}',
-                subtitle: 'Траты этого месяца заменятся тратами из ${_monthsGen[prev.$2 - 1]}',
+                title: 'Скопировать суммы из ${_monthsGen[prev.$2 - 1]}',
+                subtitle: 'Что откладывать в этом месяце — возьмётся из ${_monthsGen[prev.$2 - 1]}',
                 onTap: () async {
                   Navigator.pop(ctx);
                   final ok = await _confirm(
-                    title: 'Скопировать траты из ${_monthsGen[prev.$2 - 1]}?',
-                    text: 'Нынешние траты в $_monthIn заменятся тратами из ${_monthsGen[prev.$2 - 1]}.',
+                    title: 'Скопировать суммы из ${_monthsGen[prev.$2 - 1]}?',
+                    text: 'Категории и суммы в $_monthIn заменятся теми, что были в ${_monthsGen[prev.$2 - 1]}. Отметки останутся.',
                     action: 'Скопировать',
                     positive: true,
                   );
@@ -984,13 +984,13 @@ class _BudgetScreenState extends State<BudgetScreen> {
               ctx,
               icon: Icons.restart_alt_rounded,
               title: 'Сбросить ${_monthsNom[_m - 1]}',
-              subtitle: 'Месяц станет пустым: удалятся доходы, траты и все отметки',
+              subtitle: 'Месяц станет пустым: удалятся доходы, суммы и все отметки',
               color: AppColors.negative,
               onTap: () async {
                 Navigator.pop(ctx);
                 final ok = await _confirm(
                   title: 'Сбросить ${_monthsNom[_m - 1]} $_y?',
-                  text: 'Удалятся зарплата, аванс, сумма на жизнь, премии, все траты и отметки этого месяца. '
+                  text: 'Удалятся зарплата, аванс, сумма на жизнь, премии, все суммы и отметки этого месяца. '
                       'Категории и другие месяцы не изменятся.',
                   action: 'Сбросить месяц',
                 );
@@ -1129,7 +1129,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   await BudgetService.removeItem(y, m, id);
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (!mounted) return;
-                  _snack('«${c.name}» убрана из трат на ${_monthsNom[m - 1]}',
+                  _snack('«${c.name}» убрана из ${_monthsGen[m - 1]}',
                       undo: before == null ? null : () => BudgetService.restoreMonth(before));
                 },
                 child: Text('Убрать из ${_monthsGen[m - 1]}'),
@@ -1167,12 +1167,11 @@ class _BudgetScreenState extends State<BudgetScreen> {
   }
 
   /// «+ Трата»: категория, сумма, с какой выплаты. Одна трата на категорию в
-  /// месяце — если категория уже есть, сумму можно прибавить или заменить.
+  /// месяце, поэтому в списке только категории, которых в месяце ещё нет.
   Future<void> _itemSheet(BudgetMonthView v) async {
     String? selected;
     final ctrl = TextEditingController();
     var source = BudgetSource.auto;
-    var add = true;
     String? error;
     await showAppSheet(
       context: context,
@@ -1180,17 +1179,16 @@ class _BudgetScreenState extends State<BudgetScreen> {
         valueListenable: BudgetService.version,
         builder: (ctx, _, __) => StatefulBuilder(
           builder: (ctx, setSheet) {
-            final cats = BudgetService.categories;
-            final sel = selected;
-            final existing = sel == null ? null : BudgetService.view(_y, _m).data.items[sel];
+            final used = BudgetService.view(_y, _m).data.items.keys.toSet();
+            final cats = BudgetService.categories.where((c) => !used.contains(c.id)).toList();
             return SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(20, 14, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SheetHeader(
-                    title: 'Новая трата',
-                    subtitle: 'Что отложить в $_monthIn',
+                    title: 'Что отложить в $_monthIn',
+                    subtitle: 'Выберите категорию, сумму и с какой выплаты откладывать',
                     trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
                   ),
                   const SizedBox(height: 14),
@@ -1207,8 +1205,6 @@ class _BudgetScreenState extends State<BudgetScreen> {
                           onSelected: (_) => setSheet(() {
                             selected = c.id;
                             error = null;
-                            final ex = BudgetService.view(_y, _m).data.items[c.id];
-                            if (ex != null) source = ex.source;
                           }),
                         ),
                       ActionChip(
@@ -1221,32 +1217,18 @@ class _BudgetScreenState extends State<BudgetScreen> {
                       ),
                     ],
                   ),
-                  if (existing != null) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.gold.withOpacity(0.10),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        'В $_monthIn на эту категорию уже запланировано ${_rub(existing.amount)}.',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                      ),
-                    ),
+                  if (cats.isEmpty) ...[
                     const SizedBox(height: 8),
-                    SegmentedToggle<bool>(
-                      values: const [true, false],
-                      selected: add,
-                      height: 42,
-                      labelOf: (b) => b ? 'Прибавить' : 'Заменить',
-                      onChanged: (b) => setSheet(() => add = b),
+                    Text(
+                      'Все категории уже есть в $_monthIn. Чтобы изменить сумму, нажмите на нужную строку в таблице, '
+                      'или создайте новую категорию.',
+                      style: TextStyle(fontSize: 11.5, color: ctx.dim, height: 1.35),
                     ),
                   ],
                   const SizedBox(height: 12),
                   AppTextField(
                     controller: ctrl,
-                    label: existing != null && add ? 'Сколько прибавить, ₽' : 'Сумма в $_monthIn, ₽',
+                    label: 'Сумма в $_monthIn, ₽',
                     number: true,
                     onChanged: (_) {
                       if (error != null) setSheet(() => error = null);
@@ -1270,7 +1252,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   ],
                   const SizedBox(height: 16),
                   GradientButton(
-                    label: existing == null ? 'Добавить' : 'Сохранить',
+                    label: 'Добавить',
                     icon: Icons.check_rounded,
                     onPressed: () async {
                       final id = selected;
@@ -1283,9 +1265,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                         setSheet(() => error = 'Укажите сумму');
                         return;
                       }
-                      final cur = BudgetService.view(_y, _m).data.items[id];
-                      final amount = cur != null && add ? cur.amount + a : a;
-                      await BudgetService.setItem(_y, _m, id, BudgetItem(amount: amount, source: source));
+                      await BudgetService.setItem(_y, _m, id, BudgetItem(amount: a, source: source));
                       if (ctx.mounted) Navigator.pop(ctx);
                     },
                   ),
@@ -1398,7 +1378,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
             children: [
               SheetHeader(
                 title: 'Не распределено ${_rub(free)}',
-                subtitle: 'Сумма прибавится к трате выбранной категории в $_monthIn',
+                subtitle: 'Сумма прибавится к выбранной категории в $_monthIn',
                 trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
               ),
               const SizedBox(height: 14),
@@ -1511,7 +1491,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
               AppTextField(controller: livingCtrl, label: 'Оставлять на жизнь с каждой выплаты, ₽', number: true),
               const SizedBox(height: 4),
               Text(
-                'Эти деньги не распределяются по тратам — они остаются на текущие расходы.',
+                'Эти деньги не распределяются по категориям — они остаются на текущие расходы.',
                 style: TextStyle(fontSize: 11, color: ctx.dim, height: 1.35),
               ),
               const SizedBox(height: 16),
@@ -1709,7 +1689,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
             children: [
               SheetHeader(
                 title: existing == null ? 'Новая категория' : existing.name,
-                subtitle: 'Название и значок. Суммы задаются тратами месяца',
+                subtitle: 'Название и значок. Сколько откладывать, задаётся в каждом месяце',
                 trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
               ),
               const SizedBox(height: 14),
@@ -1781,8 +1761,8 @@ class _BudgetScreenState extends State<BudgetScreen> {
                     Navigator.pop(ctx);
                     final ok = await _confirm(
                       title: 'Удалить категорию «${existing.name}»?',
-                      text: 'Её больше нельзя будет выбрать для новых трат. В месяцах, где она уже есть, '
-                          'трата останется.',
+                      text: 'Её больше нельзя будет добавить в новые месяцы. В месяцах, где она уже есть, '
+                          'она останется.',
                       action: 'Удалить',
                     );
                     if (ok) await BudgetService.deleteCategory(existing.id);
@@ -1941,7 +1921,7 @@ Future<void> showPayDaysSheet(BuildContext context) async {
               SegmentedToggle<bool>(
                 values: const [false, true],
                 selected: last[i],
-                labelOf: (b) => b ? 'Последний день месяца' : 'Определённое число',
+                labelOf: (b) => b ? 'Последний день' : 'Число месяца',
                 onChanged: (b) => setSheet(() => last[i] = b),
               ),
               const SizedBox(height: 8),
