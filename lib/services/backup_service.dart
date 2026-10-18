@@ -249,9 +249,12 @@ class BackupService {
 
   /// [askPassword] вызывается, если файл зашифрован, а сохранённый пароль не
   /// подошёл — например, копия сделана на другом устройстве.
+  /// [confirmBudget] спрашивает, заменять ли бюджет, если в бэкапе он
+  /// старее текущего: (когда сохранён бюджет в бэкапе, когда менялся текущий).
   static Future<ImportResult> importFromFilePath(
     String path, {
     Future<String?> Function()? askPassword,
+    Future<bool> Function(DateTime? backupAt, DateTime? currentAt)? confirmBudget,
   }) async {
     var content = await File(path).readAsString();
     final logosBaseDir = File(path).parent.path;
@@ -260,7 +263,7 @@ class BackupService {
       content = await _decryptContent(content, askPassword);
     }
 
-    return importFromJson(content, logosBaseDir: logosBaseDir);
+    return importFromJson(content, logosBaseDir: logosBaseDir, confirmBudget: confirmBudget);
   }
 
   static Future<String> _decryptContent(
@@ -308,7 +311,11 @@ class BackupService {
   /// тогда папка 'logos' рядом с этой копией не находится, даже если она
   /// реально лежит рядом с оригиналом. См. ImportResult.missingLogos и
   /// retryMissingLogos ниже для ручного восстановления в этом случае.
-  static Future<ImportResult> importFromJson(String jsonStr, {String? logosBaseDir}) async {
+  static Future<ImportResult> importFromJson(
+    String jsonStr, {
+    String? logosBaseDir,
+    Future<bool> Function(DateTime? backupAt, DateTime? currentAt)? confirmBudget,
+  }) async {
     final data = jsonDecode(jsonStr) as Map<String, dynamic>;
     final version = (data['version'] as num?)?.toInt() ?? 1;
     if (version < 1 || version > formatVersion) {
@@ -527,7 +534,15 @@ class BackupService {
     // Бюджет: в старых бэкапах его нет — тогда не трогаем.
     final budget = data['budget'];
     if (budget is Map && budget.isNotEmpty) {
-      await BudgetService.replaceAll(budget);
+      // Бюджет заменяется целиком. Если в бэкапе он старее того, что сейчас в
+      // приложении, — сначала спрашиваем, чтобы не потерять свежие отметки.
+      final backupAt = BudgetService.updatedIn(budget);
+      final currentAt = BudgetService.started ? BudgetService.updatedAt : null;
+      var replace = true;
+      if (confirmBudget != null && currentAt != null && (backupAt == null || backupAt.isBefore(currentAt))) {
+        replace = await confirmBudget(backupAt, currentAt);
+      }
+      if (replace) await BudgetService.replaceAll(budget);
     }
 
     for (final ticker in (data['favorites'] as List? ?? [])) {

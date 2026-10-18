@@ -348,7 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     _switchRow(
                       title: 'Скрывать суммы',
-                      subtitle: 'Стоимость портфелей и позиций закрывается точками. '
+                      subtitle: 'Стоимость портфелей, позиций и суммы бюджета закрываются точками. '
                           'Нажатие по сумме показывает её, повторное нажатие снова скрывает.',
                       value: AppearanceService.hideAmounts,
                       onChanged: AppearanceService.setHideAmounts,
@@ -747,6 +747,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Бюджет в бэкапе старее текущего: заменить или оставить нынешний.
+  Future<bool> _confirmBudgetReplace(BuildContext context, DateTime? backupAt, DateTime? currentAt) async {
+    String when(DateTime? d) => d == null ? 'неизвестно когда' : Fmt.dateTime(d);
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Бюджет в бэкапе старее'),
+        content: Text(
+          'Бюджет в файле сохранён ${when(backupAt)}, а в приложении он менялся ${when(currentAt)}. '
+          'Если заменить, отметки и изменения после даты бэкапа пропадут. Портфели загрузятся в любом случае.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Оставить текущий')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Заменить')),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
   Future<void> _importBackup(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -774,6 +795,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final result = await BackupService.importFromFilePath(
         picked.files.single.path!,
         askPassword: () => _askBackupPassword(context),
+        confirmBudget: (backupAt, currentAt) => _confirmBudgetReplace(context, backupAt, currentAt),
       );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

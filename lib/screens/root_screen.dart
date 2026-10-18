@@ -22,12 +22,19 @@ class RootScreen extends StatefulWidget {
     _key.currentState?._select(2);
   }
 
+  /// Открыть вкладку «Бюджет» — например, по плашке на списке портфелей.
+  static void goToBudget() => _key.currentState?._select(1);
+
   @override
   State<RootScreen> createState() => _RootScreenState();
 }
 
 class _RootScreenState extends State<RootScreen> with SingleTickerProviderStateMixin {
   int _index = 0;
+
+  /// Вкладки строятся при первом заходе: бюджет не должен заводить
+  /// категории, пока его не открывали.
+  final Set<int> _visited = {0};
 
   late final AnimationController _fade =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 260), value: 1);
@@ -52,7 +59,10 @@ class _RootScreenState extends State<RootScreen> with SingleTickerProviderStateM
 
   void _select(int i) {
     if (i == _index) return;
-    setState(() => _index = i);
+    setState(() {
+      _index = i;
+      _visited.add(i);
+    });
     _fade.forward(from: 0.35);
   }
 
@@ -67,7 +77,9 @@ class _RootScreenState extends State<RootScreen> with SingleTickerProviderStateM
             for (int i = 0; i < _screens.length; i++)
               TickerMode(
                 enabled: i == _index,
-                child: TourVisibility(visible: i == _index, child: _screens[i]),
+                child: _visited.contains(i)
+                    ? TourVisibility(visible: i == _index, child: _screens[i])
+                    : const SizedBox.shrink(),
               ),
           ],
         ),

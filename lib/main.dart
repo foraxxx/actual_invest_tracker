@@ -78,6 +78,8 @@ void main() async {
           state == AppLifecycleState.detached) {
         unawaited(AutoBackupService.runNowIfEnabled());
       }
+      // Пока приложение было свёрнуто, мог наступить новый месяц.
+      if (state == AppLifecycleState.resumed) unawaited(BudgetService.checkMonthChange());
     },
   );
 

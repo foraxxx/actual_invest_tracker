@@ -15,7 +15,9 @@ import '../services/portfolio_service.dart';
 import '../services/iis_service.dart';
 import '../widgets/iis_widgets.dart';
 import '../services/storage_service.dart';
+import 'budget_screen.dart';
 import 'home_screen.dart';
+import 'root_screen.dart';
 
 /// Стартовый экран приложения: все портфели со сводкой сверху. Тап по
 /// портфелю делает его активным и открывает — дальше весь интерфейс
@@ -198,6 +200,12 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                         id: 'summary',
                         child: _summaryCard(totalValue, totalProfit, active.length),
                       ),
+                    ),
+
+                    // Бюджет — общий для всех портфелей: короткая сводка месяца.
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: BudgetSummaryCard(onTap: RootScreen.goToBudget),
                     ),
 
                     if (distribution.length > 1) ...[

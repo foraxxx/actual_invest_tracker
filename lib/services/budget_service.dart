@@ -7,11 +7,24 @@ import 'package:hive_flutter/hive_flutter.dart';
 /// Как откладывать в категорию.
 enum BudgetMode { monthly, toDate }
 
-/// С какой выплаты брать деньги на категорию.
+/// Вид категории: копилка (важен накопленный остаток) или обязательный
+/// платёж (отметил «оплачено» — и всё).
+enum BudgetKind { savings, payment }
+
+/// Как делить категорию между выплатами.
 ///
-/// [balance] — программа сама делит сумму между выплатами так, чтобы после
-/// всех категорий с обеих выплат оставалось одинаково.
-enum BudgetSource { salary, advance, half, balance }
+/// [half] — поровну с обеих. [salary] и [advance] — целиком с первой или со
+/// второй выплаты. [auto] — программа сама решает: целиком с той выплаты, где
+/// свободнее, а делит, только если целиком не помещается.
+enum BudgetSource { auto, half, salary, advance }
+
+BudgetSource budgetSourceFrom(Object? name) => switch (name) {
+      'half' => BudgetSource.half,
+      'salary' => BudgetSource.salary,
+      'advance' => BudgetSource.advance,
+      // Старое «выровнять» и всё неизвестное — «авто».
+      _ => BudgetSource.auto,
+    };
 
 /// День выплаты: число месяца или последний день.
 class PayDay {
@@ -88,6 +101,7 @@ class BudgetCategory {
   final int? targetMonth;
 
   final BudgetSource source;
+  final BudgetKind kind;
 
   /// Удалённая категория остаётся в прошлых месяцах, но в новых не
   /// планируется.
@@ -102,22 +116,30 @@ class BudgetCategory {
     this.target,
     this.targetYear,
     this.targetMonth,
-    this.source = BudgetSource.half,
+    this.source = BudgetSource.auto,
+    this.kind = BudgetKind.savings,
     this.deleted = false,
   });
 
-  bool get toDate => mode == BudgetMode.toDate && target != null && targetYear != null && targetMonth != null;
+  bool get isPayment => kind == BudgetKind.payment;
 
-  BudgetCategory copyWith({bool? deleted}) => BudgetCategory(
+  bool get toDate =>
+      !isPayment && mode == BudgetMode.toDate && target != null && targetYear != null && targetMonth != null;
+
+  /// Цель (копилки).
+  double? get goal => isPayment || target == null || target! <= 0 ? null : target;
+
+  BudgetCategory copyWith({bool? deleted, double? amount, int? targetYear, int? targetMonth}) => BudgetCategory(
         id: id,
         name: name,
         emoji: emoji,
         mode: mode,
-        amount: amount,
+        amount: amount ?? this.amount,
         target: target,
-        targetYear: targetYear,
-        targetMonth: targetMonth,
+        targetYear: targetYear ?? this.targetYear,
+        targetMonth: targetMonth ?? this.targetMonth,
         source: source,
+        kind: kind,
         deleted: deleted ?? this.deleted,
       );
 
@@ -131,6 +153,7 @@ class BudgetCategory {
         if (targetYear != null) 'ty': targetYear,
         if (targetMonth != null) 'tm': targetMonth,
         's': source.name,
+        if (isPayment) 'k': 'payment',
         if (deleted) 'x': true,
       };
 
@@ -154,7 +177,8 @@ class BudgetCategory {
       target: (raw['t'] as num?)?.toDouble(),
       targetYear: (raw['ty'] as num?)?.toInt(),
       targetMonth: (raw['tm'] as num?)?.toInt(),
-      source: byName(BudgetSource.values, raw['s'], BudgetSource.half),
+      source: budgetSourceFrom(raw['s']),
+      kind: raw['k'] == 'payment' ? BudgetKind.payment : BudgetKind.savings,
       deleted: raw['x'] == true,
     );
   }
@@ -267,6 +291,19 @@ class BudgetMonthData {
 
   final List<BudgetEntry> entries;
 
+  /// Сумма категории только в этом месяце: 0 — категорию убрали из месяца.
+  final Map<String, double> amounts;
+
+  /// С какой выплаты брать категорию только в этом месяце.
+  final Map<String, BudgetSource> sources;
+
+  /// Траты из копилок в этом месяце.
+  final List<BudgetEntry> spent;
+
+  /// Раскладка категории по выплатам, зафиксированная при первой отметке:
+  /// дальше авто-распределение её не двигает.
+  final Map<String, Pair> locked;
+
   const BudgetMonthData({
     required this.year,
     required this.month,
@@ -279,6 +316,10 @@ class BudgetMonthData {
     this.moved = const {},
     this.directed = const {},
     this.entries = const [],
+    this.amounts = const {},
+    this.sources = const {},
+    this.locked = const {},
+    this.spent = const [],
   });
 
   String get key => BudgetService.monthKey(year, month);
@@ -294,6 +335,10 @@ class BudgetMonthData {
     Map<String, Pair>? moved,
     Map<String, Pair>? directed,
     List<BudgetEntry>? entries,
+    Map<String, double>? amounts,
+    Map<String, BudgetSource>? sources,
+    Map<String, Pair>? locked,
+    List<BudgetEntry>? spent,
   }) =>
       BudgetMonthData(
         year: year,
@@ -307,6 +352,10 @@ class BudgetMonthData {
         moved: moved ?? this.moved,
         directed: directed ?? this.directed,
         entries: entries ?? this.entries,
+        amounts: amounts ?? this.amounts,
+        sources: sources ?? this.sources,
+        locked: locked ?? this.locked,
+        spent: spent ?? this.spent,
       );
 
   Map<String, dynamic> toJson() => {
@@ -321,6 +370,10 @@ class BudgetMonthData {
         'v': _pairsToJson(moved),
         'r': _pairsToJson(directed),
         'e': [for (final e in entries) e.toJson()],
+        if (amounts.isNotEmpty) 'a': amounts,
+        if (sources.isNotEmpty) 'p': {for (final e in sources.entries) e.key: e.value.name},
+        if (locked.isNotEmpty) 'k': _pairsToJson(locked),
+        if (spent.isNotEmpty) 'w': [for (final e in spent) e.toJson()],
       };
 
   static BudgetMonthData? fromJson(Object? raw) {
@@ -346,6 +399,15 @@ class BudgetMonthData {
       moved: _pairsFromJson(raw['v']),
       directed: _pairsFromJson(raw['r']),
       entries: (raw['e'] as List? ?? const []).map(BudgetEntry.fromJson).whereType<BudgetEntry>().toList(),
+      amounts: {
+        for (final e in ((raw['a'] as Map?) ?? const {}).entries)
+          if (e.value is num) '${e.key}': (e.value as num).toDouble(),
+      },
+      sources: {
+        for (final e in ((raw['p'] as Map?) ?? const {}).entries) '${e.key}': budgetSourceFrom(e.value),
+      },
+      locked: _pairsFromJson(raw['k']),
+      spent: (raw['w'] as List? ?? const []).map(BudgetEntry.fromJson).whereType<BudgetEntry>().toList(),
     );
   }
 }
@@ -455,6 +517,7 @@ class BudgetService {
   static Future<void> init() async {
     _box = await Hive.openBox<String>(boxName);
     await _freezePast();
+    _checkedOrd = _currentOrd;
   }
 
   static String monthKey(int y, int m) => '$y-${m.toString().padLeft(2, '0')}';
@@ -491,6 +554,7 @@ class BudgetService {
       await _box.put('m:${d.key}', jsonEncode(d.copyWith(dayOverride: o).toJson()));
     }
     _monthsCache = null;
+    await _touch();
     await _box.put('config', jsonEncode(c.toJson()));
     version.value++;
   }
@@ -531,7 +595,15 @@ class BudgetService {
     return null;
   }
 
+  /// Когда бюджет последний раз менялся — для сравнения с бэкапом.
+  static DateTime? get updatedAt => DateTime.tryParse(_box.get('meta:updated') ?? '');
+
+  static DateTime? updatedIn(Map raw) => DateTime.tryParse('${raw['meta:updated'] ?? ''}');
+
+  static Future<void> _touch() => _box.put('meta:updated', DateTime.now().toIso8601String());
+
   static Future<void> _saveCategories(List<BudgetCategory> list) async {
+    await _touch();
     await _box.put('cats', jsonEncode([for (final c in list) c.toJson()]));
     version.value++;
   }
@@ -544,7 +616,14 @@ class BudgetService {
       final now = DateTime.now().microsecondsSinceEpoch;
       await _saveCategories([
         for (int i = 0; i < defaultCategories.length; i++)
-          BudgetCategory(id: '${now}_$i', emoji: defaultCategories[i].$1, name: defaultCategories[i].$2),
+          BudgetCategory(
+            id: '${now}_$i',
+            emoji: defaultCategories[i].$1,
+            name: defaultCategories[i].$2,
+            kind: const {'Подписки', 'Интернет', 'Зал'}.contains(defaultCategories[i].$2)
+                ? BudgetKind.payment
+                : BudgetKind.savings,
+          ),
       ]);
     }
     final n = _now;
@@ -594,6 +673,7 @@ class BudgetService {
 
   static Future<void> _save(BudgetMonthData d) async {
     _monthsCache = null;
+    await _touch();
     await _box.put('m:${d.key}', jsonEncode(d.toJson()));
     _monthsCache = null;
     version.value++;
@@ -685,6 +765,45 @@ class BudgetService {
     return sum;
   }
 
+  /// Всего потрачено из копилки до начала месяца [y]-[m].
+  static double spentBefore(String id, int y, int m) {
+    final limit = _ord(y, m);
+    double sum = 0;
+    for (final d in _months()) {
+      if (_ord(d.year, d.month) >= limit) continue;
+      for (final e in d.spent) {
+        if (e.category == id) sum += e.amount;
+      }
+    }
+    return sum;
+  }
+
+  static double spentTotal(String id) {
+    double sum = 0;
+    for (final d in _months()) {
+      for (final e in d.spent) {
+        if (e.category == id) sum += e.amount;
+      }
+    }
+    return sum;
+  }
+
+  /// Сколько лежит в копилке сейчас: отложено минус потрачено.
+  static double balance(String id) => savedTotal(id) - spentTotal(id);
+
+  static double balanceBefore(String id, int y, int m) => savedBefore(id, y, m) - spentBefore(id, y, m);
+
+  /// Цель копилки достигнута.
+  static bool goalReached(BudgetCategory c) => c.goal != null && balance(c.id) >= c.goal! - 0.5;
+
+  /// Срок «копить к дате» прошёл, а цель не набрана: сколько не хватает.
+  static double? overdueShortfall(BudgetCategory c) {
+    if (!c.toDate) return null;
+    if (_currentOrd <= _ord(c.targetYear!, c.targetMonth!)) return null;
+    final left = c.target! - balance(c.id);
+    return left > 0.5 ? left : null;
+  }
+
   /// Сколько откладывать в месяц по категории «копить к дате»: остаток цели
   /// поровну на оставшиеся месяцы, с округлением вверх до сотни. Для будущих
   /// месяцев — как в текущем.
@@ -697,7 +816,7 @@ class BudgetService {
     final bm = base % 12 + 1;
     final targetOrd = _ord(c.targetYear!, c.targetMonth!);
     if (_ord(y, m) > targetOrd) return 0;
-    final left = c.target! - savedBefore(c.id, by, bm);
+    final left = c.target! - balanceBefore(c.id, by, bm);
     if (left <= 0.5) return 0;
     final months = math.max(1, targetOrd - base + 1);
     final raw = left / months;
@@ -707,49 +826,143 @@ class BudgetService {
     return rounded;
   }
 
-  static double _roundPart(double v, double whole) {
+  /// Часть суммы [whole], округлённая до сотни (у маленьких сумм — до рубля),
+  /// но не больше самой суммы.
+  static double round100(double v, double whole) {
     if (whole >= 200) return ((v / 100).round() * 100.0).clamp(0.0, whole).toDouble();
     return v.roundToDouble().clamp(0.0, whole).toDouble();
   }
 
+  static double _floorPart(double v, double whole) {
+    if (whole >= 200) return ((v / 100).floor() * 100.0).clamp(0.0, whole).toDouble();
+    return v.floorToDouble().clamp(0.0, whole).toDouble();
+  }
+
+  /// Сумма категории в месяце: своя на этот месяц или обычная.
+  static double amountIn(BudgetCategory c, BudgetMonthData d) => d.amounts[c.id] ?? monthlyFor(c, d.year, d.month);
+
   /// План по категориям, посчитанный по их нынешним настройкам.
+  ///
+  /// Сначала «пополам» — поровну. Потом остальные по одной, от больших сумм
+  /// к меньшим: каждая целиком на ту выплату, где сейчас свободнее. Если
+  /// целиком не помещается никуда — берётся сколько свободно, остальное со
+  /// второй выплаты.
   static Map<String, Pair> _livePlan(BudgetMonthData d) {
     final plan = <String, Pair>{};
-    final balance = <BudgetCategory, double>{};
+    final autos = <(String, double)>[];
     final fixed = [0.0, 0.0];
     for (final c in categories) {
-      final amt = monthlyFor(c, d.year, d.month);
+      final amt = amountIn(c, d);
       if (amt <= 0.004) continue;
-      switch (c.source) {
-        case BudgetSource.salary:
-          plan[c.id] = [amt, 0];
-        case BudgetSource.advance:
-          plan[c.id] = [0, amt];
-        case BudgetSource.half:
-          final a = amt >= 200 ? (amt / 2 / 100).ceil() * 100.0 : (amt / 2).ceilToDouble();
-          plan[c.id] = [math.min(a, amt), amt - math.min(a, amt)];
-        case BudgetSource.balance:
-          balance[c] = amt;
-          continue;
+      final source = d.sources[c.id] ?? c.source;
+      final lock = d.locked[c.id];
+      Pair? cell;
+      if (lock != null && lock[0] + lock[1] > 0.004) {
+        // Уже отмечали — раскладка остаётся прежней. Если сумма поменялась,
+        // делим её в тех же долях.
+        final total = lock[0] + lock[1];
+        final first = (amt - total).abs() < 0.5 ? lock[0] : round100(amt * lock[0] / total, amt);
+        cell = [first, amt - first];
+      } else {
+        switch (source) {
+          case BudgetSource.half:
+            final a = amt >= 200 ? (amt / 2 / 100).ceil() * 100.0 : (amt / 2).ceilToDouble();
+            final first = math.min(a, amt);
+            cell = [first, amt - first];
+          case BudgetSource.salary:
+            cell = [amt, 0.0];
+          case BudgetSource.advance:
+            cell = [0.0, amt];
+          case BudgetSource.auto:
+            autos.add((c.id, amt));
+        }
       }
-      fixed[0] += plan[c.id]![0];
-      fixed[1] += plan[c.id]![1];
+      if (cell != null) {
+        plan[c.id] = cell;
+        fixed[0] += cell[0];
+        fixed[1] += cell[1];
+      }
     }
-    if (balance.isNotEmpty) {
-      double extra(int i) => d.extras.where((e) => e.payout == i).fold(0.0, (a, e) => a + e.amount);
-      double add(Map<String, Pair> m, int i) => m.values.fold(0.0, (a, p) => a + p[i]);
-      final free = [
-        for (int i = 0; i < 2; i++)
-          d.income[i] + extra(i) - d.living - fixed[i] - add(d.carryIn, i) - add(d.directed, i) + add(d.moved, i),
-      ];
-      final total = balance.values.fold(0.0, (a, v) => a + v);
-      final x0 = ((free[0] - free[1] + total) / 2).clamp(0.0, total).toDouble();
-      for (final e in balance.entries) {
-        final a = _roundPart(e.value * x0 / total, e.value);
-        plan[e.key.id] = [a, e.value - a];
+    if (autos.isEmpty) return plan;
+    double extra(int i) => d.extras.where((e) => e.payout == i).fold(0.0, (a, e) => a + e.amount);
+    double carry(int i) => d.carryIn.values.fold(0.0, (a, p) => a + p[i]);
+    // Перенесённое дальше и направленный остаток сюда не входят: иначе
+    // раскладка менялась бы после каждого переноса.
+    final free = [
+      for (int i = 0; i < 2; i++) d.income[i] + extra(i) - d.living - fixed[i] - carry(i),
+    ];
+    autos.sort((a, b) => b.$2.compareTo(a.$2));
+    for (final (id, amt) in autos) {
+      final best = free[0] >= free[1] ? 0 : 1;
+      final other = 1 - best;
+      final cell = [0.0, 0.0];
+      if (amt <= free[best] + 0.5 || free[best] <= 0) {
+        cell[best] = amt;
+      } else {
+        final part = _floorPart(free[best], amt);
+        cell[best] = part;
+        cell[other] = amt - part;
       }
+      plan[id] = cell;
+      free[0] -= cell[0];
+      free[1] -= cell[1];
     }
     return plan;
+  }
+
+  /// С какой выплаты брать категорию в этом месяце. null — как обычно.
+  static Future<void> setMonthSource(int y, int m, String category, BudgetSource? source) async {
+    final d = await _ensure(y, m);
+    final sources = Map<String, BudgetSource>.from(d.sources);
+    if (source == null) {
+      sources.remove(category);
+    } else {
+      sources[category] = source;
+    }
+    // У прошедшего месяца план зафиксирован — перекладываем его сумму.
+    Map<String, Pair>? frozen;
+    final cur = d.frozen?[category];
+    if (d.frozen != null && cur != null && source != null && source != BudgetSource.auto) {
+      frozen = {for (final e in d.frozen!.entries) e.key: [e.value[0], e.value[1]]};
+      final total = cur[0] + cur[1];
+      frozen[category] = switch (source) {
+        BudgetSource.salary => [total, 0.0],
+        BudgetSource.advance => [0.0, total],
+        _ => [
+            total >= 200 ? (total / 2 / 100).ceil() * 100.0 : (total / 2).ceilToDouble(),
+            total - (total >= 200 ? (total / 2 / 100).ceil() * 100.0 : (total / 2).ceilToDouble()),
+          ],
+      };
+    }
+    final locked = Map<String, Pair>.from(d.locked)..remove(category);
+    await _save(d.copyWith(sources: sources, frozen: frozen, locked: locked));
+  }
+
+  /// Своя сумма категории на месяц. null — вернуть обычную, 0 — убрать
+  /// категорию из месяца.
+  static Future<void> setMonthAmount(int y, int m, String category, double? amount) async {
+    final d = await _ensure(y, m);
+    final amounts = Map<String, double>.from(d.amounts);
+    if (amount == null) {
+      amounts.remove(category);
+    } else {
+      amounts[category] = amount;
+    }
+    // У прошедшего месяца план зафиксирован — правим его напрямую.
+    final frozen = d.frozen == null ? null : {for (final e in d.frozen!.entries) e.key: [e.value[0], e.value[1]]};
+    if (frozen != null && amount != null) {
+      final cur = frozen[category] ?? [0.0, 0.0];
+      final total = cur[0] + cur[1];
+      if (amount <= 0.004) {
+        frozen.remove(category);
+      } else if (total > 0.004) {
+        final first = round100(cur[0] / total * amount, amount);
+        frozen[category] = [first, amount - first];
+      } else {
+        frozen[category] = [amount, 0.0];
+      }
+    }
+    await _save(d.copyWith(amounts: amounts, frozen: frozen));
   }
 
   /// Расчёт месяца. Если данных нет — месяц по умолчанию (не сохраняется).
@@ -820,6 +1033,45 @@ class BudgetService {
 
   // --- Отметки ---
 
+  /// Сбросить месяц целиком: отметки, свои суммы, поступления, переносы.
+  /// Перенесённое сюда возвращается в прошлый месяц, перенесённое отсюда
+  /// убирается из следующего. Прошедший месяц становится пустым, текущий и
+  /// будущие — как новые.
+  static Future<void> resetMonth(int y, int m) async {
+    final d = _load(y, m);
+    if (d == null) return;
+    if (d.carryIn.isNotEmpty) {
+      final (py, pm) = m == 1 ? (y - 1, 12) : (y, m - 1);
+      final prev = _load(py, pm);
+      if (prev != null) {
+        var moved = prev.moved;
+        for (final e in d.carryIn.entries) {
+          moved = _addPair(moved, e.key, [-e.value[0], -e.value[1]]);
+        }
+        await _save(prev.copyWith(moved: moved));
+      }
+    }
+    if (d.moved.isNotEmpty) {
+      final (ny, nm) = m == 12 ? (y + 1, 1) : (y, m + 1);
+      final next = _load(ny, nm);
+      if (next != null) {
+        var carry = next.carryIn;
+        for (final e in d.moved.entries) {
+          carry = _addPair(carry, e.key, [-e.value[0], -e.value[1]]);
+        }
+        await _save(next.copyWith(carryIn: carry));
+      }
+    }
+    _monthsCache = null;
+    await _box.delete('m:${d.key}');
+    _monthsCache = null;
+    if (_ord(y, m) >= _currentOrd) {
+      await _save(_blank(y, m));
+    } else {
+      version.value++;
+    }
+  }
+
   /// Начать месяц без данных (например, прошлый — чтобы заполнить задним
   /// числом).
   static Future<void> startMonth(int y, int m) async {
@@ -835,10 +1087,18 @@ class BudgetService {
     final inMonth = now.year == y && now.month == m;
     final when = date ?? (inMonth ? now : DateTime(y, m, view(y, m).payDay(payout)));
     final id = newId();
-    await _save(d.copyWith(entries: [
-      ...d.entries,
-      BudgetEntry(id: id, category: category, payout: payout, amount: amount, date: when),
-    ]));
+    var locked = d.locked;
+    if (!locked.containsKey(category) && d.frozen == null) {
+      final base = _livePlan(d)[category];
+      if (base != null) locked = {...locked, category: [base[0], base[1]]};
+    }
+    await _save(d.copyWith(
+      entries: [
+        ...d.entries,
+        BudgetEntry(id: id, category: category, payout: payout, amount: amount, date: when),
+      ],
+      locked: locked,
+    ));
     return id;
   }
 
@@ -870,21 +1130,100 @@ class BudgetService {
     await _save(d.copyWith(entries: [...d.entries, e]));
   }
 
+  /// Новые отметки месяца. Категория без отметок снова раскладывается
+  /// автоматически.
+  static BudgetMonthData _withEntries(BudgetMonthData d, List<BudgetEntry> entries) {
+    final used = entries.map((e) => e.category).toSet();
+    return d.copyWith(
+      entries: entries,
+      locked: {
+        for (final e in d.locked.entries)
+          if (used.contains(e.key)) e.key: e.value,
+      },
+    );
+  }
+
   /// Снять отметки ячейки в этом месяце.
   static Future<void> clearCell(int y, int m, String category, int payout) async {
     final d = _load(y, m);
     if (d == null) return;
-    await _save(d.copyWith(
-      entries: d.entries.where((e) => !(e.category == category && e.payout == payout)).toList(),
+    await _save(_withEntries(
+      d,
+      d.entries.where((e) => !(e.category == category && e.payout == payout)).toList(),
     ));
   }
 
   static Future<void> deleteEntry(String id) async {
     for (final d in _months()) {
       if (d.entries.any((e) => e.id == id)) {
-        await _save(d.copyWith(entries: d.entries.where((e) => e.id != id).toList()));
+        await _save(_withEntries(d, d.entries.where((e) => e.id != id).toList()));
         return;
       }
+    }
+  }
+
+  /// Трата из копилки: уменьшает накопленное.
+  static Future<String?> addSpend(String category, double amount, DateTime date) async {
+    if (amount < 0.5) return null;
+    final d = await _ensure(date.year, date.month);
+    final id = newId();
+    await _save(d.copyWith(spent: [
+      ...d.spent,
+      BudgetEntry(id: id, category: category, payout: 0, amount: amount, date: date),
+    ]));
+    return id;
+  }
+
+  static Future<void> deleteSpend(String id) async {
+    for (final d in _months()) {
+      if (d.spent.any((e) => e.id == id)) {
+        await _save(d.copyWith(spent: d.spent.where((e) => e.id != id).toList()));
+        return;
+      }
+    }
+  }
+
+  static Future<void> restoreSpend(BudgetEntry e) async {
+    final d = await _ensure(e.date.year, e.date.month);
+    await _save(d.copyWith(spent: [...d.spent, e]));
+  }
+
+  /// Траты из копилки, новые сверху.
+  static List<BudgetEntry> spends(String category) {
+    final result = <BudgetEntry>[];
+    for (final d in _months()) {
+      result.addAll(d.spent.where((e) => e.category == category));
+    }
+    result.sort((a, b) => b.date.compareTo(a.date));
+    return result;
+  }
+
+  /// Отметить всё, что осталось по выплате, во всех категориях.
+  static Future<List<String>> markAllPayout(int y, int m, int payout) async {
+    final ids = <String>[];
+    final lines = view(y, m).lines.where((l) => l.left(payout) > 0.5).map((l) => l.category.id).toList();
+    for (final id in lines) {
+      ids.addAll(await markLeft(y, m, id, payout: payout));
+    }
+    return ids;
+  }
+
+  // --- Смена месяца ---
+
+  static int? _checkedOrd;
+
+  /// Проверка при возврате в приложение: если наступил новый месяц, прошлый
+  /// фиксируется, а для нового заводится запись.
+  static Future<void> checkMonthChange() async {
+    final now = _currentOrd;
+    if (_checkedOrd == now) return;
+    _checkedOrd = now;
+    await _freezePast();
+    final n = _now;
+    if (started && _load(n.year, n.month) == null) {
+      await _save(_blank(n.year, n.month));
+    } else {
+      version.value++;
     }
   }
 
@@ -945,7 +1284,8 @@ class BudgetService {
     final part = [0.0, 0.0];
     var left = amount;
     for (final i in [first, 1 - first]) {
-      final take = math.min(left, free[i]);
+      // Части — круглые, до сотни.
+      final take = _floorPart(math.min(left, free[i]), left);
       part[i] += take;
       left -= take;
     }
