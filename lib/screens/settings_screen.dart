@@ -14,6 +14,7 @@ import '../services/backup_settings_service.dart';
 import '../services/currency_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_settings_service.dart';
+import '../services/portfolio_service.dart';
 import '../services/sector_service.dart';
 import '../services/tax_service.dart';
 import '../services/theme_service.dart';
@@ -29,6 +30,26 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Часть настроек относится к текущему портфелю — его название в подписях
+    // должно обновляться, когда открыли другой портфель.
+    PortfolioService.version.addListener(_onPortfolio);
+  }
+
+  @override
+  void dispose() {
+    PortfolioService.version.removeListener(_onPortfolio);
+    super.dispose();
+  }
+
+  void _onPortfolio() {
+    if (mounted) setState(() {});
+  }
+
+  String get _portfolioName => '«${PortfolioService.active.name}»';
+
   @override
   Widget build(BuildContext context) {
     return PageTour(
@@ -63,7 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('Настройки', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 2),
             Text(
-              'Оформление, биржа, портфель и данные',
+              'Общие для всех портфелей и бюджета',
               style: TextStyle(fontSize: 12, color: context.dim),
             ),
             const SizedBox(height: 18),
@@ -86,7 +107,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               index: 2,
               icon: Icons.pie_chart_outline_rounded,
               title: 'Портфель',
-              subtitle: 'Секторы и налог с продаж',
+              subtitle: 'Секторы портфеля $_portfolioName и налог с продаж',
               tourId: 'portfolio',
               builder: () => [_sectorsSection(), const SizedBox(height: 14), _taxSection()],
             ),
@@ -124,7 +145,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
                             const SizedBox(height: 2),
                             Text(
-                              'Отчёт по бумагам за год, с выгрузкой в PDF',
+                              'Портфель $_portfolioName: отчёт по бумагам за год, PDF',
                               style: TextStyle(fontSize: 11.5, color: context.dim),
                             ),
                           ],
@@ -561,7 +582,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _actionRow(
                         icon: Icons.account_balance_outlined,
                         title: 'Импорт от брокера',
-                        subtitle: 'Сделки, выплаты и пополнения из отчёта',
+                        subtitle: 'Сделки, выплаты и пополнения — в портфель $_portfolioName',
                         onTap: () => Navigator.push(
                           context,
                           AppPageRoute(builder: (_) => const BrokerImportScreen()),

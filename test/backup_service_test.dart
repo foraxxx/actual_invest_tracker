@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:invest_tracker/services/backup_service.dart';
+import 'package:invest_tracker/services/budget_service.dart';
 import 'package:invest_tracker/services/currency_service.dart';
 import 'package:invest_tracker/services/goal_service.dart';
 import 'package:invest_tracker/services/iis_service.dart';
@@ -63,6 +64,7 @@ void main() {
     await SectorService.init();
     await GoalService.init();
     await IisService.init();
+    await BudgetService.init();
   });
 
   setUp(() async {
@@ -159,6 +161,19 @@ void main() {
       final meta = portfolioNamed('Тестовый ИИС');
       final records = await StorageService.readAllFor(meta.id);
       expect(records.purchases.map((p) => p.id), ['buy-2']);
+    });
+
+    test('бюджет восстанавливается из бэкапа', () async {
+      await BudgetService.saveCategory(const BudgetCategory(id: 'trip', name: 'Отпуск', emoji: '•', amount: 5000));
+      final dump = BudgetService.exportAll();
+      await BudgetService.replaceAll(const {});
+      await BackupService.importFromJson(jsonEncode({
+        'version': 5,
+        'exportedAt': DateTime(2026, 10, 1).toIso8601String(),
+        'portfolios': const [],
+        'budget': dump,
+      }));
+      expect(BudgetService.category('trip')?.amount, 5000);
     });
   });
 }

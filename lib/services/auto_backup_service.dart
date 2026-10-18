@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'budget_service.dart';
 import 'appearance_service.dart';
 import 'goal_service.dart';
 import 'iis_service.dart';
@@ -37,6 +38,7 @@ class AutoBackupService {
     GoalService.version.addListener(_onChange);
     IisService.version.addListener(_onChange);
     PortfolioService.version.addListener(_onChange);
+    BudgetService.version.addListener(_onChange);
     // Часть оформления тоже входит в бэкап.
     AppearanceService.version.addListener(_onChange);
   }

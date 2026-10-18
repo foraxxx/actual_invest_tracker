@@ -10,6 +10,7 @@ import 'storage_service.dart';
 import 'sector_service.dart';
 import 'manual_price_service.dart';
 import 'backup_crypto_service.dart';
+import 'budget_service.dart';
 import 'currency_service.dart';
 import 'package:flutter/material.dart';
 import 'tour_service.dart';
@@ -97,6 +98,8 @@ class BackupService {
         'payoutCalendar': AppearanceService.payoutCalendar.name,
       },
       'portfolios': portfolios,
+      // Бюджет общий для всех портфелей — хранится как есть.
+      'budget': BudgetService.exportAll(),
     };
 
     // Дополнительные данные — каждая обёрнута в свой try/catch: сбой в одной
@@ -519,6 +522,12 @@ class BackupService {
           missingLogos[ticker] = relativePath;
         }
       }
+    }
+
+    // Бюджет: в старых бэкапах его нет — тогда не трогаем.
+    final budget = data['budget'];
+    if (budget is Map && budget.isNotEmpty) {
+      await BudgetService.replaceAll(budget);
     }
 
     for (final ticker in (data['favorites'] as List? ?? [])) {

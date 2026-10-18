@@ -38,6 +38,7 @@ import '../widgets/iis_widgets.dart';
 import '../services/goal_service.dart';
 import '../services/iis_service.dart';
 import '../widgets/payout_calendar.dart';
+import '../widgets/payout_years_chart.dart';
 import '../services/payout_calendar_service.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
@@ -726,22 +727,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
         id: _secPayouts,
         icon: Icons.calendar_month_rounded,
         title: 'Выплаты',
-        subtitle: yearTotal <= 0 ? 'Выплат за $_incomeYear год нет' : 'Получено за $_incomeYear',
+        subtitle: yearTotal <= 0
+            ? 'Выплат за $_incomeYear год нет'
+            : 'Получено за $_incomeYear${_incomeYear == DateTime.now().year ? ' · по сегодня' : ''}',
         trailing: yearTotal <= 0 ? null : _moneyText(Fmt.money(yearTotal), color: AppColors.positive),
         collapsed: payCollapsed,
         preview: () => _monthsPreview(context, cells),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Несколько лет — график по годам; нажатие на год открывает его
+            // месяцы ниже.
             if (years.length > 1) ...[
-              PillTabs<int>(
-                values: years,
-                selected: _incomeYear,
-                labelOf: (y) => '$y',
-                onChanged: (y) => setState(() => _incomeYear = y),
-                padding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 12),
+              _payoutYears(context, years),
+              const SizedBox(height: 14),
+              Text('$_incomeYear по месяцам', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
             ],
             PayoutCalendar(cells: cells),
           ],
@@ -1657,6 +1658,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   /// Превью «Выплат»: 12 квадратиков месяцев, чем ярче — тем больше выплат.
+  /// Выплаты по годам: линия с точками и рост к прошлому году.
+  Widget _payoutYears(BuildContext context, List<int> years) {
+    final now = DateTime.now();
+    final totals = <(int, double)>[
+      for (final y in years)
+        (y, PayoutCalendarService.year(y, withForecast: false).fold(0.0, (s, c) => s + c.total)),
+    ];
+    double totalOf(int y) {
+      for (final t in totals) {
+        if (t.$1 == y) return t.$2;
+      }
+      return 0;
+    }
+
+    // Текущий год сравниваем с тем же периодом прошлого: январь — нынешний
+    // месяц, иначе неполный год всегда выглядел бы падением.
+    String? delta;
+    double? change;
+    final prevYear = _incomeYear - 1;
+    if (years.contains(prevYear)) {
+      final cur = totalOf(_incomeYear);
+      double prev;
+      String against;
+      if (_incomeYear == now.year) {
+        prev = PayoutCalendarService.year(prevYear, withForecast: false)
+            .where((c) => c.month.month <= now.month)
+            .fold(0.0, (s, c) => s + c.total);
+        against = now.month == 1
+            ? 'к январю $prevYear'
+            : 'к ${Fmt.monthShort(1)}–${Fmt.monthShort(now.month)} $prevYear';
+      } else {
+        prev = totalOf(prevYear);
+        against = 'к $prevYear';
+      }
+      if (prev > 0.5) {
+        change = (cur / prev - 1) * 100;
+        delta = against;
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('По годам', style: TextStyle(fontSize: 12, color: context.dim))),
+            if (change != null && delta != null)
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                    text: '${change >= 0 ? '▲ +' : '▼ −'}${change.abs().round()}%',
+                    style: TextStyle(
+                      color: change >= 0 ? AppColors.positive : AppColors.negative,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  TextSpan(text: ' $delta', style: TextStyle(color: context.dim)),
+                ]),
+                style: const TextStyle(fontSize: 12),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        PayoutYearsChart(
+          years: totals,
+          selected: _incomeYear,
+          partialYear: years.contains(now.year) ? now.year : null,
+          onSelect: (y) => setState(() => _incomeYear = y),
+        ),
+      ],
+    );
+  }
+
   Widget _monthsPreview(BuildContext context, List<PayoutMonthCell> cells) {
     final maxTotal = cells.fold(0.0, (m, c) => math.max(m, c.total));
     final empty = context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh;

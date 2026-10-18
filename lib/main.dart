@@ -23,7 +23,8 @@ import 'services/online_price_service.dart';
 import 'services/tour_service.dart';
 import 'services/online_settings_service.dart';
 import 'services/auto_backup_service.dart';
-import 'screens/portfolios_screen.dart';
+import 'screens/root_screen.dart';
+import 'services/budget_service.dart';
 import 'design/app_theme.dart';
 
 // Держим ссылку на верхнем уровне, чтобы слушатель жизненного цикла не был
@@ -54,6 +55,7 @@ void main() async {
   await MiniHistoryService.init();
   await GoalService.init();
   await IisService.init();
+  await BudgetService.init();
 
   // Убираем курсы, которые могли записаться с биржи по ошибке (своп-инструмент
   // вместо валютной пары давал значения вроде 0,08 ₽).
@@ -153,7 +155,7 @@ class InvestTrackerApp extends StatelessWidget {
               ),
               child: child ?? const SizedBox.shrink(),
             ),
-            home: const PortfoliosScreen(),
+            home: RootScreen.create(),
           ),
         ),
       ),

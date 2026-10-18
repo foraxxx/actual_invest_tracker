@@ -7,21 +7,17 @@ import 'dashboard_screen.dart';
 import 'purchases_screen.dart';
 import 'plans_screen.dart';
 import 'market_screen.dart';
-import 'settings_screen.dart';
+import 'root_screen.dart';
 
-/// Каркас приложения внутри портфеля: шесть вкладок в IndexedStack (чтобы
+/// Каркас приложения внутри портфеля: четыре вкладки в IndexedStack (чтобы
 /// каждая сохраняла своё состояние — фильтры, позицию прокрутки) плюс
 /// собственная анимированная навигация внизу.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-  /// Переключает на вкладку настроек из любого места внутри каркаса —
-  /// нужно, например, экрану «Биржа», когда загрузка котировок выключена.
-  static void goToSettings(BuildContext context) {
-    context.findAncestorStateOfType<_HomeScreenState>()?._select(_settingsIndex);
-  }
-
-  static const _settingsIndex = 4;
+  /// Открывает настройки — нужно, например, экрану «Биржа», когда загрузка
+  /// котировок выключена. Настройки общие и живут на стартовом экране.
+  static void goToSettings(BuildContext context) => RootScreen.goToSettings(context);
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -47,7 +43,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     MarketScreen(),
     PurchasesScreen(),
     PlansScreen(),
-    SettingsScreen(),
   ];
 
   static const _items = [
@@ -55,7 +50,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     NavItem(icon: Icons.show_chart_rounded, activeIcon: Icons.show_chart_rounded, label: 'Биржа'),
     NavItem(icon: Icons.swap_horiz_outlined, activeIcon: Icons.swap_horiz, label: 'Сделки'),
     NavItem(icon: Icons.flag_outlined, activeIcon: Icons.flag, label: 'Планы'),
-    NavItem(icon: Icons.tune_outlined, activeIcon: Icons.tune, label: 'Настройки'),
   ];
 
   @override

@@ -159,10 +159,10 @@ class AppearanceService {
   /// «Планы» (4) → 3, «Настройки» (5) → 4.
   static int get startTab {
     final current = int.tryParse(_box.get('startTabV2') ?? '');
-    if (current != null) return current.clamp(0, 4);
+    // «Настройки» (4) переехали на стартовый экран — открываем «Портфель».
+    if (current != null) return current >= 0 && current <= 3 ? current : 0;
     return switch (int.tryParse(_box.get('startTab') ?? '') ?? 0) {
       4 => 3,
-      5 => 4,
       final i when i >= 0 && i < 3 => i,
       _ => 0,
     };
