@@ -603,7 +603,7 @@ class _PlansScreenState extends State<PlansScreen> {
               // («Месяц» плюс «2028») давали бы заведомо пустой список.
               if (years.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                Text('Или год', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim)),
+                Text('Или выберите год', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim)),
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 40,

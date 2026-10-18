@@ -164,7 +164,7 @@ void main() {
     });
 
     test('бюджет восстанавливается из бэкапа', () async {
-      await BudgetService.saveCategory(const BudgetCategory(id: 'trip', name: 'Отпуск', emoji: '•', amount: 5000));
+      await BudgetService.saveCategory(const BudgetCategory(id: 'trip', name: 'Отпуск', emoji: '•'));
       final dump = BudgetService.exportAll();
       await BudgetService.replaceAll(const {});
       await BackupService.importFromJson(jsonEncode({
@@ -173,7 +173,7 @@ void main() {
         'portfolios': const [],
         'budget': dump,
       }));
-      expect(BudgetService.category('trip')?.amount, 5000);
+      expect(BudgetService.category('trip')?.name, 'Отпуск');
     });
   });
 }

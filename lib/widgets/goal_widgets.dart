@@ -624,7 +624,7 @@ Widget _passiveForm(
               flex: 3,
               child: AppDropdown<int>(
                 value: deadline?.month ?? 0,
-                label: 'Срок · месяц',
+                label: 'Срок: месяц',
                 items: [
                   const DropdownMenuItem(value: 0, child: Text('без срока')),
                   for (int i = 1; i <= 12; i++) DropdownMenuItem(value: i, child: Text(_monthNom[i - 1])),

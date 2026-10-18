@@ -425,7 +425,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
           _line('Продаж', '$sells'),
           _line('Бумаг распознано', '${tickers.length}'),
           _line('Выплат', '${result.payouts.length}'),
-          _line('Пополнений на', Fmt.money(deposits)),
+          _line('Пополнений на сумму', Fmt.money(deposits)),
         ],
       ),
     );

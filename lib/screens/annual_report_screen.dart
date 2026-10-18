@@ -193,7 +193,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
           if (report.oldRows.isNotEmpty) ...[
             const SizedBox(height: 18),
             SectionTitle(
-              title: 'Были и раньше',
+              title: 'Куплены раньше',
               subtitle: 'В портфеле до $_year года · ${report.oldRows.length}',
               padding: const EdgeInsets.only(bottom: 12),
             ),

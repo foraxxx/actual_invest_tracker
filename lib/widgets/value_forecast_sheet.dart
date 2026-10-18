@@ -24,11 +24,11 @@ String _yearsLabel(int n) {
 String _scenarioLabel(ForecastScenario s) {
   switch (s) {
     case ForecastScenario.pessimistic:
-      return 'Пессимист.';
+      return 'Плохой';
     case ForecastScenario.realistic:
-      return 'Реалист.';
+      return 'Средний';
     case ForecastScenario.optimistic:
-      return 'Оптимист.';
+      return 'Хороший';
   }
 }
 

@@ -41,6 +41,9 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
   bool _reloading = false;
   bool _reloadPending = false;
 
+  /// Закрытые портфели свёрнуты, чтобы длинный список не прятал бюджет.
+  bool _closedOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -202,12 +205,6 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                       ),
                     ),
 
-                    // Бюджет — общий для всех портфелей: короткая сводка месяца.
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: BudgetSummaryCard(onTap: RootScreen.goToBudget),
-                    ),
-
                     if (distribution.length > 1) ...[
                       const SizedBox(height: 14),
                       FadeSlideIn(
@@ -252,13 +249,37 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
 
                     if (closed.isNotEmpty) ...[
                       const SizedBox(height: 14),
-                      _sectionHeader('Закрытые', closed.length),
-                      for (final p in closed)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _portfolioCard(p, list.length, active.length, totalValue),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() => _closedOpen = !_closedOpen),
+                        child: Row(
+                          children: [
+                            Expanded(child: _sectionHeader('Закрытые', closed.length)),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Row(
+                                children: [
+                                  Text(_closedOpen ? 'Свернуть' : 'Показать',
+                                      style: TextStyle(fontSize: 12, color: context.accent, fontWeight: FontWeight.w700)),
+                                  Icon(_closedOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                      size: 18, color: context.accent),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                      if (_closedOpen)
+                        for (final p in closed)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _portfolioCard(p, list.length, active.length, totalValue),
+                          ),
                     ],
+
+                    // Бюджет — общий для всех портфелей: короткая сводка месяца
+                    // под списком портфелей.
+                    BudgetSummaryCard(onTap: RootScreen.goToBudget),
 
                     const SizedBox(height: kListBottomPadding),
                   ],

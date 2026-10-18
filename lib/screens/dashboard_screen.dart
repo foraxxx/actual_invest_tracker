@@ -428,7 +428,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 icon: Icons.payments_outlined,
                 value: periodProfit,
                 formatter: (v) => Fmt.money(v),
-                hint: 'рост + продажи',
+                hint: 'рост цен и продажи',
                 color: AppColors.pnl(periodProfit),
                 // «Из них»: выплаты — часть прибыли, а не добавка к ней.
                 // Без предлога два числа рядом читаются как слагаемые.

@@ -20,6 +20,7 @@ import '../services/tax_service.dart';
 import '../services/theme_service.dart';
 import 'annual_report_screen.dart';
 import 'broker_import_screen.dart';
+import 'budget_screen.dart';
 import 'home_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -84,7 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('Настройки', style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 2),
             Text(
-              'Общие для всех портфелей и бюджета',
+              'Оформление, биржа, портфели, бюджет и резервные копии',
               style: TextStyle(fontSize: 12, color: context.dim),
             ),
             const SizedBox(height: 18),
@@ -110,6 +111,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: 'Секторы портфеля $_portfolioName и налог с продаж',
               tourId: 'portfolio',
               builder: () => [_sectorsSection(), const SizedBox(height: 14), _taxSection()],
+            ),
+            _group(
+              index: 3,
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Бюджет',
+              subtitle: 'Дни зарплаты и аванса',
+              builder: () => [_budgetSection()],
             ),
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -553,6 +561,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               );
+  }
+
+  Widget _budgetSection() {
+    return FadeSlideIn(
+      child: _section(
+        title: 'Бюджет',
+        subtitle: 'Общие настройки для всех месяцев',
+        icon: Icons.account_balance_wallet_outlined,
+        child: Builder(
+          builder: (context) => _actionRow(
+            icon: Icons.event_outlined,
+            title: 'Дни зарплаты и аванса',
+            subtitle: 'Когда обычно приходит каждая выплата и как она называется',
+            onTap: () => showPayDaysSheet(context),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _dataSection() {

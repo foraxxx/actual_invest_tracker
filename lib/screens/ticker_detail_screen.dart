@@ -404,7 +404,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             child: Text(
               // У выплаты без назначенной отсечки внутри лежит служебная дата
               // далеко в будущем — показывать её нельзя.
-              p.dateKnown ? Fmt.date(p.date) : 'дата ?',
+              p.dateKnown ? Fmt.date(p.date) : 'дата не объявлена',
               style: TextStyle(fontSize: 11.5, color: context.dim),
             ),
           ),
