@@ -897,6 +897,8 @@ Future<T?> showAppSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: isScrollControlled,
+    // Высокое окно не заезжает под строку с часами, сетью и батареей.
+    useSafeArea: true,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withOpacity(0.55),
     builder: (ctx) {

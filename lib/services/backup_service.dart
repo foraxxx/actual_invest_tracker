@@ -97,6 +97,9 @@ class BackupService {
         'sectionPreview': AppearanceService.sectionPreview.name,
         'payoutCalendar': AppearanceService.payoutCalendar.name,
         'metricsLayout': AppearanceService.metricsLayout.name,
+        // Всё оформление целиком, включая свёрнутые разделы, выбранные
+        // вкладки и переключатели на экранах.
+        'appearanceBox': AppearanceService.exportAll(),
       },
       'portfolios': portfolios,
       // Бюджет общий для всех портфелей — хранится как есть.
@@ -497,6 +500,13 @@ class BackupService {
       if (calendar != null) await AppearanceService.setPayoutCalendar(calendar);
       final metrics = byName(MetricsLayout.values, settings['metricsLayout']);
       if (metrics != null) await AppearanceService.setMetricsLayout(metrics);
+      final box = settings['appearanceBox'];
+      if (box is Map) {
+        await AppearanceService.importAll({
+          for (final e in box.entries)
+            if (e.value is String) '${e.key}': e.value as String,
+        });
+      }
     }
 
     final missingLogos = <String, String>{};

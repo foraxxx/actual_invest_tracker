@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'appearance_service.dart';
 import 'beta_service.dart';
 import 'cash_service.dart';
 import 'moex_sync_service.dart';
@@ -140,7 +140,10 @@ class _Sensitivity {
   /// Бета — движение вместе с рынком.
   final double beta;
 
-  /// Изменение цены, % на каждый пункт ставки.
+  /// Изменение цены, % на каждый пункт ставки. Складывается из двух вещей:
+  /// дорогие деньги удешевляют все акции, но у компаний с большими деньгами
+  /// на счетах (Сургутнефтегаз, Мосбиржа, НМТП) растёт доход от процентов —
+  /// у них итог может быть в плюс.
   final double rate;
 
   /// Доля роста валюты, которая переходит в цену: 0.4 — доллар +10%,
@@ -166,13 +169,7 @@ class _Sensitivity {
 class StressTestService {
   StressTestService._();
 
-  static const boxName = 'stress';
-  static Box<String>? _box;
   static final ValueNotifier<int> version = ValueNotifier(0);
-
-  static Future<void> init() async {
-    _box = await Hive.openBox<String>(boxName);
-  }
 
   static const scenarios = [
     StressScenario(id: 'stocks', title: 'Акции −20%', caption: 'рынок падает, ставка и курс прежние', market: -20),
@@ -192,7 +189,7 @@ class StressTestService {
   /// Свой сценарий: ползунки запоминаются между запусками.
   static StressScenario get custom {
     const base = StressScenario(id: 'custom', title: 'Свой', caption: 'свой сценарий');
-    final raw = _box?.get('custom');
+    final raw = AppearanceService.ui('stressCustom');
     if (raw == null) return base.copyWith(market: -30, rate: 3, ruble: -10);
     try {
       final m = jsonDecode(raw) as Map;
@@ -207,7 +204,7 @@ class StressTestService {
   }
 
   static Future<void> saveCustom(StressScenario s) async {
-    await _box?.put('custom', jsonEncode({'m': s.market, 'r': s.rate, 'f': s.ruble}));
+    await AppearanceService.setUi('stressCustom', jsonEncode({'m': s.market, 'r': s.rate, 'f': s.ruble}));
   }
 
   /// Примерное изменение индекса МосБиржи в сценарии: рынок, средняя
@@ -221,11 +218,11 @@ class StressTestService {
     'oil': _Sensitivity(0.9, -2.5, 0.35),
     'metals': _Sensitivity(1.0, -3, 0.4),
     'chem': _Sensitivity(0.9, -3, 0.4),
-    'finance': _Sensitivity(1.15, -4.5, 0),
+    'finance': _Sensitivity(1.15, -4.5, 0.03),
     'it': _Sensitivity(1.3, -6, 0),
     'retail': _Sensitivity(0.9, -4, -0.15),
     'telecom': _Sensitivity(0.8, -5, -0.05),
-    'power': _Sensitivity(0.9, -4, 0),
+    'power': _Sensitivity(0.9, -4, -0.03),
     'transport': _Sensitivity(1.1, -4.5, -0.2),
     'realty': _Sensitivity(1.3, -7, 0),
     'export': _Sensitivity(1.0, -3, 0.5),
@@ -241,7 +238,7 @@ class StressTestService {
   static const _tickers = <String, _Sensitivity>{
     // Нефть и газ: выручка в долларах, налоги и часть затрат в рублях.
     'GAZP': _Sensitivity(0.9, -3, 0.35),
-    'LKOH': _Sensitivity(0.9, -2.5, 0.5),
+    'LKOH': _Sensitivity(0.9, -1.5, 0.5),
     'ROSN': _Sensitivity(0.95, -3, 0.45),
     'NVTK': _Sensitivity(0.95, -3, 0.5),
     'TATN': _Sensitivity(0.9, -2.5, 0.45),
@@ -251,10 +248,10 @@ class StressTestService {
     'BANEP': _Sensitivity(0.8, -2.5, 0.4),
     // Дивиденд по префам почти целиком зависит от переоценки валютных
     // депозитов компании.
-    'SNGSP': _Sensitivity(0.6, -1.5, 0.9),
-    'SNGS': _Sensitivity(0.8, -1.5, 0.3),
+    'SNGSP': _Sensitivity(0.6, 1, 0.9),
+    'SNGS': _Sensitivity(0.8, 0.5, 0.3),
     // Транснефть: тарифы рублёвые, валюты почти нет.
-    'TRNFP': _Sensitivity(0.8, -3.5, 0.1),
+    'TRNFP': _Sensitivity(0.8, 0, 0.1),
     // Металлы, золото, уголь, удобрения — экспортёры.
     'GMKN': _Sensitivity(1.0, -3.5, 0.6),
     'NLMK': _Sensitivity(1.0, -3, 0.5),
@@ -275,9 +272,9 @@ class StressTestService {
     'AKRN': _Sensitivity(0.7, -2.5, 0.6),
     'NKNC': _Sensitivity(0.9, -3, 0.35),
     // Порты, морские перевозки, лес — валютная выручка.
-    'NMTP': _Sensitivity(0.9, -3, 0.6),
+    'NMTP': _Sensitivity(0.9, 0.7, 0.6),
     'FESH': _Sensitivity(1.2, -4, 0.5),
-    'FLOT': _Sensitivity(1.0, -3, 0.8),
+    'FLOT': _Sensitivity(1.0, -1, 0.8),
     'SGZH': _Sensitivity(1.3, -8, 0.4),
     'AQUA': _Sensitivity(0.8, -3.5, 0.25),
     // Валютные затраты: самолёты и топливо, импорт товаров и машин.
@@ -293,18 +290,18 @@ class StressTestService {
     'MTSS': _Sensitivity(0.8, -6, -0.1),
     'RTKM': _Sensitivity(0.8, -5, -0.1),
     // Банки и биржа: рублёвый бизнес; биржа выигрывает от высокой ставки.
-    'SBER': _Sensitivity(1.1, -4.5, 0),
-    'SBERP': _Sensitivity(1.1, -4.5, 0),
-    'VTBR': _Sensitivity(1.3, -6, 0),
+    'SBER': _Sensitivity(1.1, -4.5, 0.05),
+    'SBERP': _Sensitivity(1.1, -4.5, 0.05),
+    'VTBR': _Sensitivity(1.3, -6, 0.03),
     'T': _Sensitivity(1.3, -5, 0),
-    'MOEX': _Sensitivity(0.9, 1, 0.05),
-    'CBOM': _Sensitivity(1.1, -5, 0),
-    'BSPB': _Sensitivity(1.0, -3, 0),
+    'MOEX': _Sensitivity(0.9, 1.3, 0.05),
+    'CBOM': _Sensitivity(1.1, -5, 0.03),
+    'BSPB': _Sensitivity(1.0, -3, 0.05),
     'SFIN': _Sensitivity(1.2, -6, 0),
     'AFKS': _Sensitivity(1.4, -8, 0),
     // IT и застройщики: дорогие деньги бьют сильнее всего.
     'YDEX': _Sensitivity(1.2, -5, 0.05),
-    'HEAD': _Sensitivity(1.2, -5, 0),
+    'HEAD': _Sensitivity(1.2, -2, 0),
     'POSI': _Sensitivity(1.4, -7, 0),
     'ASTR': _Sensitivity(1.4, -7, 0),
     'VKCO': _Sensitivity(1.5, -9, 0),
@@ -315,12 +312,12 @@ class StressTestService {
     'LSRG': _Sensitivity(1.1, -6, 0),
     'ETLN': _Sensitivity(1.3, -8, 0),
     // Электроэнергетика: рублёвые тарифы.
-    'IRAO': _Sensitivity(0.8, -3, 0.05),
+    'IRAO': _Sensitivity(0.8, 0.3, 0.1),
     'HYDR': _Sensitivity(0.8, -4, 0),
-    'FEES': _Sensitivity(0.9, -4, 0),
-    'UPRO': _Sensitivity(0.8, -3, 0),
-    'MSNG': _Sensitivity(0.8, -3, 0),
-    'OGKB': _Sensitivity(0.9, -4, 0),
+    'FEES': _Sensitivity(0.9, -6, -0.05),
+    'UPRO': _Sensitivity(0.8, -3, -0.05),
+    'MSNG': _Sensitivity(0.8, -3, -0.05),
+    'OGKB': _Sensitivity(0.9, -4, -0.05),
   };
 
   static String _sectorKey(String sector) {

@@ -280,6 +280,26 @@ class AppearanceService {
     version.value++;
   }
 
+  /// Запомненное состояние экранов: выбранный период, переключатели,
+  /// свой сценарий стресс-теста. Мимо [version] — меняется только тот экран,
+  /// где нажали. Хранится в том же хранилище, что и оформление, и вместе с
+  /// ним попадает в бэкап.
+  static String? ui(String key) => _box.get('ui:$key');
+
+  static Future<void> setUi(String key, String value) => _box.put('ui:$key', value);
+
+  /// Всё оформление и состояние экранов одним словарём — для бэкапа.
+  static Map<String, String> exportAll() => {
+        for (final k in _box.keys)
+          if (_box.get(k) != null) '$k': _box.get(k)!,
+      };
+
+  /// Восстанавливает оформление и состояние экранов из бэкапа.
+  static Future<void> importAll(Map<String, String> data) async {
+    await _box.putAll(data);
+    version.value++;
+  }
+
   /// Последняя открытая вкладка «Распределения» на главной. Мимо [version]:
   /// переключение вкладки не должно перестраивать всё приложение.
   static String? get allocationTab => _box.get('allocationTab');

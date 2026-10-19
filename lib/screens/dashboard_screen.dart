@@ -52,7 +52,7 @@ import 'ticker_detail_screen.dart';
 import 'wrapped_screen.dart';
 
 /// По какому признаку строится кольцевая диаграмма распределения.
-enum _AllocationMode { sectors, tickers }
+enum _AllocationMode { tickers, sectors }
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -62,27 +62,35 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  PeriodFilter _period = PeriodFilter.all;
+  // Период, вкладки и переключатели главной запоминаются между запусками и
+  // попадают в бэкап вместе с оформлением.
+  PeriodFilter _period = PeriodFilter.values.firstWhere(
+    (p) => p.name == AppearanceService.ui('period'),
+    orElse: () => PeriodFilter.all,
+  );
   /// Год в календаре «Выплаты».
   int _incomeYear = DateTime.now().year;
   // Вкладка «Распределения» запоминается между запусками.
   _AllocationMode _alloc = _AllocationMode.values.firstWhere(
     (m) => m.name == AppearanceService.allocationTab,
-    orElse: () => _AllocationMode.sectors,
+    orElse: () => _AllocationMode.tickers,
   );
 
   /// Какой метод расчёта доходности показан: 0 — XIRR, 1 — TWR.
   ///
-  /// Живёт только в состоянии экрана: выбор метода — это взгляд на одни и те
-  /// же деньги под другим углом, а не настройка, которую стоит помнить между
-  /// запусками.
-  int _returnSegment = 0;
+  int _returnSegment = AppearanceService.ui('returnSegment') == '1' ? 1 : 0;
 
   /// Что показывает карточка прогноза: 0 — выплаты, 1 — стоимость портфеля.
-  int _forecastSegment = 0;
+  int _forecastSegment = AppearanceService.ui('forecastSegment') == '1' ? 1 : 0;
+
+  void _setReturnSegment(int i) {
+    setState(() => _returnSegment = i);
+    AppearanceService.setUi('returnSegment', '$i');
+  }
 
   void _onForecastSegment(int i) {
     setState(() => _forecastSegment = i);
+    AppearanceService.setUi('forecastSegment', '$i');
     // История индекса нужна только прогнозу стоимости — грузим её, когда
     // человек впервые на него переключился, а не при каждом входе на главную.
     if (i == 1) ValueForecastService.loadMarketHistory();
@@ -400,7 +408,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           values: PeriodFilter.values,
           selected: _period,
           labelOf: _periodLabel,
-          onChanged: (v) => setState(() => _period = v),
+          onChanged: (v) {
+            setState(() => _period = v);
+            AppearanceService.setUi('period', v.name);
+          },
         ),
       ),
 
@@ -811,7 +822,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onSelect: (i) {
                         if ((i == 0) == current) return;
                         setSheet(() => current = i == 0);
-                        if (mounted) setState(() => _returnSegment = i);
+                        if (mounted) _setReturnSegment(i);
                       },
                       items: [
                         ChoiceCard(
@@ -1615,7 +1626,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ? 'с учётом дат вложений'
           : (benchmark == null ? (benchmarkError ?? 'без влияния пополнений') : 'индекс МосБиржи ${Fmt.pct(benchmark)}'),
       switchLabel: hasBoth ? (showXirr ? 'XIRR' : 'TWR') : null,
-      onSwitch: hasBoth ? () => setState(() => _returnSegment = _returnSegment == 0 ? 1 : 0) : null,
+      onSwitch: hasBoth ? () => _setReturnSegment(_returnSegment == 0 ? 1 : 0) : null,
       onTap: () => _showReturnInfo(context, xirr: showXirr),
     );
   }

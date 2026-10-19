@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 
 import 'analytics_service.dart';
 import 'currency_service.dart';
-import 'moex_service.dart';
+import 'moex_sync_service.dart';
+import 'payout_forecast_service.dart';
+import 'price_history_cache.dart';
 import 'online_settings_service.dart';
 import 'storage_service.dart';
 import '../models/purchase.dart';
@@ -39,6 +41,46 @@ class PortfolioHistoryService {
   static bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  /// Цены облигации в прошлом — в валюте сделки за одну бумагу.
+  ///
+  /// Биржа даёт цену в процентах от номинала. Номинал на каждую дату — это
+  /// сегодняшний номинал плюс всё, что было погашено после этой даты
+  /// (у облигаций с амортизацией он уменьшается частями).
+  static Future<List<MapEntry<DateTime, double>>> _bondHistory(String ticker, DateTime from) async {
+    final quote = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()];
+    final face = quote?.faceValue;
+    if (face == null || face <= 0) return const [];
+    final raw = await PriceHistoryCache.history(ticker, from: from, market: 'bonds', board: quote!.board);
+    if (raw.isEmpty) return const [];
+
+    final now = DateTime.now();
+    final amortizations = [
+      for (final p in PayoutForecastService.payoutsFor(ticker))
+        if (p.kind == 'Погашение номинала' && !p.date.isAfter(now)) p,
+    ];
+    final unit = quote.faceUnit.toUpperCase();
+    final faceCurrency = unit == 'SUR' ? 'RUB' : unit;
+    String tradeCurrency = 'RUB';
+    for (final t in StorageService.purchases) {
+      if (t.ticker.toUpperCase() == ticker.toUpperCase()) tradeCurrency = t.currency;
+    }
+
+    return [
+      for (final p in raw)
+        () {
+          var faceAt = face;
+          for (final a in amortizations) {
+            if (a.date.isAfter(p.key)) faceAt += a.amount;
+          }
+          final inFace = p.value / 100 * faceAt;
+          if (faceCurrency == tradeCurrency) return MapEntry(p.key, inFace);
+          final rub = CurrencyService.toRub(inFace, faceCurrency, date: p.key);
+          final perTrade = tradeCurrency == 'RUB' ? 1.0 : CurrencyService.toRub(1, tradeCurrency, date: p.key);
+          return MapEntry(p.key, perTrade <= 0 ? rub : rub / perTrade);
+        }(),
+    ];
+  }
+
   static Future<void> refresh() async {
     if (loading.value || StorageService.purchases.isEmpty) {
       return;
@@ -60,17 +102,18 @@ class PortfolioHistoryService {
       }
       final entries = await Future.wait(tickers.map((ticker) async {
         final type = typeByTicker[ticker];
-        // История MOEX для облигаций выражена в процентах от номинала, а для
-        // валют нужны отдельные инструменты. До отдельной нормализации этих
-        // классов используем сохранённые цены сделок/ручные цены.
+        if (type == AssetType.bond) {
+          return MapEntry(ticker, await _bondHistory(ticker, from));
+        }
+        // Для валют нужны отдельные инструменты — их стоимость в прошлом
+        // считается по ценам сделок и ручным ценам.
         if (type != AssetType.stock && type != AssetType.etf) {
           return MapEntry(
             ticker,
             const <MapEntry<DateTime, double>>[],
           );
         }
-        final points =
-            await MoexService.fetchSecurityHistory(ticker, from: from);
+        final points = await PriceHistoryCache.history(ticker, from: from, market: 'shares');
         return MapEntry(ticker, points);
       }));
       final histories = Map<String, List<MapEntry<DateTime, double>>>.fromEntries(

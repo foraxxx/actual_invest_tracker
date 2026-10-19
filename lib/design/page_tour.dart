@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../services/tour_service.dart';
@@ -248,15 +249,28 @@ class _Spotlight extends StatelessWidget {
     // Подсказку ставим с той стороны выреза, где больше места, и не даём ей
     // уехать за край страницы — иначе до кнопок не дотянуться.
     const bubbleHeight = 210.0;
+    // Сверху — строка с часами, сетью и батареей, снизу — системные кнопки:
+    // подсказка не должна под них заезжать.
+    // Тур может стоять внутри SafeArea, где отступы уже «съедены», поэтому
+    // берём их у самого экрана и сравниваем с тем, где начинается подсказка.
+    final view = View.of(context);
+    final screenTop = view.padding.top / view.devicePixelRatio;
+    final screenBottom = view.padding.bottom / view.devicePixelRatio;
+    final box = context.findRenderObject() as RenderBox?;
+    final originY = box != null && box.hasSize ? box.localToGlobal(Offset.zero).dy : 0.0;
+    final screenHeight = view.physicalSize.height / view.devicePixelRatio;
+    final insets = MediaQuery.of(context).padding;
+    final safeTop = math.max(insets.top, screenTop - originY) + 8;
+    final safeBottom = math.max(insets.bottom, screenBottom - (screenHeight - originY - size.height)) + 8;
+    final maxTop = math.max(safeTop, size.height - safeBottom - bubbleHeight);
+    final maxBottom = math.max(safeBottom, size.height - safeTop - bubbleHeight);
     final below = hole == null || hole.center.dy < size.height / 2;
     final top = hole == null
-        ? (size.height - bubbleHeight) / 2
+        ? ((size.height - bubbleHeight) / 2).clamp(safeTop, maxTop).toDouble()
         : below
-            ? (hole.bottom + 16).clamp(0.0, (size.height - bubbleHeight).clamp(0.0, size.height))
+            ? (hole.bottom + 16).clamp(safeTop, maxTop).toDouble()
             : null;
-    final bottom = hole == null || below
-        ? null
-        : (size.height - hole.top + 16).clamp(0.0, (size.height - bubbleHeight).clamp(0.0, size.height));
+    final bottom = hole == null || below ? null : (size.height - hole.top + 16).clamp(safeBottom, maxBottom).toDouble();
 
     return Positioned(
       left: 18,

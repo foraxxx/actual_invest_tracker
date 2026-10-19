@@ -57,12 +57,8 @@ class _StressSheetState extends State<_StressSheet> {
   }
 
   void _refresh() {
-    if (mounted) setState(_presetResults.clear);
+    if (mounted) setState(() {});
   }
-
-  /// Итоги готовых сценариев для списка «Другие сценарии»: не пересчитываем
-  /// их на каждое движение ползунка.
-  final Map<String, StressResult> _presetResults = {};
 
   /// Какой готовый сценарий совпадает с ползунками; иначе — «Свой».
   StressScenario? get _preset {
@@ -102,10 +98,6 @@ class _StressSheetState extends State<_StressSheet> {
   Widget _mainPage(BuildContext context, StressResult r) {
     final preset = _preset;
     final custom = StressTestService.custom;
-    final others = [
-      for (final p in StressTestService.scenarios)
-        if (preset == null || p.id != preset.id) p,
-    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -164,15 +156,14 @@ class _StressSheetState extends State<_StressSheet> {
               child: const Text('Разбор по всем бумагам ›'),
             ),
           ),
-          _cap(context, 'ДРУГИЕ СЦЕНАРИИ'),
-          for (final p in others) _otherRow(context, p),
         ],
         const SizedBox(height: 12),
         Text(
           'Это оценка чувствительности, а не прогноз. Акции двигаются вместе с рынком по своей бете — '
           'она считается по истории цен за два года, а пока истории нет, берётся средняя для отрасли. '
-          'Рост ставки удешевляет облигации (тем сильнее, чем дальше погашение) и акции; '
-          'слабый рубль поднимает валюту, золото и экспортёров.',
+          'Рост ставки удешевляет облигации (тем сильнее, чем дальше погашение) и большинство акций, '
+          'но компании с большими деньгами на счетах — Сургутнефтегаз, Мосбиржа, НМТП — больше зарабатывают на процентах. '
+          'Слабый рубль поднимает валюту, золото и экспортёров.',
           style: TextStyle(fontSize: 11.5, height: 1.4, color: context.dim),
         ),
       ],
@@ -361,34 +352,6 @@ class _StressSheetState extends State<_StressSheet> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _otherRow(BuildContext context, StressScenario p) {
-    final r = _presetResults[p.id] ??= StressTestService.run(p);
-    final color = r.delta.abs() < 0.5 ? context.dim : AppColors.pnl(r.delta);
-    return InkWell(
-      onTap: () => _setSliders(p),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 9),
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.hairline))),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(p.title, style: const TextStyle(fontSize: 13)),
-                  Text(p.caption, style: TextStyle(fontSize: 11, color: context.dim)),
-                ],
-              ),
-            ),
-            Text(Fmt.pct(r.pct), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, size: 18, color: context.dim),
-          ],
-        ),
       ),
     );
   }

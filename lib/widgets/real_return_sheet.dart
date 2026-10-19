@@ -7,6 +7,7 @@ import '../design/format.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/analytics_service.dart';
+import '../services/appearance_service.dart';
 import '../services/cbr_service.dart';
 import '../services/online_settings_service.dart';
 import '../services/real_return_service.dart';
@@ -82,6 +83,10 @@ class _RealReturnSheet extends StatefulWidget {
 class _RealReturnSheetState extends State<_RealReturnSheet> {
   late PeriodFilter _period = widget.initial;
   int? _touched;
+
+  /// true — «В годовых», false — «С начала периода» (по умолчанию).
+  /// Выбор запоминается.
+  bool _annualMode = AppearanceService.ui('inflationMode') == 'annual';
 
   // Расчёт проходит по истории счёта месяц за месяцем — не повторяем его на
   // каждое движение пальца по графику.
@@ -198,20 +203,23 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
     final ahead = r.vsInflation >= 0;
     final points = r.points;
     final touched = _touched != null && _touched! < points.length ? points[_touched!] : null;
-    final hasPortfolioLine = points.any((p) => p.portfolio != null);
+    final annualMode = _annualMode;
+    final hasAnnualLine = points.any((p) => p.portfolio != null);
+    final hasEarly = points.any((p) => p.portfolioEarly != null);
     final lastKey = CbrService.keyRateAt(r.to);
     final lastInfl = CbrService.lastInflation?.inflation;
+    final last = r.last;
 
-    Widget legend(Color color, String title, String sub, double? value, {bool rate = false}) => Padding(
+    Widget legend(Color color, String title, String sub, String value, {bool dashed = false}) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 5),
           child: Row(
             children: [
-              Container(
+              SizedBox(
                 width: 14,
                 height: 3,
-                margin: const EdgeInsets.only(right: 9),
-                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+                child: CustomPaint(painter: _LegendLinePainter(color, dashed)),
               ),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,10 +229,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
                   ],
                 ),
               ),
-              Text(
-                value == null ? '—' : (rate ? _rate(value) : _pct(value)),
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color),
-              ),
+              Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color)),
             ],
           ),
         );
@@ -239,7 +244,41 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
           ),
         );
 
-    final unitSuffix = r.annual ? ' годовых' : ' за период';
+    String signed(double? v) => v == null ? '—' : '${v >= 0 ? '+' : '−'}${v.abs().toStringAsFixed(2)}%';
+
+    Widget modeChip(String label, bool on, VoidCallback onTap) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: on ? ctx.accent.withOpacity(0.18) : Colors.transparent,
+                border: Border.all(color: on ? ctx.accent : ctx.hairline),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: on ? ctx.accent : null),
+              ),
+            ),
+          ),
+        );
+
+    void setMode(bool annual) {
+      if (annual == _annualMode) return;
+      setState(() => _annualMode = annual);
+      AppearanceService.setUi('inflationMode', annual ? 'annual' : 'cumulative');
+    }
+
+    final dateLabel = touched == null
+        ? null
+        : r.weekly
+            ? (annualMode ? 'Неделя ${_dayMonth(touched.date)}' : 'К ${_dayMonth(touched.date)}')
+            : '${_capitalized(_months[touched.date.month - 1])} ${touched.date.year}';
+
+    final unitSuffix = r.annual ? ' годовых' : '';
     return [
       Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -261,40 +300,58 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
         ],
       ),
       const SizedBox(height: 12),
+      Row(
+        children: [
+          modeChip('С начала периода', !annualMode, () => setMode(false)),
+          modeChip('В годовых', annualMode, () => setMode(true)),
+        ],
+      ),
+      const SizedBox(height: 10),
       AppCard(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         radius: AppRadius.sm,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('% годовых, по месяцам', style: TextStyle(fontSize: 11, color: ctx.dim)),
+            Text(
+              annualMode
+                  ? '% годовых, ${r.weekly ? 'по неделям' : 'по месяцам'}'
+                  : '% с ${Fmt.date(r.from)}, ${r.weekly ? 'по неделям' : 'по месяцам'}',
+              style: TextStyle(fontSize: 11, color: ctx.dim),
+            ),
             const SizedBox(height: 6),
-            // Подсказка с разглядываемым месяцем. Место под неё занято всегда,
+            // Подсказка с разглядываемой датой. Место под неё занято всегда,
             // чтобы график не прыгал, когда палец касается его.
             SizedBox(
               height: 36,
               child: touched == null
                   ? Align(
                       alignment: Alignment.centerLeft,
-                      child: Text('Проведите пальцем по графику, чтобы увидеть месяц',
+                      child: Text('Проведите пальцем по графику, чтобы увидеть значения',
                           style: TextStyle(fontSize: 11, color: ctx.dim)),
                     )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          '${_capitalized(_months[touched.date.month - 1])} ${touched.date.year}',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
-                        ),
+                        Text(dateLabel!, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
                         const SizedBox(height: 2),
                         Wrap(
                           spacing: 10,
-                          children: [
-                            _tip('Портфель', touched.portfolio, _portfolioColor),
-                            _tip('Инфляция', touched.inflation, _inflationColor),
-                            _tip('Ставка', touched.keyRate, _keyRateColor, rate: true),
-                          ],
+                          children: annualMode
+                              ? [
+                                  if (touched.portfolio != null)
+                                    _tip('Портфель', touched.portfolio, _portfolioColor)
+                                  else if (touched.portfolioEarly != null)
+                                    _tip('С начала', touched.portfolioEarly, _portfolioColor, signedValue: true),
+                                  _tip('Инфляция', touched.inflation, _inflationColor),
+                                  _tip('Ставка', touched.keyRate, _keyRateColor, rate: true),
+                                ]
+                              : [
+                                  _tip('Портфель', touched.cumPortfolio, _portfolioColor, signedValue: true),
+                                  _tip('Цены', touched.cumInflation, _inflationColor, signedValue: true),
+                                  _tip('Вклад', touched.cumDeposit, _keyRateColor, signedValue: true),
+                                ],
                         ),
                       ],
                     ),
@@ -319,6 +376,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
                     child: CustomPaint(
                       painter: _RatesPainter(
                         points: points,
+                        annual: annualMode,
                         touched: _touched,
                         grid: ctx.hairline,
                         label: ctx.dim,
@@ -332,141 +390,283 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
             if (points.isNotEmpty)
               Row(
                 children: [
-                  Text(_monthLabel(points.first.date), style: TextStyle(fontSize: 10.5, color: ctx.dim)),
+                  Text(_axisLabel(points.first.date, r.weekly), style: TextStyle(fontSize: 10.5, color: ctx.dim)),
                   const Spacer(),
-                  Text(_monthLabel(points.last.date), style: TextStyle(fontSize: 10.5, color: ctx.dim)),
+                  Text(_axisLabel(points.last.date, r.weekly), style: TextStyle(fontSize: 10.5, color: ctx.dim)),
                 ],
               ),
-            if (!hasPortfolioLine) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Линия портфеля появится, когда у счёта будет хотя бы полгода истории: '
-                'её значение — доходность за последние 12 месяцев в пересчёте на год.',
-                style: TextStyle(fontSize: 11, height: 1.35, color: ctx.dim),
-              ),
-            ],
           ],
         ),
       ),
       const SizedBox(height: 8),
-      legend(_portfolioColor, 'Портфель', 'доходность за последние 12 месяцев', r.portfolio12m),
-      legend(_inflationColor, 'Инфляция', 'рост цен за последние 12 месяцев', lastInfl),
-      legend(_keyRateColor, 'Ключевая ставка', 'на сегодня', lastKey, rate: true),
+      if (annualMode) ...[
+        legend(_portfolioColor, 'Портфель', 'за последние 12 месяцев, в пересчёте на год',
+            r.portfolio12m == null ? '—' : _pct(r.portfolio12m!)),
+        if (hasEarly)
+          legend(_portfolioColor, 'Портфель с начала', 'пока истории меньше полугода: заработок с первой сделки, без пересчёта на год',
+              hasAnnualLine ? 'до ${_monthGen(points.firstWhere((p) => p.portfolio != null).date)}' : 'сейчас',
+              dashed: true),
+        legend(_inflationColor, 'Инфляция', 'рост цен за последние 12 месяцев',
+            lastInfl == null ? '—' : _pct(lastInfl)),
+        legend(_keyRateColor, 'Ключевая ставка', 'на сегодня', lastKey == null ? '—' : _rate(lastKey)),
+      ] else ...[
+        legend(_portfolioColor, 'Портфель', 'сколько заработал с начала периода', signed(last?.cumPortfolio)),
+        legend(_inflationColor, 'Инфляция', 'на сколько подорожали цены', signed(last?.cumInflation)),
+        legend(_keyRateColor, 'Вклад под ключевую ставку', 'сколько принёс бы вклад', signed(last?.cumDeposit)),
+      ],
       const SizedBox(height: 8),
       AppCard(
         padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
         radius: AppRadius.sm,
         child: Column(
-          children: [
-            summaryRow('Портфель ${realReturnPeriodText(_period)}', '${Fmt.pct(r.portfolioPct)}$unitSuffix',
-                AppColors.pnl(r.portfolioPct)),
-            summaryRow('Инфляция за тот же период', '${Fmt.pct(r.inflationPct)}${r.annual ? ' в год' : ''}',
-                _inflationColor),
-            if (r.keyRateAvg != null) summaryRow('Ключевая ставка в среднем', _rate(r.keyRateAvg!), _keyRateColor),
-          ],
+          children: annualMode
+              ? [
+                  summaryRow('Портфель ${realReturnPeriodText(_period)}',
+                      '${Fmt.pct(r.portfolioPct)}${r.annual ? unitSuffix : ''}', AppColors.pnl(r.portfolioPct)),
+                  summaryRow('Инфляция за тот же период', '${Fmt.pct(r.inflationPct)}${r.annual ? ' в год' : ''}',
+                      _inflationColor),
+                  if (r.keyRateAvg != null)
+                    summaryRow('Ключевая ставка в среднем', _rate(r.keyRateAvg!), _keyRateColor),
+                ]
+              : [
+                  if (lastKey != null) summaryRow('Ключевая ставка сейчас', _rate(lastKey), _keyRateColor),
+                  if (r.keyRateAvg != null)
+                    summaryRow('В среднем за период', _rate(r.keyRateAvg!), _keyRateColor),
+                  if (lastInfl != null)
+                    summaryRow('Инфляция за последние 12 месяцев', _pct(lastInfl), _inflationColor),
+                ],
         ),
       ),
       const SizedBox(height: 10),
       Text(
-        'Все три линии — в процентах за год, поэтому их можно сравнивать напрямую. '
-        'Зелёная выше оранжевой — портфель в это время обгонял рост цен. '
-        'Доходность портфеля считается без влияния пополнений и выводов.',
+        annualMode
+            ? 'Все линии — в процентах за год, их можно сравнивать напрямую. Зелёная выше оранжевой — '
+                'портфель в это время обгонял рост цен. '
+                '${hasEarly ? 'Пунктир — заработок с первой сделки, пока истории меньше полугода: его нельзя сравнивать с годовыми линиями. ' : ''}'
+                'Доходность портфеля считается без влияния пополнений и выводов.'
+            : 'Все линии начинаются с нуля в первый день периода. Зелёная выше оранжевой — портфель обгоняет '
+                'рост цен; выше синей — обгоняет вклад под ключевую ставку. Пополнения и выводы заработком не считаются.',
         style: TextStyle(fontSize: 11.5, height: 1.4, color: ctx.dim),
       ),
     ];
   }
 
-  Widget _tip(String label, double? v, Color color, {bool rate = false}) => Text(
-        '$label ${v == null ? '—' : (rate ? _rate(v) : _pct(v))}',
-        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color),
-      );
+  Widget _tip(String label, double? v, Color color, {bool rate = false, bool signedValue = false}) {
+    String text;
+    if (v == null) {
+      text = '—';
+    } else if (rate) {
+      text = _rate(v);
+    } else if (signedValue) {
+      text = '${v >= 0 ? '+' : '−'}${v.abs().toStringAsFixed(1)}%';
+    } else {
+      text = _pct(v);
+    }
+    return Text('$label $text', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color));
+  }
 }
 
 String _capitalized(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
 
-String _monthLabel(DateTime d) => '${_monthsShort[d.month - 1]} ${d.year}';
+const _monthsGen = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+];
 
-/// Три линии: ставка ступеньками, инфляция и доходность портфеля.
+String _dayMonth(DateTime d) => '${d.day} ${_monthsGen[d.month - 1]}';
+
+/// «до июля» — название месяца в родительном падеже.
+String _monthGen(DateTime d) => _monthsGen[d.month - 1];
+
+String _axisLabel(DateTime d, bool weekly) =>
+    weekly ? '${d.day} ${_monthsShort[d.month - 1]}' : '${_monthsShort[d.month - 1]} ${d.year}';
+
+class _LegendLinePainter extends CustomPainter {
+  final Color color;
+  final bool dashed;
+
+  _LegendLinePainter(this.color, this.dashed);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = size.height
+      ..strokeCap = StrokeCap.round;
+    final y = size.height / 2;
+    if (!dashed) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+      return;
+    }
+    for (double x = 0; x < size.width; x += 6) {
+      canvas.drawLine(Offset(x, y), Offset(math.min(size.width, x + 3), y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LegendLinePainter old) => old.color != color || old.dashed != dashed;
+}
+
+/// Плавная линия через точки без «перелётов» выше и ниже соседних значений
+/// (монотонная кубическая интерполяция).
+Path _smoothPath(List<Offset> pts) {
+  final path = Path();
+  if (pts.isEmpty) return path;
+  path.moveTo(pts.first.dx, pts.first.dy);
+  if (pts.length == 1) return path;
+  if (pts.length == 2) {
+    path.lineTo(pts[1].dx, pts[1].dy);
+    return path;
+  }
+  final n = pts.length;
+  final dx = List<double>.generate(n - 1, (i) => pts[i + 1].dx - pts[i].dx);
+  final slope = List<double>.generate(n - 1, (i) => dx[i] == 0 ? 0 : (pts[i + 1].dy - pts[i].dy) / dx[i]);
+  final m = List<double>.filled(n, 0);
+  m[0] = slope[0];
+  m[n - 1] = slope[n - 2];
+  for (int i = 1; i < n - 1; i++) {
+    m[i] = slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2;
+  }
+  for (int i = 0; i < n - 1; i++) {
+    if (slope[i] == 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    final a = m[i] / slope[i];
+    final b = m[i + 1] / slope[i];
+    final h = a * a + b * b;
+    if (h > 9) {
+      final t = 3 / math.sqrt(h);
+      m[i] = t * a * slope[i];
+      m[i + 1] = t * b * slope[i];
+    }
+  }
+  for (int i = 0; i < n - 1; i++) {
+    final h = dx[i] / 3;
+    path.cubicTo(
+      pts[i].dx + h,
+      pts[i].dy + m[i] * h,
+      pts[i + 1].dx - h,
+      pts[i + 1].dy - m[i + 1] * h,
+      pts[i + 1].dx,
+      pts[i + 1].dy,
+    );
+  }
+  return path;
+}
+
+/// Линии графика. «С начала периода» — портфель, рост цен и вклад, все
+/// плавные. «В годовых» — ставка ступеньками (её меняют скачком), инфляция и
+/// портфель плавно, начало истории портфеля — пунктиром.
 class _RatesPainter extends CustomPainter {
   final List<ReturnPoint> points;
+  final bool annual;
   final int? touched;
   final Color grid;
   final Color label;
 
-  _RatesPainter({required this.points, required this.touched, required this.grid, required this.label});
+  _RatesPainter({
+    required this.points,
+    required this.annual,
+    required this.touched,
+    required this.grid,
+    required this.label,
+  });
+
+  List<(double? Function(ReturnPoint), Color, double, bool, bool)> get _series => annual
+      ? [
+          ((p) => p.keyRate, _keyRateColor, 2.0, true, false),
+          ((p) => p.inflation, _inflationColor, 2.0, false, false),
+          ((p) => p.portfolioEarly, _portfolioColor, 2.0, false, true),
+          ((p) => p.portfolio, _portfolioColor, 2.6, false, false),
+        ]
+      : [
+          ((p) => p.cumDeposit, _keyRateColor, 2.0, false, false),
+          ((p) => p.cumInflation, _inflationColor, 2.0, false, false),
+          ((p) => p.cumPortfolio, _portfolioColor, 2.6, false, false),
+        ];
 
   @override
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty) return;
+    final series = _series;
     final values = <double>[
-      for (final p in points) ...[
-        if (p.portfolio != null) p.portfolio!,
-        if (p.inflation != null) p.inflation!,
-        if (p.keyRate != null) p.keyRate!,
-      ],
+      for (final s in series)
+        for (final p in points)
+          if (s.$1(p) != null) s.$1(p)!,
     ];
     if (values.isEmpty) return;
     var lo = math.min(0.0, values.reduce(math.min));
-    var hi = values.reduce(math.max);
+    var hi = math.max(0.0, values.reduce(math.max));
     final pad = math.max(1.0, (hi - lo) * 0.08);
-    lo -= lo < 0 ? pad : 0;
+    if (lo < 0) lo -= pad;
     hi += pad;
     final n = points.length;
     double x(int i) => n == 1 ? size.width / 2 : i * size.width / (n - 1);
     double y(double v) => size.height - (v - lo) / (hi - lo) * size.height;
 
-    // Сетка: 0% и круглые значения через 5 или 10 пунктов.
-    final step = hi - lo > 30 ? 10.0 : 5.0;
+    // Сетка: 0% и круглые значения.
+    final range = hi - lo;
+    final step = range > 30 ? 10.0 : (range > 12 ? 5.0 : (range > 5 ? 2.0 : 1.0));
     final gridPaint = Paint()
       ..color = grid
       ..strokeWidth = 1;
     for (double g = (lo / step).ceil() * step; g <= hi; g += step) {
       final yy = y(g);
       canvas.drawLine(Offset(0, yy), Offset(size.width, yy), gridPaint);
+      final text = annual || g <= 0 ? '${g.round()}%' : '+${g.round()}%';
       final tp = TextPainter(
-        text: TextSpan(text: '${g.round()}%', style: TextStyle(fontSize: 9, color: label)),
+        text: TextSpan(text: text, style: TextStyle(fontSize: 9, color: label)),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(size.width - tp.width - 2, yy - tp.height - 1));
     }
 
-    void line(double? Function(ReturnPoint) pick, Color color, double width, {bool stepped = false}) {
-      final path = Path();
-      bool open = false;
-      double? prevY;
+    for (final s in series) {
+      final pick = s.$1;
+      final paint = Paint()
+        ..color = s.$2
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = s.$3
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round;
+      // Непрерывные участки без пропусков рисуются отдельно.
+      var run = <Offset>[];
+      void flush() {
+        if (run.isEmpty) return;
+        final Path path;
+        if (s.$4) {
+          path = Path()..moveTo(run.first.dx, run.first.dy);
+          for (int i = 1; i < run.length; i++) {
+            path.lineTo(run[i].dx, run[i - 1].dy);
+            path.lineTo(run[i].dx, run[i].dy);
+          }
+        } else {
+          path = _smoothPath(run);
+        }
+        if (s.$5) {
+          for (final metric in path.computeMetrics()) {
+            for (double d = 0; d < metric.length; d += 8) {
+              canvas.drawPath(metric.extractPath(d, math.min(metric.length, d + 4)), paint);
+            }
+          }
+        } else {
+          canvas.drawPath(path, paint);
+        }
+        run = <Offset>[];
+      }
+
       for (int i = 0; i < n; i++) {
         final v = pick(points[i]);
         if (v == null) {
-          open = false;
+          flush();
           continue;
         }
-        final px = x(i);
-        final py = y(v);
-        if (!open) {
-          path.moveTo(px, py);
-          open = true;
-        } else if (stepped && prevY != null) {
-          path.lineTo(px, prevY);
-          path.lineTo(px, py);
-        } else {
-          path.lineTo(px, py);
-        }
-        prevY = py;
+        run.add(Offset(x(i), y(v)));
       }
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = width
-          ..strokeJoin = StrokeJoin.round
-          ..strokeCap = StrokeCap.round,
-      );
+      flush();
     }
-
-    line((p) => p.keyRate, _keyRateColor, 2, stepped: true);
-    line((p) => p.inflation, _inflationColor, 2);
-    line((p) => p.portfolio, _portfolioColor, 2.6);
 
     final t = touched;
     if (t != null && t < n) {
@@ -477,18 +677,14 @@ class _RatesPainter extends CustomPainter {
       for (double yy = 0; yy < size.height; yy += 5) {
         canvas.drawLine(Offset(tx, yy), Offset(tx, math.min(size.height, yy + 2.5)), dash);
       }
-      for (final e in [
-        (points[t].keyRate, _keyRateColor),
-        (points[t].inflation, _inflationColor),
-        (points[t].portfolio, _portfolioColor),
-      ]) {
-        final v = e.$1;
-        if (v != null) canvas.drawCircle(Offset(tx, y(v)), 4, Paint()..color = e.$2);
+      for (final s in series) {
+        final v = s.$1(points[t]);
+        if (v != null) canvas.drawCircle(Offset(tx, y(v)), 4, Paint()..color = s.$2);
       }
     }
   }
 
   @override
   bool shouldRepaint(covariant _RatesPainter old) =>
-      old.points != points || old.touched != touched || old.grid != grid;
+      old.points != points || old.touched != touched || old.annual != annual || old.grid != grid;
 }

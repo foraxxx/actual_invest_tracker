@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:invest_tracker/services/beta_service.dart';
 import 'package:invest_tracker/services/cbr_service.dart';
+import 'package:invest_tracker/services/price_history_cache.dart';
 import 'package:invest_tracker/services/real_return_service.dart';
 import 'package:invest_tracker/services/stress_test_service.dart';
 
@@ -143,5 +144,19 @@ void main() {
     final long = StressTestService.bondDuration(yieldPct: 14, years: 10);
     expect(long, greaterThan(4.5));
     expect(long, lessThan(10));
+  });
+
+  test('история цен: новые дни дописываются, поправки биржи заменяют старое', () {
+    final old = [
+      MapEntry(DateTime(2026, 1, 12), 100.0),
+      MapEntry(DateTime(2026, 1, 13), 101.0),
+    ];
+    final fresh = [
+      MapEntry(DateTime(2026, 1, 13), 101.5),
+      MapEntry(DateTime(2026, 1, 14), 102.0),
+    ];
+    final merged = PriceHistoryCache.merge(old, fresh);
+    expect(merged.map((e) => e.value), [100.0, 101.5, 102.0]);
+    expect(merged.last.key, DateTime(2026, 1, 14));
   });
 }
