@@ -6,6 +6,7 @@ import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
+import '../services/beta_service.dart';
 import '../services/stress_test_service.dart';
 
 String _signed(double v, String unit) {
@@ -13,244 +14,566 @@ String _signed(double v, String unit) {
   return '${v > 0 ? '+' : v < 0 ? '−' : ''}$s$unit';
 }
 
-/// Окно «Стресс-тест»: что будет с портфелем при падении рынка, росте ставки
-/// или скачке курса.
-Future<void> showStressTestSheet(BuildContext context) {
-  var scenario = StressTestService.scenarios.first;
-  var custom = StressTestService.custom.copyWith(stocks: -20, rate: 2, fx: 10);
-  var isCustom = false;
+/// Окно «Стресс-тест»: ползунки рынка, ставки и рубля прямо на первом
+/// экране, готовые сценарии кнопками над ними, итог и разбор по всем бумагам.
+/// [onOpenTicker] открывает карточку бумаги по нажатию в разборе.
+Future<void> showStressTestSheet(BuildContext context, {ValueChanged<String>? onOpenTicker}) {
   return showAppSheet(
     context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setSheet) {
-        final current = isCustom ? custom : scenario;
-        final r = StressTestService.run(current);
-        final groups = r.byGroup.entries.toList()..sort((a, b) => a.key.index.compareTo(b.key.index));
-        final worst = r.worst.take(5).toList();
+    builder: (_) => _StressSheet(onOpenTicker: onOpenTicker),
+  );
+}
 
-        Widget chip(String label, bool selected, VoidCallback onTap) => Pressable(
-              onTap: onTap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: selected ? ctx.accent.withOpacity(0.18) : Colors.transparent,
-                  border: Border.all(color: selected ? ctx.accent : ctx.hairline),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? ctx.accent : null,
-                  ),
-                ),
-              ),
-            );
+class _StressSheet extends StatefulWidget {
+  final ValueChanged<String>? onOpenTicker;
 
-        Widget slider(String label, double value, double min, double max, double step, String unit,
-            ValueChanged<double> onChanged) {
-          return Column(
+  const _StressSheet({this.onOpenTicker});
+
+  @override
+  State<_StressSheet> createState() => _StressSheetState();
+}
+
+class _StressSheetState extends State<_StressSheet> {
+  /// Текущее положение ползунков.
+  StressScenario _s = StressTestService.scenarios.first;
+
+  /// false — первый экран, true — разбор по всем бумагам.
+  bool _details = false;
+
+  /// В разборе: группами по типам или одним списком по потерям.
+  bool _byLoss = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BetaService.version.addListener(_refresh);
+    BetaService.refreshInBackground(StressTestService.betaTickers());
+  }
+
+  @override
+  void dispose() {
+    BetaService.version.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(_presetResults.clear);
+  }
+
+  /// Итоги готовых сценариев для списка «Другие сценарии»: не пересчитываем
+  /// их на каждое движение ползунка.
+  final Map<String, StressResult> _presetResults = {};
+
+  /// Какой готовый сценарий совпадает с ползунками; иначе — «Свой».
+  StressScenario? get _preset {
+    for (final p in StressTestService.scenarios) {
+      if (p.sameAs(_s)) return p;
+    }
+    return null;
+  }
+
+  void _setSliders(StressScenario s) {
+    setState(() => _s = s);
+  }
+
+  void _saveCustom() {
+    if (_preset == null) StressTestService.saveCustom(_s);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = StressTestService.run(_s);
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          layoutBuilder: (current, previous) => current ?? const SizedBox.shrink(),
+          child: _details
+              ? KeyedSubtree(key: const ValueKey('details'), child: _detailsPage(context, r))
+              : KeyedSubtree(key: const ValueKey('main'), child: _mainPage(context, r)),
+        ),
+      ),
+    );
+  }
+
+  // --- Первый экран ---
+
+  Widget _mainPage(BuildContext context, StressResult r) {
+    final preset = _preset;
+    final custom = StressTestService.custom;
+    final others = [
+      for (final p in StressTestService.scenarios)
+        if (preset == null || p.id != preset.id) p,
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SheetHeader(
+          title: 'Стресс-тест',
+          subtitle: 'Как изменится портфель при резких событиях на рынке',
+        ),
+        const SizedBox(height: 12),
+        // Готовые сценарии: нажатие ставит ползунки на место. Лента
+        // прокручивается вбок.
+        SizedBox(
+          height: 34,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (final p in StressTestService.scenarios)
+                _chip(context, p.title, preset?.id == p.id, () => _setSliders(p)),
+              _chip(context, 'Свой', preset == null, () => _setSliders(custom)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        AppCard(
+          padding: const EdgeInsets.fromLTRB(12, 6, 8, 8),
+          radius: AppRadius.sm,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
-                  Text(_signed(value, unit), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-                ],
+              _slider(context, 'Рынок акций', _s.market, -50, 30, 5, '%',
+                  (v) => _setSliders(_s.copyWith(market: v))),
+              _slider(context, 'Ставка', _s.rate, -5, 5, 0.5, ' п.п.', (v) => _setSliders(_s.copyWith(rate: v))),
+              _slider(context, 'Рубль', _s.ruble, -30, 20, 5, '%', (v) => _setSliders(_s.copyWith(ruble: v))),
+              Padding(
+                padding: const EdgeInsets.only(left: 2, top: 2),
+                child: Text(
+                  'Индекс МосБиржи ≈ ${_signed(StressTestService.indexChange(_s).roundToDouble(), '%')}'
+                  '${_s.ruble < 0 ? ' · доллар ${_signed((_s.fx * 100).roundToDouble(), '%')}' : ''}',
+                  style: TextStyle(fontSize: 11, color: context.dim),
+                ),
               ),
-              Slider(
-                value: value,
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (r.before <= 0)
+          Text('В портфеле пока нет бумаг.', style: TextStyle(fontSize: 13.5, color: context.dim))
+        else ...[
+          _result(context, r),
+          const SizedBox(height: 6),
+          _sources(context, r),
+          const SizedBox(height: 6),
+          Center(
+            child: TextButton(
+              onPressed: () => setState(() => _details = true),
+              child: const Text('Разбор по всем бумагам ›'),
+            ),
+          ),
+          _cap(context, 'ДРУГИЕ СЦЕНАРИИ'),
+          for (final p in others) _otherRow(context, p),
+        ],
+        const SizedBox(height: 12),
+        Text(
+          'Это оценка чувствительности, а не прогноз. Акции двигаются вместе с рынком по своей бете — '
+          'она считается по истории цен за два года, а пока истории нет, берётся средняя для отрасли. '
+          'Рост ставки удешевляет облигации (тем сильнее, чем дальше погашение) и акции; '
+          'слабый рубль поднимает валюту, золото и экспортёров.',
+          style: TextStyle(fontSize: 11.5, height: 1.4, color: context.dim),
+        ),
+      ],
+    );
+  }
+
+  Widget _chip(BuildContext context, String label, bool on, VoidCallback onTap) => Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: Pressable(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: on ? context.accent.withOpacity(0.18) : Colors.transparent,
+              border: Border.all(color: on ? context.accent : context.hairline),
+              borderRadius: BorderRadius.circular(17),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: on ? context.accent : null),
+            ),
+          ),
+        ),
+      );
+
+  Widget _slider(BuildContext context, String label, double value, double min, double max, double step,
+      String unit, ValueChanged<double> onChanged) {
+    return SizedBox(
+      height: 36,
+      child: Row(
+        children: [
+          SizedBox(width: 92, child: Text(label, style: const TextStyle(fontSize: 12.5))),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                showValueIndicator: ShowValueIndicator.never,
+              ),
+              child: Slider(
+                value: value.clamp(min, max).toDouble(),
                 min: min,
                 max: max,
                 divisions: ((max - min) / step).round(),
                 onChanged: (v) => onChanged((v / step).round() * step),
-              ),
-            ],
-          );
-        }
-
-        final afterText = Fmt.money(r.after);
-        final deltaText = Fmt.signedMoney(r.delta);
-
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SheetHeader(
-                  title: 'Стресс-тест',
-                  subtitle: 'Что будет с портфелем, если рынок резко изменится',
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final s in StressTestService.scenarios)
-                      chip(s.title, !isCustom && scenario.id == s.id, () => setSheet(() {
-                            scenario = s;
-                            isCustom = false;
-                          })),
-                    chip(StressTestService.custom.title, isCustom, () => setSheet(() => isCustom = true)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (isCustom) ...[
-                  slider('Акции', custom.stocks, -50, 50, 5, '%',
-                      (v) => setSheet(() => custom = custom.copyWith(stocks: v))),
-                  slider('Ключевая ставка', custom.rate, -5, 5, 0.5, ' п.п.',
-                      (v) => setSheet(() => custom = custom.copyWith(rate: v))),
-                  slider('Курс валют', custom.fx, -30, 30, 5, '%',
-                      (v) => setSheet(() => custom = custom.copyWith(fx: v))),
-                ] else
-                  Text(
-                    _describe(current),
-                    style: TextStyle(fontSize: 12.5, color: ctx.dim),
-                  ),
-                const SizedBox(height: 16),
-                if (r.before <= 0)
-                  Text('В портфеле пока нет бумаг.', style: TextStyle(fontSize: 13.5, color: ctx.dim))
-                else ...[
-                  Text('Портфель станет', style: TextStyle(fontSize: 12.5, color: ctx.dim)),
-                  const SizedBox(height: 2),
-                  HiddenAmount.forText(
-                    afterText,
-                    fontSize: 26,
-                    child: Text(afterText, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      HiddenAmount.forText(
-                        deltaText,
-                        fontSize: 14,
-                        child: Text(
-                          deltaText,
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.pnl(r.delta)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(Fmt.pct(r.pct), style: TextStyle(fontSize: 14, color: AppColors.pnl(r.delta))),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text('ПО ТИПАМ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: ctx.dim)),
-                  const SizedBox(height: 6),
-                  for (final g in groups) _groupRow(ctx, g.key, g.value.$1, g.value.$2, r.before),
-                  if (worst.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    Text('СИЛЬНЕЕ ВСЕГО ПОСТРАДАЮТ',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: ctx.dim)),
-                    const SizedBox(height: 6),
-                    for (final i in worst) _impactRow(ctx, i),
-                  ],
-                ],
-                const SizedBox(height: 14),
-                Text(
-                  'Это грубая оценка, а не прогноз. Акции и фонды акций меняются вместе с рынком, '
-                  'облигации — по дюрации: чем дальше погашение, тем сильнее цена реагирует на ставку. '
-                  'Флоатеры и фонды денежного рынка от ставки почти не зависят, валюта и золото меняются вместе с курсом.',
-                  style: TextStyle(fontSize: 11.5, height: 1.4, color: ctx.dim),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    ),
-  );
-}
-
-String _describe(StressScenario s) {
-  final parts = <String>[
-    if (s.stocks != 0) 'акции ${_signed(s.stocks, '%')}',
-    if (s.rate != 0) 'ключевая ставка ${_signed(s.rate, ' п.п.')}',
-    if (s.fx != 0) 'курс валют ${_signed(s.fx, '%')}',
-  ];
-  if (parts.isEmpty) return 'Без изменений';
-  final text = parts.join(', ');
-  return '${text[0].toUpperCase()}${text.substring(1)}';
-}
-
-Widget _groupRow(BuildContext ctx, StressGroup g, double value, double delta, double total) {
-  final share = total <= 0 ? 0.0 : value / total;
-  final deltaText = Fmt.signedMoney(delta);
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text('${g.title} · ${(share * 100).round()}%', style: const TextStyle(fontSize: 13)),
-            ),
-            HiddenAmount.forText(
-              deltaText,
-              fontSize: 13,
-              child: Text(
-                delta.abs() < 0.5 ? '0 ₽' : deltaText,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: delta.abs() < 0.5 ? ctx.dim : AppColors.pnl(delta),
-                ),
+                onChangeEnd: (_) => _saveCustom(),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(
-            value: math.min(1.0, share),
-            minHeight: 5,
-            backgroundColor: ctx.hairline,
-            color: delta < -0.5
-                ? AppColors.negative
-                : delta > 0.5
-                    ? AppColors.positive
-                    : AppColors.neutral,
           ),
-        ),
-      ],
-    ),
-  );
-}
+          SizedBox(
+            width: 58,
+            child: Text(
+              _signed(value, unit),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-Widget _impactRow(BuildContext ctx, StressImpact i) {
-  final deltaText = Fmt.signedMoney(i.delta);
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Row(
+  Widget _result(BuildContext context, StressResult r) {
+    final afterText = Fmt.money(r.after);
+    final deltaText = Fmt.signedMoney(r.delta);
+    final color = r.delta.abs() < 0.5 ? context.dim : AppColors.pnl(r.delta);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(i.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
-              Text(i.reason, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: ctx.dim)),
+              Text('Портфель станет', style: TextStyle(fontSize: 12, color: context.dim)),
+              HiddenAmount.forText(
+                afterText,
+                fontSize: 24,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(afterText, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                ),
+              ),
             ],
           ),
         ),
-        const SizedBox(width: 8),
         Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             HiddenAmount.forText(
               deltaText,
-              fontSize: 13,
-              child: Text(deltaText,
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.pnl(i.delta))),
+              fontSize: 15,
+              child: Text(deltaText, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color)),
             ),
-            Text(Fmt.pct(i.pct), style: TextStyle(fontSize: 11, color: ctx.dim)),
+            Text(Fmt.pct(r.pct), style: TextStyle(fontSize: 13, color: color)),
           ],
         ),
       ],
-    ),
-  );
+    );
+  }
+
+  /// «Откуда изменение»: вклад рынка, ставки и курса — полосы от центра.
+  Widget _sources(BuildContext context, StressResult r) {
+    final rows = <(String, String, double)>[
+      (_s.market <= 0 ? 'Падение рынка' : 'Рост рынка', 'акции и фонды', r.fromMarket),
+      (_s.rate >= 0 ? 'Рост ставки' : 'Снижение ставки', 'облигации и акции', r.fromRate),
+      (_s.ruble <= 0 ? 'Слабый рубль' : 'Крепкий рубль', 'валюта, золото, экспортёры', r.fromFx),
+    ];
+    final maxAbs = rows.fold(0.0, (m, e) => math.max(m, e.$3.abs()));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _cap(context, 'ОТКУДА ИЗМЕНЕНИЕ'),
+        for (final e in rows) _divergingRow(context, e.$1, e.$2, e.$3, maxAbs),
+      ],
+    );
+  }
+
+  Widget _divergingRow(BuildContext context, String label, String hint, double value, double maxAbs) {
+    final zero = value.abs() < 0.5;
+    final color = zero ? context.dim : AppColors.pnl(value);
+    final text = zero ? '0 ₽' : Fmt.signedMoney(value);
+    final share = maxAbs <= 0 ? 0.0 : value.abs() / maxAbs;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(label, style: const TextStyle(fontSize: 13)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(hint,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: context.dim)),
+              ),
+              HiddenAmount.forText(
+                text,
+                fontSize: 13,
+                child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 8,
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final half = c.maxWidth / 2;
+                final w = half * share;
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: context.hairline,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    if (!zero)
+                      Positioned(
+                        left: value < 0 ? half - w : half,
+                        width: w,
+                        top: 0,
+                        bottom: 0,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
+                        ),
+                      ),
+                    Positioned(
+                      left: half - 0.5,
+                      width: 1,
+                      top: 0,
+                      bottom: 0,
+                      child: ColoredBox(color: context.dim.withOpacity(0.6)),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _otherRow(BuildContext context, StressScenario p) {
+    final r = _presetResults[p.id] ??= StressTestService.run(p);
+    final color = r.delta.abs() < 0.5 ? context.dim : AppColors.pnl(r.delta);
+    return InkWell(
+      onTap: () => _setSliders(p),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.hairline))),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p.title, style: const TextStyle(fontSize: 13)),
+                  Text(p.caption, style: TextStyle(fontSize: 11, color: context.dim)),
+                ],
+              ),
+            ),
+            Text(Fmt.pct(r.pct), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, size: 18, color: context.dim),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cap(BuildContext context, String text) => Padding(
+        padding: const EdgeInsets.only(top: 12, bottom: 4),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim),
+        ),
+      );
+
+  // --- Разбор по всем бумагам ---
+
+  Widget _detailsPage(BuildContext context, StressResult r) {
+    final preset = _preset;
+    final title = preset == null ? 'Свой сценарий' : preset.title;
+    final totalText = '${Fmt.signedMoney(r.delta)} · ${Fmt.pct(r.pct)}';
+    final groups = r.byGroup.entries.toList()..sort((a, b) => a.key.index.compareTo(b.key.index));
+    final sorted = [...r.impacts]..sort((a, b) => a.delta.compareTo(b.delta));
+
+    Widget assumption(String text, Color color) => Container(
+          margin: const EdgeInsets.only(right: 6, bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(color: color.withOpacity(0.14), borderRadius: BorderRadius.circular(7)),
+          child: Text(text, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color)),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+            onPressed: () => setState(() => _details = false),
+            icon: const Icon(Icons.chevron_left_rounded, size: 20),
+            label: const Text('Стресс-тест'),
+          ),
+        ),
+        Text('$title · все бумаги', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        Wrap(
+          children: [
+            if (_s.market != 0)
+              assumption('рынок ${_signed(_s.market, '%')}', _s.market < 0 ? AppColors.negative : AppColors.positive),
+            if (_s.rate != 0)
+              assumption('ставка ${_signed(_s.rate, ' п.п.')}', _s.rate > 0 ? AppColors.negative : AppColors.positive),
+            if (_s.ruble != 0) assumption('рубль ${_signed(_s.ruble, '%')}', AppColors.warning),
+          ],
+        ),
+        Text(
+          'Индекс МосБиржи в этом сценарии ≈ ${_signed(StressTestService.indexChange(_s).roundToDouble(), '%')}',
+          style: TextStyle(fontSize: 12, color: context.dim),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: Text('Итого', style: TextStyle(fontSize: 13, color: context.dim))),
+            HiddenAmount.forText(
+              totalText,
+              fontSize: 15,
+              child: Text(
+                totalText,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.pnl(r.delta)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            SizedBox(height: 30, child: _chip(context, 'По типам', !_byLoss, () => setState(() => _byLoss = false))),
+            SizedBox(height: 30, child: _chip(context, 'По потерям', _byLoss, () => setState(() => _byLoss = true))),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (_byLoss)
+          for (final i in sorted) _paperRow(context, i)
+        else
+          for (final g in groups) ...[
+            _groupHeader(context, g.key, g.value.$1, g.value.$2, r.before),
+            for (final i in sorted.where((i) => i.group == g.key))
+              if (g.key != StressGroup.cash) _paperRow(context, i),
+          ],
+        const SizedBox(height: 12),
+        Text(
+          'Метки — из чего складывается изменение каждой бумаги. '
+          'Нажатие на бумагу открывает её карточку.',
+          style: TextStyle(fontSize: 11.5, height: 1.4, color: context.dim),
+        ),
+      ],
+    );
+  }
+
+  Widget _groupHeader(BuildContext context, StressGroup g, double value, double delta, double total) {
+    final share = total <= 0 ? 0 : (value / total * 100).round();
+    final zero = delta.abs() < 0.5;
+    final color = zero ? context.dim : AppColors.pnl(delta);
+    final deltaText = zero ? '0 ₽' : Fmt.signedMoney(delta);
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.hairline))),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${g.title.toUpperCase()} · $share%',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim),
+            ),
+          ),
+          HiddenAmount.forText(
+            deltaText,
+            fontSize: 12.5,
+            child: Text(deltaText, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: color)),
+          ),
+          SizedBox(
+            width: 56,
+            child: Text(
+              zero || value <= 0 ? '0%' : Fmt.pct(delta / value * 100),
+              textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 11.5, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _paperRow(BuildContext context, StressImpact i) {
+    final zero = i.delta.abs() < 0.5;
+    final color = zero ? context.dim : AppColors.pnl(i.delta);
+    final deltaText = zero ? '0 ₽' : Fmt.signedMoney(i.delta);
+    final open = widget.onOpenTicker;
+    return InkWell(
+      onTap: i.ticker.isEmpty || open == null ? null : () => open(i.ticker),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.hairline.withOpacity(0.6)))),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(i.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 3),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 3,
+                    children: [for (final t in i.tags) _tagChip(context, t)],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                HiddenAmount.forText(
+                  deltaText,
+                  fontSize: 13,
+                  child: Text(deltaText, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+                ),
+                Text(zero ? '0%' : Fmt.pct(i.pct), style: TextStyle(fontSize: 11, color: color)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tagChip(BuildContext context, StressTag t) {
+    final color = t.sign < 0
+        ? AppColors.negative
+        : t.sign > 0
+            ? AppColors.positive
+            : context.dim;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(color: color.withOpacity(0.14), borderRadius: BorderRadius.circular(5)),
+      child: Text(t.text, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
+    );
+  }
 }

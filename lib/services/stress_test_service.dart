@@ -1,46 +1,60 @@
+import 'dart:convert';
 import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'beta_service.dart';
 import 'cash_service.dart';
 import 'moex_sync_service.dart';
 import 'payout_forecast_service.dart';
+import 'sector_service.dart';
 import 'storage_service.dart';
 
-/// Что случилось на рынке.
+/// Что случилось на рынке: три фактора, из которых складывается изменение
+/// каждой бумаги.
 class StressScenario {
   final String id;
   final String title;
 
-  /// Подпись для показателя на главной: «если акции упадут на 20%».
+  /// Описание в списке: «рынок падает, ставка и курс прежние».
   final String caption;
 
-  /// Изменение цен акций, %.
-  final double stocks;
+  /// Движение рынка акций, % — без учёта ставки: её влияние на акции
+  /// добавляется отдельно.
+  final double market;
 
   /// Изменение ключевой ставки, процентных пунктов.
   final double rate;
 
-  /// Изменение курса валют к рублю, %.
-  final double fx;
+  /// Изменение рубля, %: −20 — рубль подешевел на 20%, доллар и юань
+  /// подорожали на 25%.
+  final double ruble;
 
   const StressScenario({
     required this.id,
     required this.title,
     required this.caption,
-    this.stocks = 0,
+    this.market = 0,
     this.rate = 0,
-    this.fx = 0,
+    this.ruble = 0,
   });
 
-  StressScenario copyWith({double? stocks, double? rate, double? fx}) => StressScenario(
+  StressScenario copyWith({double? market, double? rate, double? ruble}) => StressScenario(
         id: id,
         title: title,
         caption: caption,
-        stocks: stocks ?? this.stocks,
+        market: market ?? this.market,
         rate: rate ?? this.rate,
-        fx: fx ?? this.fx,
+        ruble: ruble ?? this.ruble,
       );
+
+  bool sameAs(StressScenario o) => market == o.market && rate == o.rate && ruble == o.ruble;
+
+  /// Насколько подорожает валюта, доля: рубль −20% → доллар +25%.
+  double get fx => ruble <= -99 ? 0 : 1 / (1 + ruble / 100) - 1;
 }
 
 /// Группы бумаг в результате.
@@ -56,27 +70,42 @@ extension StressGroupTitle on StressGroup {
       };
 }
 
+/// Метка у бумаги: «рынок −28%», «до 2041 года».
+class StressTag {
+  final String text;
+
+  /// −1 — потеря, 1 — рост, 0 — пояснение без знака.
+  final int sign;
+
+  const StressTag(this.text, this.sign);
+}
+
 class StressImpact {
   final String ticker;
   final String name;
   final StressGroup group;
   final double value;
 
-  /// Изменение стоимости в рублях.
-  final double delta;
+  /// Части изменения в рублях: от рынка, от ставки (с кредитными спредами)
+  /// и от курса.
+  final double market;
+  final double rate;
+  final double fx;
 
-  /// Почему так: «дюрация 2,8 года», «по курсу валюты».
-  final String reason;
+  final List<StressTag> tags;
 
   const StressImpact({
     required this.ticker,
     required this.name,
     required this.group,
     required this.value,
-    required this.delta,
-    required this.reason,
+    required this.market,
+    required this.rate,
+    required this.fx,
+    required this.tags,
   });
 
+  double get delta => market + rate + fx;
   double get pct => value == 0 ? 0 : delta / value * 100;
 }
 
@@ -91,6 +120,10 @@ class StressResult {
   double get after => before + delta;
   double get pct => before == 0 ? 0 : delta / before * 100;
 
+  double get fromMarket => impacts.fold(0.0, (s, i) => s + i.market);
+  double get fromRate => impacts.fold(0.0, (s, i) => s + i.rate);
+  double get fromFx => impacts.fold(0.0, (s, i) => s + i.fx);
+
   /// Итог по группам: стоимость и изменение.
   Map<StressGroup, (double, double)> get byGroup {
     final map = <StressGroup, (double, double)>{};
@@ -100,33 +133,141 @@ class StressResult {
     }
     return map;
   }
-
-  /// Бумаги, которые потеряют больше всего, по убыванию потерь.
-  List<StressImpact> get worst =>
-      (impacts.where((i) => i.delta < -0.5).toList()..sort((a, b) => a.delta.compareTo(b.delta)));
 }
 
-/// «Стресс-тест»: как изменится стоимость портфеля, если упадут акции,
-/// вырастет ставка или подорожает валюта. Это грубая оценка по типам бумаг,
-/// а не прогноз.
+/// Как отрасль реагирует на три фактора.
+class _Sensitivity {
+  /// Бета — движение вместе с рынком.
+  final double beta;
+
+  /// Изменение цены, % на каждый пункт ставки.
+  final double rate;
+
+  /// Доля роста валюты, которая переходит в цену: 0.4 — доллар +10%,
+  /// акция +4%.
+  final double fx;
+
+  const _Sensitivity(this.beta, this.rate, this.fx);
+}
+
+/// «Стресс-тест»: как изменится стоимость портфеля при резких событиях.
+///
+/// Каждая бумага складывает три реакции:
+/// * на рынок — по бете: своей, посчитанной по истории цен, или средней для
+///   отрасли;
+/// * на ставку — облигации по дюрации, акции в среднем −4% на пункт (сильнее
+///   застройщики и IT, слабее экспортёры), в кризис корпоративные облигации
+///   теряют ещё и на расширении спредов;
+/// * на курс — валюта и золото целиком, экспортёры частично (префы
+///   Сургутнефтегаза — почти целиком из-за валютных депозитов компании),
+///   импортёры в обратную сторону.
+///
+/// Это оценка чувствительности, а не прогноз.
 class StressTestService {
   StressTestService._();
 
+  static const boxName = 'stress';
+  static Box<String>? _box;
+  static final ValueNotifier<int> version = ValueNotifier(0);
+
+  static Future<void> init() async {
+    _box = await Hive.openBox<String>(boxName);
+  }
+
   static const scenarios = [
-    StressScenario(id: 'stocks', title: 'Акции −20%', caption: 'если акции упадут на 20%', stocks: -20),
-    StressScenario(id: 'rateUp', title: 'Ставка +2', caption: 'если ключевая ставка вырастет на 2 п.п.', rate: 2),
+    StressScenario(id: 'stocks', title: 'Акции −20%', caption: 'рынок падает, ставка и курс прежние', market: -20),
+    StressScenario(id: 'rateUp', title: 'Ставка +2', caption: 'облигации и акции дешевеют', rate: 2),
+    StressScenario(id: 'ruble', title: 'Рубль −20%', caption: 'доллар и юань дорожают на 25%', ruble: -20),
     StressScenario(
       id: 'crisis',
       title: 'Кризис',
-      caption: 'акции −30%, ставка +3 п.п., валюта +20%',
-      stocks: -30,
+      caption: 'рынок −25%, ставка +3 п.п., рубль −20%',
+      market: -25,
       rate: 3,
-      fx: 20,
+      ruble: -20,
     ),
-    StressScenario(id: 'rateDown', title: 'Ставка −2', caption: 'если ключевая ставка снизится на 2 п.п.', rate: -2),
+    StressScenario(id: 'rateDown', title: 'Ставка −2', caption: 'облигации и акции дорожают', rate: -2),
   ];
 
-  static const custom = StressScenario(id: 'custom', title: 'Свой', caption: 'свой сценарий');
+  /// Свой сценарий: ползунки запоминаются между запусками.
+  static StressScenario get custom {
+    const base = StressScenario(id: 'custom', title: 'Свой', caption: 'свой сценарий');
+    final raw = _box?.get('custom');
+    if (raw == null) return base.copyWith(market: -30, rate: 3, ruble: -10);
+    try {
+      final m = jsonDecode(raw) as Map;
+      return base.copyWith(
+        market: (m['m'] as num).toDouble(),
+        rate: (m['r'] as num).toDouble(),
+        ruble: (m['f'] as num).toDouble(),
+      );
+    } catch (_) {
+      return base;
+    }
+  }
+
+  static Future<void> saveCustom(StressScenario s) async {
+    await _box?.put('custom', jsonEncode({'m': s.market, 'r': s.rate, 'f': s.ruble}));
+  }
+
+  /// Примерное изменение индекса МосБиржи в сценарии: рынок, средняя
+  /// реакция акций на ставку и немного курса — в индексе много экспортёров.
+  static double indexChange(StressScenario s) =>
+      (s.market / 100 + _index.rate * s.rate / 100 + _index.fx * s.fx) * 100;
+
+  static const _index = _Sensitivity(1, -4, 0.15);
+
+  static const _sectors = <String, _Sensitivity>{
+    'oil': _Sensitivity(0.9, -2.5, 0.35),
+    'metals': _Sensitivity(1.0, -3, 0.4),
+    'chem': _Sensitivity(0.9, -3, 0.4),
+    'finance': _Sensitivity(1.15, -4.5, 0),
+    'it': _Sensitivity(1.3, -6, 0),
+    'retail': _Sensitivity(0.9, -4, -0.15),
+    'telecom': _Sensitivity(0.8, -5, -0.05),
+    'power': _Sensitivity(0.9, -4, 0),
+    'transport': _Sensitivity(1.1, -4.5, -0.2),
+    'realty': _Sensitivity(1.3, -7, 0),
+  };
+
+  static const _default = _Sensitivity(1.0, -4, 0.1);
+
+  /// Бумаги, которые ведут себя иначе, чем их отрасль.
+  static const _overrides = <String, _Sensitivity>{
+    // Дивиденд по префам почти целиком зависит от переоценки валютных
+    // депозитов компании.
+    'SNGSP': _Sensitivity(0.6, -2, 0.9),
+    'SNGS': _Sensitivity(0.8, -2, 0.3),
+    'PLZL': _Sensitivity(0.8, -2.5, 0.7),
+    'UGLD': _Sensitivity(1.0, -3, 0.6),
+    'AFLT': _Sensitivity(1.2, -5, -0.3),
+  };
+
+  static String _sectorKey(String sector) {
+    final s = sector.toLowerCase();
+    if (s.contains('нефт') || s.contains('газ')) return 'oil';
+    if (s.contains('металл') || s.contains('добыч') || s.contains('горно')) return 'metals';
+    if (s.contains('хими') || s.contains('удобр')) return 'chem';
+    if (s.contains('финанс') || s.contains('банк')) return 'finance';
+    if (s.contains('it') || s.contains('информ') || s.contains('технолог')) return 'it';
+    if (s.contains('ритейл') || s.contains('потреб') || s.contains('торгов')) return 'retail';
+    if (s.contains('телеком') || s.contains('связ')) return 'telecom';
+    if (s.contains('электро') || s.contains('энерг')) return 'power';
+    if (s.contains('транспорт')) return 'transport';
+    if (s.contains('строит') || s.contains('недвиж') || s.contains('девелоп')) return 'realty';
+    return '';
+  }
+
+  static _Sensitivity _stockSensitivity(String ticker) {
+    final key = ticker.toUpperCase();
+    final base = _overrides[key] ?? _sectors[_sectorKey(SectorService.sectorFor(ticker))] ?? _default;
+    final hist = BetaService.betaOf(key);
+    if (hist == null) return base;
+    // Бета по истории немного подтягивается к средней для отрасли: на двух
+    // годах данных одна новость легко её искажает.
+    final beta = (hist * 0.67 + base.beta * 0.33).clamp(0.2, 2.0).toDouble();
+    return _Sensitivity(beta, base.rate, base.fx);
+  }
 
   /// Фонды денежного рынка: цена растёт каждый день и от рынка почти не зависит.
   static const _moneyFunds = {
@@ -170,17 +311,14 @@ class StressTestService {
     return quote == null || quote.shortName.isEmpty ? ticker : quote.shortName;
   }
 
-  /// Лет до погашения облигации: из котировки или графика выплат.
-  static double? _yearsToMaturity(String ticker, DateTime now) {
+  static DateTime? _maturity(String ticker) {
     DateTime? mat = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()]?.matDate;
     if (mat == null) {
       for (final p in PayoutForecastService.payoutsFor(ticker)) {
         if (p.kind == 'Погашение номинала' && (mat == null || p.date.isAfter(mat))) mat = p.date;
       }
     }
-    if (mat == null) return null;
-    final days = mat.difference(now).inDays;
-    return days <= 0 ? 0 : days / 365;
+    return mat;
   }
 
   static bool _isFloater(String name) {
@@ -188,89 +326,135 @@ class StressTestService {
     return RegExp(r'(^|[^А-ЯA-Z])ПК(\d|$|[^А-ЯA-Z])').hasMatch(n) || n.contains('ФЛОАТ');
   }
 
-  static String _num(double v) {
-    final s = v.toStringAsFixed(1).replaceAll('.', ',');
-    return s.endsWith(',0') ? s.substring(0, s.length - 2) : s;
+  static bool _isOfz(String ticker, String name) =>
+      name.toUpperCase().contains('ОФЗ') || ticker.toUpperCase().startsWith('SU');
+
+  static String _pctText(double fraction) {
+    final v = fraction * 100;
+    final rounded = v.abs() < 10 ? v.toStringAsFixed(1) : v.toStringAsFixed(0);
+    final clean = rounded.endsWith('.0') ? rounded.substring(0, rounded.length - 2) : rounded;
+    return '${v >= 0 ? '+' : '−'}${clean.replaceAll('-', '')}%';
   }
+
+  /// Метка «рынок −28%», если часть заметна.
+  static void _tag(List<StressTag> tags, String label, double fraction) {
+    if (fraction.abs() < 0.0005) return;
+    tags.add(StressTag('$label ${_pctText(fraction)}', fraction < 0 ? -1 : 1));
+  }
+
+  /// Изменение кредитных спредов, п.п.: при падении рынка корпоративные
+  /// облигации требуют большей доходности сверх ОФЗ.
+  static double _spread(StressScenario s) => (-s.market * 0.04).clamp(-0.5, 2.0).toDouble();
 
   static StressResult run(StressScenario s, {DateTime? now}) {
     final today = now ?? DateTime.now();
     final snapshot = MoexSyncService.marketSnapshot.value;
     final impacts = <StressImpact>[];
+    final m = s.market / 100;
+    final fx = s.fx;
+    final spread = _spread(s);
 
     AnalyticsService.currentHoldings().forEach((ticker, h) {
       if (h.valueRub <= 0) return;
       final key = ticker.toUpperCase();
       final type = _typeOf(ticker);
       final name = _nameOf(ticker);
-      final foreign = h.currency.toUpperCase() != 'RUB' && h.currency.toUpperCase() != 'SUR';
-      final fx = s.fx / 100;
+      final cur = h.currency.toUpperCase();
+      final foreign = cur != 'RUB' && cur != 'SUR';
+      final tags = <StressTag>[];
 
       StressGroup group;
-      double change;
-      String reason;
+      double market = 0; // доли, в валюте бумаги
+      double rate = 0;
+      var fxShare = foreign ? 1.0 : 0.0; // какая доля роста валюты переходит в цену
 
       switch (type) {
         case AssetType.bond:
           group = StressGroup.bonds;
           final quote = snapshot[key];
           final faceForeign = quote != null && quote.faceUnit.toUpperCase() != 'SUR' && quote.faceUnit.toUpperCase() != 'RUB';
-          if (_isFloater(name)) {
-            change = 0;
-            reason = 'купон следует за ставкой';
-          } else {
-            final years = _yearsToMaturity(ticker, today) ?? 3;
-            final dur = bondDuration(yieldPct: quote?.yieldPct ?? 14, years: years);
-            change = (-dur * s.rate / 100).clamp(-0.6, 0.6).toDouble();
-            reason = 'дюрация ${_num(dur)} ${_years(dur)}';
-          }
+          final mat = _maturity(ticker);
+          final years = mat == null ? 3.0 : math.max(0.0, mat.difference(today).inDays / 365);
+          final ofz = _isOfz(ticker, name);
           if (foreign || faceForeign) {
-            change = (1 + change) * (1 + fx) - 1;
-            reason = '$reason, номинал в валюте';
+            // Замещающие облигации: доходность в долларах от рублёвой ставки
+            // не зависит, остаются курс и спред.
+            final dur = bondDuration(yieldPct: quote?.yieldPct ?? 7, years: years);
+            rate = (-dur * spread / 100).clamp(-0.6, 0.6).toDouble();
+            fxShare = 1;
+            _tag(tags, 'спред', rate);
+          } else if (_isFloater(name)) {
+            // Купон флоатера следует за ставкой, цена от неё почти не зависит.
+            rate = ofz ? 0 : (-math.min(years, 5) * spread / 100).clamp(-0.3, 0.3).toDouble();
+            _tag(tags, 'спред', rate);
+            tags.add(const StressTag('флоатер', 0));
+          } else {
+            final dur = bondDuration(yieldPct: quote?.yieldPct ?? 14, years: years);
+            final r = (-dur * s.rate / 100).clamp(-0.6, 0.6).toDouble();
+            final sp = ofz ? 0.0 : (-dur * spread / 100).clamp(-0.3, 0.3).toDouble();
+            rate = r + sp;
+            _tag(tags, 'ставка', r);
+            _tag(tags, 'спред', sp);
           }
+          if (mat != null) tags.add(StressTag('до ${mat.year} года', 0));
         case AssetType.currency:
           group = StressGroup.currency;
-          change = fx;
-          reason = 'по курсу валюты';
+          fxShare = 1;
         case AssetType.etf:
           if (_moneyFunds.contains(key)) {
             group = StressGroup.funds;
-            change = _fxMoneyFunds.contains(key) ? fx : 0;
-            reason = _fxMoneyFunds.contains(key) ? 'фонд денежного рынка в валюте' : 'фонд денежного рынка';
+            fxShare = _fxMoneyFunds.contains(key) ? 1.0 : 0.0;
+            tags.add(const StressTag('денежный рынок', 0));
           } else if (_goldFunds.contains(key)) {
             group = StressGroup.currency;
-            change = fx;
-            reason = 'золото — по курсу доллара';
+            fxShare = 1;
+            tags.add(const StressTag('золото', 0));
           } else if (_bondFunds.contains(key)) {
             group = StressGroup.funds;
-            change = -3 * s.rate / 100;
-            reason = 'фонд облигаций, дюрация около 3 лет';
+            rate = (-3 * s.rate / 100).clamp(-0.4, 0.4).toDouble();
+            _tag(tags, 'ставка', rate);
           } else {
             group = StressGroup.funds;
-            change = s.stocks / 100;
-            reason = 'фонд акций';
-            if (foreign) {
-              change = (1 + change) * (1 + fx) - 1;
-              reason = 'фонд акций в валюте';
-            }
+            final hist = BetaService.betaOf(key);
+            final beta = hist == null ? 1.0 : (hist * 0.67 + 0.33).clamp(0.2, 2.0).toDouble();
+            market = beta * m;
+            rate = _index.rate * s.rate / 100;
+            if (!foreign) fxShare = _index.fx;
+            _tag(tags, 'рынок', market);
+            _tag(tags, 'ставка', rate);
           }
         default:
           group = StressGroup.stocks;
-          change = s.stocks / 100;
-          reason = 'вместе с рынком акций';
-          if (foreign) {
-            change = (1 + change) * (1 + fx) - 1;
-            reason = 'акция в валюте';
-          }
+          final sens = _stockSensitivity(ticker);
+          market = sens.beta * m;
+          rate = sens.rate * s.rate / 100;
+          if (!foreign) fxShare = sens.fx;
+          _tag(tags, 'рынок', market);
+          _tag(tags, 'ставка', rate);
       }
+
+      // Цена не падает ниже нуля: при очень жёстких ползунках режем потерю.
+      var local = market + rate;
+      if (local < -0.95) {
+        final k = -0.95 / local;
+        market *= k;
+        rate *= k;
+        local = -0.95;
+      }
+      // Курс действует на уже изменившуюся цену.
+      final fxPart = (1 + local) * fx * fxShare;
+      _tag(tags, 'рубль', fxPart);
+      if (tags.isEmpty) tags.add(const StressTag('нет влияния', 0));
 
       impacts.add(StressImpact(
         ticker: ticker,
         name: name,
         group: group,
         value: h.valueRub,
-        delta: h.valueRub * change,
-        reason: reason,
+        market: h.valueRub * market,
+        rate: h.valueRub * rate,
+        fx: h.valueRub * fxPart,
+        tags: tags,
       ));
     });
 
@@ -281,18 +465,23 @@ class StressTestService {
         name: 'Свободные деньги',
         group: StressGroup.cash,
         value: cash,
-        delta: 0,
-        reason: 'рубли на счёте не меняются',
+        market: 0,
+        rate: 0,
+        fx: 0,
+        tags: const [StressTag('рубли на счёте не меняются', 0)],
       ));
     }
     return StressResult(s, impacts);
   }
 
-  static String _years(double v) {
-    final whole = v.truncate();
-    if (whole != v) return 'года';
-    final n = whole % 100;
-    if (n >= 11 && n <= 14) return 'лет';
-    return switch (whole % 10) { 1 => 'год', 2 || 3 || 4 => 'года', _ => 'лет' };
-  }
+  /// Акции и фонды акций портфеля — для них считается бета по истории.
+  static List<String> betaTickers() => [
+        for (final t in AnalyticsService.currentHoldings().keys)
+          if (_typeOf(t) == AssetType.stock ||
+              (_typeOf(t) == AssetType.etf &&
+                  !_moneyFunds.contains(t.toUpperCase()) &&
+                  !_goldFunds.contains(t.toUpperCase()) &&
+                  !_bondFunds.contains(t.toUpperCase())))
+            t,
+      ];
 }

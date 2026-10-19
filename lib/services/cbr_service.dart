@@ -181,6 +181,33 @@ class CbrService {
   /// нет — первый известный после).
   static double? _valueAt(int ord, bool inflation) => (inflation ? _infl : _key).at(ord);
 
+  /// Ключевая ставка в месяце даты [d]. После последнего известного месяца
+  /// действует последняя ставка — она не меняется, пока её не пересмотрят.
+  static double? keyRateAt(DateTime d) => _valueAt(_ord(d), false);
+
+  /// Инфляция за 12 месяцев по данным за месяц даты [d] — только если Банк
+  /// России её уже опубликовал. Будущее не дорисовываем.
+  static double? inflationIn(DateTime d) => _months[_ord(d)]?.inflation;
+
+  /// Средняя ключевая ставка за период, по дням.
+  static double? averageKeyRate(DateTime from, DateTime to) {
+    if (!hasData || !to.isAfter(from)) return keyRateAt(to);
+    double sum = 0;
+    double days = 0;
+    var cursor = from;
+    while (cursor.isBefore(to)) {
+      final next = DateTime(cursor.year, cursor.month + 1);
+      final end = next.isBefore(to) ? next : to;
+      final rate = keyRateAt(cursor);
+      if (rate == null) return null;
+      final d = end.difference(cursor).inMilliseconds / Duration.millisecondsPerDay;
+      sum += rate * d;
+      days += d;
+      cursor = end;
+    }
+    return days <= 0 ? null : sum / days;
+  }
+
   /// Во сколько раз выросли цены с [from] по [to].
   ///
   /// У Банка России инфляция годовая (месяц к тому же месяцу прошлого года),

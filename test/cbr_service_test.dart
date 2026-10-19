@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
+import 'package:invest_tracker/services/beta_service.dart';
 import 'package:invest_tracker/services/cbr_service.dart';
 import 'package:invest_tracker/services/real_return_service.dart';
 import 'package:invest_tracker/services/stress_test_service.dart';
@@ -64,47 +65,75 @@ void main() {
     expect(f, closeTo(1.10, 0.002));
   });
 
-  test('портфель против инфляции', () async {
-    await flat(key: 15, infl: 10);
-    final r = RealReturnService.compute(
-      from: DateTime(2025, 1, 1),
-      to: DateTime(2026, 1, 1),
-      startAccount: 0,
-      flows: [(DateTime(2025, 1, 1), 100000)],
-      endAccount: 120000,
-    )!;
-    expect(r.base, 100000);
-    expect(r.portfolioPct, closeTo(20, 1e-6));
-    expect(r.inflationPct, closeTo(10, 0.2));
-    expect(r.keyRatePct, closeTo(15, 0.2));
-    expect(r.vsInflation, closeTo(10, 0.2));
-    expect(r.vsKeyRate, closeTo(5, 0.2));
-    expect(r.realGainRub, closeTo(10000, 200));
+  test('ключевая ставка по месяцам и средняя за период', () async {
+    await CbrService.saveMonths(const [
+      CbrMonth(year: 2025, month: 1, keyRate: 20, inflation: 9),
+      CbrMonth(year: 2025, month: 2, keyRate: 10, inflation: 8),
+    ]);
+    expect(CbrService.keyRateAt(DateTime(2025, 1, 15)), 20);
+    expect(CbrService.keyRateAt(DateTime(2025, 6, 1)), 10);
+    expect(CbrService.inflationIn(DateTime(2025, 2, 10)), 8);
+    expect(CbrService.inflationIn(DateTime(2025, 3, 10)), isNull);
+    final avg = CbrService.averageKeyRate(DateTime(2025, 1, 1), DateTime(2025, 3, 1))!;
+    expect(avg, closeTo((20 * 31 + 10 * 28) / 59, 0.01));
   });
 
-  test('пополнение посреди периода растёт только со своего дня', () async {
-    await flat(key: 10, infl: 10);
-    final r = RealReturnService.compute(
+  test('доходность по Дитцу не считает пополнение доходом', () {
+    final r = RealReturnService.dietz(
       from: DateTime(2025, 1, 1),
       to: DateTime(2026, 1, 1),
-      startAccount: 100000,
+      startValue: 100000,
+      endValue: 160000,
       flows: [(DateTime(2026, 1, 1), 50000)],
-      endAccount: 160000,
     )!;
-    expect(r.base, 150000);
-    expect(r.inflation, closeTo(160000, 300));
+    expect(r, closeTo(0.10, 1e-9));
   });
 
-  test('без своих денег сравнивать не с чем', () async {
-    await flat();
-    final r = RealReturnService.compute(
+  test('пополнение в середине года весит половину', () {
+    final r = RealReturnService.dietz(
+      from: DateTime(2025, 1, 1),
+      to: DateTime(2025, 12, 31),
+      startValue: 0,
+      endValue: 110000,
+      flows: [(DateTime(2025, 1, 1), 50000), (DateTime(2025, 7, 2), 50000)],
+    )!;
+    expect(r, closeTo(10000 / 75000, 0.01));
+  });
+
+  test('без своих денег доходности нет', () {
+    final r = RealReturnService.dietz(
       from: DateTime(2025, 1, 1),
       to: DateTime(2026, 1, 1),
-      startAccount: 0,
+      startValue: 0,
+      endValue: 0,
       flows: const [],
-      endAccount: 0,
     );
     expect(r, isNull);
+  });
+
+  test('бета по недельным ценам', () {
+    final start = DateTime(2024, 1, 1);
+    final index = <MapEntry<DateTime, double>>[];
+    final stock = <MapEntry<DateTime, double>>[];
+    var i = 1000.0;
+    var s = 100.0;
+    for (int k = 0; k < 60; k++) {
+      final d = start.add(Duration(days: 7 * k));
+      final move = (k % 3 == 0 ? 0.02 : -0.01) + (k % 5 == 0 ? 0.015 : 0);
+      i *= 1 + move;
+      s *= 1 + 1.5 * move;
+      index.add(MapEntry(d, i));
+      stock.add(MapEntry(d, s));
+    }
+    expect(BetaService.estimate(stock, index), closeTo(1.5, 0.05));
+    expect(BetaService.estimate(stock.take(10).toList(), index), isNull);
+  });
+
+  test('рубль −20% — доллар +25%', () {
+    const s = StressScenario(id: 'x', title: 'x', caption: 'x', ruble: -20);
+    expect(s.fx, closeTo(0.25, 1e-9));
+    const crisis = StressScenario(id: 'c', title: 'c', caption: 'c', market: -25, rate: 3);
+    expect(StressTestService.indexChange(crisis), closeTo(-37, 1e-9));
   });
 
   test('дюрация облигации', () {

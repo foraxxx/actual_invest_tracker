@@ -21,6 +21,7 @@ import '../services/online_price_service.dart';
 import '../services/portfolio_service.dart';
 import '../services/tax_service.dart';
 import '../services/benchmark_service.dart';
+import '../services/beta_service.dart';
 import '../services/cbr_service.dart';
 import '../services/real_return_service.dart';
 import '../services/stress_test_service.dart';
@@ -97,6 +98,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     CbrService.refreshInBackground();
     PortfolioHistoryService.refresh();
     CbrService.version.addListener(_onDataChanged);
+    BetaService.version.addListener(_onDataChanged);
+    BetaService.refreshInBackground(StressTestService.betaTickers());
     StorageService.dataVersion.addListener(_onDataChanged);
     ManualPriceService.version.addListener(_onDataChanged);
     OnlinePriceService.version.addListener(_onPriceChanged);
@@ -131,6 +134,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void dispose() {
     _chartInspect.dispose();
     CbrService.version.removeListener(_onDataChanged);
+    BetaService.version.removeListener(_onDataChanged);
     StorageService.dataVersion.removeListener(_onDataChanged);
     ManualPriceService.version.removeListener(_onDataChanged);
     OnlinePriceService.version.removeListener(_onPriceChanged);
@@ -1683,16 +1687,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// «Стресс-тест»: насколько подешевеет портфель, если акции упадут на 20%.
   _Metric _stressMetric(BuildContext context) {
-    final scenario = StressTestService.scenarios.first;
-    final r = StressTestService.run(scenario);
+    final r = StressTestService.run(StressTestService.scenarios.first);
     return _Metric(
       label: 'Стресс-тест',
       icon: Icons.bolt_rounded,
       color: AppColors.negative,
       value: Fmt.pct(r.pct),
       valueColor: r.pct.abs() < 0.05 ? null : AppColors.pnl(r.pct),
-      sub: scenario.caption,
-      onTap: () => showStressTestSheet(context),
+      sub: 'если рынок акций упадёт на 20%',
+      onTap: () => showStressTestSheet(
+        context,
+        onOpenTicker: (t) => Navigator.push(context, AppPageRoute(builder: (_) => TickerDetailScreen(ticker: t))),
+      ),
     );
   }
 
@@ -1807,71 +1813,130 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    // Плитки: по три в ряд, если показателей больше четырёх, иначе по две.
-    final perRow = metrics.length > 4 ? 3 : 2;
-    Widget tile(_Metric m) => spot(
+    // Плитки: две главные — «Вложено» и «Прибыль» — крупно, остальные
+    // компактными плашками по две в ряд.
+    Widget bigTile(_Metric m) => spot(
           m,
           AppCard(
-            padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
             radius: AppRadius.sm,
-            border: Border.all(color: m.color.withOpacity(0.35)),
+            border: Border.all(color: m.color.withOpacity(0.4)),
             onTap: m.onTap,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 74),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // В узкой плитке длинное название («Против инфляции»)
-                  // переносится на вторую строку, а не обрезается.
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 1),
-                        child: Icon(m.icon, size: 13, color: m.color),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(m.label,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11.5, height: 1.2, fontWeight: FontWeight.w700, color: m.color)),
-                      ),
-                      if (m.switchLabel != null && perRow == 2) _switchChip(m),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 17)),
-                  const SizedBox(height: 2),
-                  Text(m.sub,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 10.5, height: 1.3, color: context.dim)),
-                  // В плитке по три в ряд кнопке переключения тесно рядом с
-                  // названием — она переезжает вниз.
-                  if (m.switchLabel != null && perRow == 3) ...[
-                    const SizedBox(height: 6),
-                    _switchChip(m),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(m.icon, size: 13, color: m.color),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(m.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: m.color)),
+                    ),
                   ],
-                ],
-              ),
+                ),
+                const SizedBox(height: 6),
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 19)),
+                const SizedBox(height: 2),
+                Text(m.sub,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10.5, height: 1.3, color: context.dim)),
+              ],
             ),
           ),
         );
-    final rows = <Widget>[];
-    for (int i = 0; i < metrics.length; i += perRow) {
-      if (i > 0) rows.add(const SizedBox(height: 8));
-      // Плитки одного ряда одной высоты, даже если у одной подпись длиннее.
-      rows.add(IntrinsicHeight(
+
+    // Кнопка переключения — кружок ⇄ на значке: рядом с названием в узкой
+    // плашке ей нет места.
+    Widget plaque(_Metric m) {
+      final icon = Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(color: m.color.withOpacity(0.16), borderRadius: BorderRadius.circular(9)),
+        child: Icon(m.icon, size: 15, color: m.color),
+      );
+      return spot(
+        m,
+        AppCard(
+          padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
+          radius: AppRadius.sm,
+          onTap: m.onTap,
           child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (int k = 0; k < perRow; k++) ...[
-            if (k > 0) const SizedBox(width: 8),
-            Expanded(child: i + k < metrics.length ? tile(metrics[i + k]) : const SizedBox.shrink()),
-          ],
-        ],
-      )));
+            children: [
+              if (m.onSwitch == null)
+                icon
+              else
+                Pressable(
+                  onTap: m.onSwitch,
+                  child: SizedBox(
+                    width: 34,
+                    height: 34,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(left: 0, top: 0, child: icon),
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 15,
+                            height: 15,
+                            decoration: BoxDecoration(
+                              color: context.accent,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: const Icon(Icons.swap_horiz_rounded, size: 10, color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(m.listLabel ?? m.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: context.dim)),
+                    const SizedBox(height: 1),
+                    FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 14)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget pairRow(List<_Metric> pair, Widget Function(_Metric) build) => IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: build(pair[0])),
+              const SizedBox(width: 8),
+              Expanded(child: pair.length > 1 ? build(pair[1]) : const SizedBox.shrink()),
+            ],
+          ),
+        );
+
+    final rows = <Widget>[];
+    final big = metrics.take(2).toList();
+    final rest = metrics.skip(2).toList();
+    if (big.isNotEmpty) rows.add(pairRow(big, bigTile));
+    for (int i = 0; i < rest.length; i += 2) {
+      rows.add(const SizedBox(height: 8));
+      rows.add(pairRow(rest.sublist(i, math.min(i + 2, rest.length)), plaque));
     }
     return Column(children: rows);
   }
