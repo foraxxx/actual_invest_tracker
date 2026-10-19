@@ -186,12 +186,15 @@ class RealReturnService {
   /// концам месяцев. Последняя точка — всегда [to].
   static (List<DateTime>, bool) _grid(DateTime from, DateTime to) {
     final weekly = to.difference(from).inDays <= 550;
-    final dates = <DateTime>[from];
+    // Точки — на конец дня: стоимость бумаг берётся по закрытию, и все
+    // сделки и пополнения этого дня должны в неё уже войти.
+    DateTime endOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59);
+    final dates = <DateTime>[endOfDay(from)];
     if (weekly) {
-      var d = from.add(const Duration(days: 7));
+      var d = endOfDay(from).add(const Duration(days: 7));
       while (d.isBefore(to)) {
         dates.add(d);
-        d = d.add(const Duration(days: 7));
+        d = endOfDay(d.add(const Duration(days: 7)));
       }
     } else {
       var y = from.year;
@@ -199,7 +202,7 @@ class RealReturnService {
       while (true) {
         final e = _monthEnd(y, m);
         if (!e.isBefore(to)) break;
-        if (e.isAfter(from)) dates.add(e);
+        if (e.isAfter(dates.first)) dates.add(e);
         m++;
         if (m > 12) {
           m = 1;
@@ -207,7 +210,11 @@ class RealReturnService {
         }
       }
     }
-    if (dates.last.isBefore(to)) dates.add(to);
+    if (dates.last.isBefore(to)) {
+      dates.add(to);
+    } else {
+      dates[dates.length - 1] = to;
+    }
     return (dates, weekly);
   }
 
@@ -271,7 +278,10 @@ class RealReturnService {
         // Доходность «с начала периода» — цепочкой по отрезкам между точками:
         // так пополнения не выглядят заработком.
         final r = _segment(acc, dates[i - 1], d, first, to);
-        if (r != null && r > -0.9 && r < 2) cum *= 1 + r;
+        // Неделя с падением больше 40% или ростом больше 60% — почти
+        // наверняка дыра в истории цен, а не настоящий результат.
+        final limit = weekly ? (-0.4, 0.6) : (-0.6, 1.0);
+        if (r != null && r > limit.$1 && r < limit.$2) cum *= 1 + r;
       }
 
       // Годовая доходность: последние 12 месяцев, а пока истории меньше —
@@ -283,7 +293,7 @@ class RealReturnService {
       double? early;
       if (windowDays >= 7) {
         final r = _segment(acc, windowStart, d, first, to);
-        if (r != null && r > -0.95) {
+        if (r != null && r > -0.6 && r < 1.5) {
           if (windowDays >= 182) {
             annual = (windowDays >= 360 ? r : math.pow(1 + r, 365 / windowDays).toDouble() - 1) * 100;
           } else {

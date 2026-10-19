@@ -136,11 +136,16 @@ class PortfolioHistoryService {
 
       final result = <MapEntry<DateTime, double>>[];
       for (final date in dates) {
+        // Цена — закрытие дня, поэтому и сделки берём все за этот день, с
+        // любым временем. Иначе бумаги, купленные днём, не попадали в
+        // стоимость, хотя деньги на них уже ушли со счёта, — и на графиках
+        // появлялись провалы.
+        final dayEnd = DateTime(date.year, date.month, date.day, 23, 59, 59);
         double total = 0;
         for (final ticker in tickers) {
           double quantity = 0;
           for (final trade in trades) {
-            if (trade.ticker == ticker && !trade.date.isAfter(date)) {
+            if (trade.ticker == ticker && !trade.date.isAfter(dayEnd)) {
               quantity += trade.signedQuantity;
             }
           }
@@ -153,7 +158,7 @@ class PortfolioHistoryService {
           }
           if (price == null) {
             for (final trade in trades) {
-              if (trade.ticker == ticker && !trade.date.isAfter(date)) {
+              if (trade.ticker == ticker && !trade.date.isAfter(dayEnd)) {
                 price = trade.pricePerUnit;
               }
             }
