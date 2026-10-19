@@ -51,6 +51,9 @@ String formatPoints(double v) => '${v >= 0 ? '+' : '−'}${v.abs().toStringAsFix
 
 String _pct(double v) => '${v.toStringAsFixed(1)}%';
 
+/// Ключевую ставку показываем с сотыми — так её публикует Банк России.
+String _rate(double v) => '${v.toStringAsFixed(2)}%';
+
 /// «данные Банка России за сентябрь 2026».
 String cbrSourceText() {
   final last = CbrService.lastInflation;
@@ -199,7 +202,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
     final lastKey = CbrService.keyRateAt(r.to);
     final lastInfl = CbrService.lastInflation?.inflation;
 
-    Widget legend(Color color, String title, String sub, double? value) => Padding(
+    Widget legend(Color color, String title, String sub, double? value, {bool rate = false}) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 5),
           child: Row(
             children: [
@@ -219,7 +222,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
                 ),
               ),
               Text(
-                value == null ? '—' : _pct(value),
+                value == null ? '—' : (rate ? _rate(value) : _pct(value)),
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color),
               ),
             ],
@@ -290,7 +293,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
                           children: [
                             _tip('Портфель', touched.portfolio, _portfolioColor),
                             _tip('Инфляция', touched.inflation, _inflationColor),
-                            _tip('Ставка', touched.keyRate, _keyRateColor),
+                            _tip('Ставка', touched.keyRate, _keyRateColor, rate: true),
                           ],
                         ),
                       ],
@@ -337,8 +340,8 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
             if (!hasPortfolioLine) ...[
               const SizedBox(height: 6),
               Text(
-                'Линия портфеля появится, когда истории станет больше года: '
-                'её значение — доходность за последние 12 месяцев.',
+                'Линия портфеля появится, когда у счёта будет хотя бы полгода истории: '
+                'её значение — доходность за последние 12 месяцев в пересчёте на год.',
                 style: TextStyle(fontSize: 11, height: 1.35, color: ctx.dim),
               ),
             ],
@@ -348,7 +351,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
       const SizedBox(height: 8),
       legend(_portfolioColor, 'Портфель', 'доходность за последние 12 месяцев', r.portfolio12m),
       legend(_inflationColor, 'Инфляция', 'рост цен за последние 12 месяцев', lastInfl),
-      legend(_keyRateColor, 'Ключевая ставка', 'на сегодня', lastKey),
+      legend(_keyRateColor, 'Ключевая ставка', 'на сегодня', lastKey, rate: true),
       const SizedBox(height: 8),
       AppCard(
         padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
@@ -359,7 +362,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
                 AppColors.pnl(r.portfolioPct)),
             summaryRow('Инфляция за тот же период', '${Fmt.pct(r.inflationPct)}${r.annual ? ' в год' : ''}',
                 _inflationColor),
-            if (r.keyRateAvg != null) summaryRow('Ключевая ставка в среднем', _pct(r.keyRateAvg!), _keyRateColor),
+            if (r.keyRateAvg != null) summaryRow('Ключевая ставка в среднем', _rate(r.keyRateAvg!), _keyRateColor),
           ],
         ),
       ),
@@ -373,8 +376,8 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
     ];
   }
 
-  Widget _tip(String label, double? v, Color color) => Text(
-        '$label ${v == null ? '—' : _pct(v)}',
+  Widget _tip(String label, double? v, Color color, {bool rate = false}) => Text(
+        '$label ${v == null ? '—' : (rate ? _rate(v) : _pct(v))}',
         style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color),
       );
 }

@@ -228,19 +228,99 @@ class StressTestService {
     'power': _Sensitivity(0.9, -4, 0),
     'transport': _Sensitivity(1.1, -4.5, -0.2),
     'realty': _Sensitivity(1.3, -7, 0),
+    'export': _Sensitivity(1.0, -3, 0.5),
   };
 
   static const _default = _Sensitivity(1.0, -4, 0.1);
 
-  /// Бумаги, которые ведут себя иначе, чем их отрасль.
-  static const _overrides = <String, _Sensitivity>{
+  /// Отдельные бумаги: бета по умолчанию, реакция на ставку и доля роста
+  /// валюты, которая переходит в цену. Отрасль даёт только среднее, а внутри
+  /// неё компании устроены по-разному: у НМТП тарифы порта в долларах, у
+  /// Совкомфлота фрахт в долларах, а М.Видео и Fix Price, наоборот, закупают
+  /// товар за валюту.
+  static const _tickers = <String, _Sensitivity>{
+    // Нефть и газ: выручка в долларах, налоги и часть затрат в рублях.
+    'GAZP': _Sensitivity(0.9, -3, 0.35),
+    'LKOH': _Sensitivity(0.9, -2.5, 0.5),
+    'ROSN': _Sensitivity(0.95, -3, 0.45),
+    'NVTK': _Sensitivity(0.95, -3, 0.5),
+    'TATN': _Sensitivity(0.9, -2.5, 0.45),
+    'TATNP': _Sensitivity(0.85, -2.5, 0.45),
+    'SIBN': _Sensitivity(0.85, -2.5, 0.35),
+    'BANE': _Sensitivity(0.8, -2.5, 0.4),
+    'BANEP': _Sensitivity(0.8, -2.5, 0.4),
     // Дивиденд по префам почти целиком зависит от переоценки валютных
     // депозитов компании.
-    'SNGSP': _Sensitivity(0.6, -2, 0.9),
-    'SNGS': _Sensitivity(0.8, -2, 0.3),
-    'PLZL': _Sensitivity(0.8, -2.5, 0.7),
-    'UGLD': _Sensitivity(1.0, -3, 0.6),
-    'AFLT': _Sensitivity(1.2, -5, -0.3),
+    'SNGSP': _Sensitivity(0.6, -1.5, 0.9),
+    'SNGS': _Sensitivity(0.8, -1.5, 0.3),
+    // Транснефть: тарифы рублёвые, валюты почти нет.
+    'TRNFP': _Sensitivity(0.8, -3.5, 0.1),
+    // Металлы, золото, уголь, удобрения — экспортёры.
+    'GMKN': _Sensitivity(1.0, -3.5, 0.6),
+    'NLMK': _Sensitivity(1.0, -3, 0.5),
+    'CHMF': _Sensitivity(1.0, -3, 0.45),
+    'MAGN': _Sensitivity(1.0, -3, 0.35),
+    'ALRS': _Sensitivity(0.9, -3, 0.6),
+    'PLZL': _Sensitivity(0.8, -2.5, 0.75),
+    'UGLD': _Sensitivity(1.0, -3.5, 0.6),
+    'SELG': _Sensitivity(1.1, -4, 0.6),
+    'RUAL': _Sensitivity(1.0, -4, 0.6),
+    'VSMO': _Sensitivity(0.8, -3, 0.6),
+    'RASP': _Sensitivity(1.1, -3.5, 0.6),
+    'MTLR': _Sensitivity(1.3, -5, 0.5),
+    'MTLRP': _Sensitivity(1.2, -5, 0.5),
+    'ENPG': _Sensitivity(1.0, -4, 0.5),
+    'TRMK': _Sensitivity(0.9, -4, 0.3),
+    'PHOR': _Sensitivity(0.7, -2.5, 0.6),
+    'AKRN': _Sensitivity(0.7, -2.5, 0.6),
+    'NKNC': _Sensitivity(0.9, -3, 0.35),
+    // Порты, морские перевозки, лес — валютная выручка.
+    'NMTP': _Sensitivity(0.9, -3, 0.6),
+    'FESH': _Sensitivity(1.2, -4, 0.5),
+    'FLOT': _Sensitivity(1.0, -3, 0.8),
+    'SGZH': _Sensitivity(1.3, -8, 0.4),
+    'AQUA': _Sensitivity(0.8, -3.5, 0.25),
+    // Валютные затраты: самолёты и топливо, импорт товаров и машин.
+    'AFLT': _Sensitivity(1.2, -5, -0.35),
+    'MVID': _Sensitivity(1.3, -8, -0.4),
+    'FIXP': _Sensitivity(0.9, -4, -0.3),
+    'SVAV': _Sensitivity(1.1, -5, -0.3),
+    'KMAZ': _Sensitivity(1.1, -5, -0.15),
+    'OZON': _Sensitivity(1.2, -5, -0.1),
+    'MGNT': _Sensitivity(0.8, -4, -0.1),
+    'X5': _Sensitivity(0.8, -4, -0.1),
+    'LENT': _Sensitivity(0.8, -4, -0.1),
+    'MTSS': _Sensitivity(0.8, -6, -0.1),
+    'RTKM': _Sensitivity(0.8, -5, -0.1),
+    // Банки и биржа: рублёвый бизнес; биржа выигрывает от высокой ставки.
+    'SBER': _Sensitivity(1.1, -4.5, 0),
+    'SBERP': _Sensitivity(1.1, -4.5, 0),
+    'VTBR': _Sensitivity(1.3, -6, 0),
+    'T': _Sensitivity(1.3, -5, 0),
+    'MOEX': _Sensitivity(0.9, 1, 0.05),
+    'CBOM': _Sensitivity(1.1, -5, 0),
+    'BSPB': _Sensitivity(1.0, -3, 0),
+    'SFIN': _Sensitivity(1.2, -6, 0),
+    'AFKS': _Sensitivity(1.4, -8, 0),
+    // IT и застройщики: дорогие деньги бьют сильнее всего.
+    'YDEX': _Sensitivity(1.2, -5, 0.05),
+    'HEAD': _Sensitivity(1.2, -5, 0),
+    'POSI': _Sensitivity(1.4, -7, 0),
+    'ASTR': _Sensitivity(1.4, -7, 0),
+    'VKCO': _Sensitivity(1.5, -9, 0),
+    'DIAS': _Sensitivity(1.3, -6, 0),
+    'SOFL': _Sensitivity(1.4, -7, 0),
+    'PIKK': _Sensitivity(1.3, -8, 0),
+    'SMLT': _Sensitivity(1.5, -10, 0),
+    'LSRG': _Sensitivity(1.1, -6, 0),
+    'ETLN': _Sensitivity(1.3, -8, 0),
+    // Электроэнергетика: рублёвые тарифы.
+    'IRAO': _Sensitivity(0.8, -3, 0.05),
+    'HYDR': _Sensitivity(0.8, -4, 0),
+    'FEES': _Sensitivity(0.9, -4, 0),
+    'UPRO': _Sensitivity(0.8, -3, 0),
+    'MSNG': _Sensitivity(0.8, -3, 0),
+    'OGKB': _Sensitivity(0.9, -4, 0),
   };
 
   static String _sectorKey(String sector) {
@@ -253,6 +333,7 @@ class StressTestService {
     if (s.contains('ритейл') || s.contains('потреб') || s.contains('торгов')) return 'retail';
     if (s.contains('телеком') || s.contains('связ')) return 'telecom';
     if (s.contains('электро') || s.contains('энерг')) return 'power';
+    if (s.contains('порт') && !s.contains('транспорт')) return 'export';
     if (s.contains('транспорт')) return 'transport';
     if (s.contains('строит') || s.contains('недвиж') || s.contains('девелоп')) return 'realty';
     return '';
@@ -260,7 +341,7 @@ class StressTestService {
 
   static _Sensitivity _stockSensitivity(String ticker) {
     final key = ticker.toUpperCase();
-    final base = _overrides[key] ?? _sectors[_sectorKey(SectorService.sectorFor(ticker))] ?? _default;
+    final base = _tickers[key] ?? _sectors[_sectorKey(SectorService.sectorFor(ticker))] ?? _default;
     final hist = BetaService.betaOf(key);
     if (hist == null) return base;
     // Бета по истории немного подтягивается к средней для отрасли: на двух

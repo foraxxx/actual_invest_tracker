@@ -11,8 +11,8 @@ class ReturnPoint {
   /// Последний день месяца (для текущего месяца — сегодня).
   final DateTime date;
 
-  /// Доходность портфеля за 12 месяцев до этой даты. null — истории меньше
-  /// года.
+  /// Доходность портфеля за 12 месяцев до этой даты (при истории от полугода
+  /// до года — пересчитанная в годовую). null — истории меньше полугода.
   final double? portfolio;
 
   /// Инфляция за 12 месяцев по данным Банка России за этот месяц.
@@ -190,19 +190,25 @@ class RealReturnService {
       prevValue = value;
     }
 
+    // Окно — последние 12 месяцев. Месяц, который не удалось посчитать
+    // (счёт был пуст или нет цен), просто пропускается, а не обрывает всю
+    // линию. Пока истории меньше года, но уже есть полгода, результат
+    // пересчитывается в годовой — иначе линия появлялась бы только через год.
     final result = <int, double>{};
-    for (int i = 11; i < ends.length; i++) {
+    for (int i = 0; i < ends.length; i++) {
       double f = 1;
-      bool ok = true;
-      for (int k = i - 11; k <= i; k++) {
+      int valid = 0;
+      for (int k = math.max(0, i - 11); k <= i; k++) {
         final r = monthly[k];
-        if (r == null) {
-          ok = false;
-          break;
-        }
+        // Месяц с ростом больше чем вдвое или падением больше 60% — почти
+        // наверняка дыра в истории цен, а не настоящий результат.
+        if (r == null || r.isNaN || r < -0.6 || r > 1.0) continue;
         f *= 1 + r;
+        valid++;
       }
-      if (ok) result[ends[i].year * 12 + ends[i].month - 1] = (f - 1) * 100;
+      if (valid < 6 || f <= 0) continue;
+      final annual = valid >= 12 ? f : math.pow(f, 12 / valid).toDouble();
+      result[ends[i].year * 12 + ends[i].month - 1] = (annual - 1) * 100;
     }
     return result;
   }

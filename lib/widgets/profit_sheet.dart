@@ -43,6 +43,8 @@ enum _Part { price, coupons, dividends, fees, tax }
 Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
   var period = initial;
   _Part? open;
+  // Список проданных бумаг под раскрытой частью — свёрнут, пока не нажали.
+  var soldOpen = false;
   return showAppSheet(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -76,7 +78,10 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
             children: [
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => setSheet(() => open = isOpen ? null : part),
+                onTap: () => setSheet(() {
+                  open = isOpen ? null : part;
+                  soldOpen = false;
+                }),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
                   margin: const EdgeInsets.only(bottom: 2),
@@ -124,7 +129,10 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
                 curve: Curves.easeOutCubic,
                 alignment: Alignment.topCenter,
                 child: isOpen
-                    ? _tickers(ctx, byTicker, dot, expense: expense)
+                    ? _tickers(ctx, byTicker, dot,
+                        expense: expense,
+                        soldOpen: soldOpen,
+                        onToggleSold: () => setSheet(() => soldOpen = !soldOpen))
                     : const SizedBox(width: double.infinity),
               ),
             ],
@@ -227,7 +235,14 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
 }
 
 /// Все бумаги части: название, полоска относительно самой крупной и сумма.
-Widget _tickers(BuildContext ctx, Map<String, double> byTicker, Color color, {required bool expense}) {
+Widget _tickers(
+  BuildContext ctx,
+  Map<String, double> byTicker,
+  Color color, {
+  required bool expense,
+  required bool soldOpen,
+  required VoidCallback onToggleSold,
+}) {
   final items = byTicker.entries.where((e) => e.value.abs() >= 0.5).toList()
     ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
   if (items.isEmpty) {
@@ -236,64 +251,120 @@ Widget _tickers(BuildContext ctx, Map<String, double> byTicker, Color color, {re
       child: Text('За этот период ничего нет', style: TextStyle(fontSize: 12.5, color: ctx.dim)),
     );
   }
+  // Сначала то, что лежит в портфеле сейчас; проданное — отдельной
+  // плашкой ниже, чтобы не мешало.
+  final held = AnalyticsService.currentHoldings().keys.map((t) => t.toUpperCase()).toSet();
+  final current = [for (final e in items) if (held.contains(e.key.toUpperCase())) e];
+  final sold = [for (final e in items) if (!held.contains(e.key.toUpperCase())) e];
   final maxAbs = items.fold(0.0, (m, e) => math.max(m, e.value.abs()));
+
+  Widget row(MapEntry<String, double> e, {bool dimmed = false}) => Padding(
+        padding: const EdgeInsets.only(bottom: 7),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 5,
+              child: Text(
+                PayoutCalendarService.nameOf(e.key),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12.5, color: dimmed ? ctx.dim : null),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 4,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: maxAbs <= 0 ? 0 : e.value.abs() / maxAbs,
+                  minHeight: 6,
+                  backgroundColor: ctx.hairline,
+                  // Бумага, которая в этой части дала минус, — красным.
+                  valueColor: AlwaysStoppedAnimation(
+                    (!expense && e.value < 0 ? AppColors.negative : color).withOpacity(dimmed ? 0.55 : 1),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 84,
+              child: HiddenAmount.forText(
+                Fmt.money(e.value),
+                fontSize: 12.5,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    Fmt.signedMoney(expense ? -e.value : e.value),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.pnl(expense ? -e.value : e.value),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  final soldTotal = sold.fold(0.0, (s, e) => s + e.value);
+  final soldText = Fmt.signedMoney(expense ? -soldTotal : soldTotal);
   return Padding(
     padding: const EdgeInsets.fromLTRB(27, 2, 8, 8),
     child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final e in items)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 5,
-                  child: Text(
-                    PayoutCalendarService.nameOf(e.key),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12.5),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 4,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: maxAbs <= 0 ? 0 : e.value.abs() / maxAbs,
-                      minHeight: 6,
-                      backgroundColor: ctx.hairline,
-                      // Бумага, которая в этой части дала минус, — красным.
-                      valueColor: AlwaysStoppedAnimation(
-                        !expense && e.value < 0 ? AppColors.negative : color,
-                      ),
+        for (final e in current) row(e),
+        if (sold.isNotEmpty) ...[
+          if (current.isNotEmpty) const SizedBox(height: 2),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onToggleSold,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: ctx.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.history_rounded, size: 15, color: ctx.dim),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Уже нет в портфеле · ${sold.length} ${Fmt.papers(sold.length)}',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: ctx.dim),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 84,
-                  child: HiddenAmount.forText(
-                    Fmt.money(e.value),
+                  HiddenAmount.forText(
+                    soldText,
                     fontSize: 12.5,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        Fmt.signedMoney(expense ? -e.value : e.value),
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.pnl(expense ? -e.value : e.value),
-                        ),
+                    child: Text(
+                      soldText,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.pnl(expense ? -soldTotal : soldTotal),
                       ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 2),
+                  Icon(soldOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 18, color: ctx.dim),
+                ],
+              ),
             ),
           ),
+          if (soldOpen)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Column(children: [for (final e in sold) row(e, dimmed: true)]),
+            ),
+        ],
       ],
     ),
   );
