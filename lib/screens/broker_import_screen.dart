@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -10,12 +11,18 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/broker_import_service.dart';
 import '../services/moex_sync_service.dart';
+import '../services/iis_service.dart';
+import '../services/portfolio_service.dart';
 import '../services/storage_service.dart';
+import 'home_screen.dart';
 
-/// Импорт сделок и выплат из отчёта брокера. Сначала выбирается брокер:
-/// формат выгрузки у каждого свой, и разбирать их одинаково нельзя.
+/// Импорт сделок и выплат из отчёта брокера в выбранный портфель. Брокер
+/// выбирается отдельно: формат выгрузки у каждого свой.
 class BrokerImportScreen extends StatefulWidget {
-  const BrokerImportScreen({super.key});
+  /// Портфель, в который импортировать. null — текущий.
+  final String? portfolioId;
+
+  const BrokerImportScreen({super.key, this.portfolioId});
 
   @override
   State<BrokerImportScreen> createState() => _BrokerImportScreenState();
@@ -40,6 +47,238 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
   /// выглядит странно — например, бумага уже куплена, но ещё не продана.
   Map<String, double> _before = const {};
   bool _imported = false;
+
+  /// Портфель, который был открыт до импорта: при выходе возвращаемся к нему.
+  /// Данные пишутся в открытый портфель, поэтому на время импорта выбранный
+  /// портфель делается текущим.
+  late final String _original = PortfolioService.activeId;
+  late String _target = widget.portfolioId ?? _original;
+
+  /// После «Открыть портфель» остаёмся в нём, а не возвращаемся.
+  bool _stayInTarget = false;
+
+  /// Похоже, отчёт по другому счёту: какой портфель подходит лучше.
+  ({PortfolioMeta meta, int matched, int total})? _suggest;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_target != _original) unawaited(_selectTarget(_target));
+  }
+
+  @override
+  void dispose() {
+    if (!_stayInTarget && PortfolioService.activeId != _original) {
+      unawaited(PortfolioService.switchTo(_original));
+    }
+    super.dispose();
+  }
+
+  PortfolioMeta? _meta(String id) {
+    for (final p in PortfolioService.list) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
+  String get _targetName => _meta(_target)?.name ?? 'портфель';
+
+  Future<void> _selectTarget(String id) async {
+    setState(() => _busy = true);
+    await PortfolioService.switchTo(id);
+    if (!mounted) return;
+    setState(() {
+      _target = id;
+      _busy = false;
+      _suggest = null;
+      if (_result != null) {
+        _before = BrokerImportService.currentQuantities();
+        _imported = false;
+      }
+    });
+    final result = _result;
+    if (result != null) await _checkAccount(result);
+  }
+
+  Set<String> _reportTickers(BrokerImportResult result) => {
+        for (final t in result.trades)
+          if (t.ticker != null) t.ticker!.toUpperCase(),
+        for (final h in result.holdings)
+          if (h.ticker != null) h.ticker!.toUpperCase(),
+      };
+
+  /// Если ни одной бумаги из отчёта нет в выбранном портфеле, а в другом они
+  /// есть, — скорее всего, выбран не тот портфель.
+  Future<void> _checkAccount(BrokerImportResult result) async {
+    final report = _reportTickers(result);
+    final mine = {
+      ...BrokerImportService.currentQuantities().keys,
+      for (final p in StorageService.purchases) p.ticker.toUpperCase(),
+    };
+    if (report.isEmpty || mine.isEmpty || mine.intersection(report).isNotEmpty) {
+      if (mounted) setState(() => _suggest = null);
+      return;
+    }
+    ({PortfolioMeta meta, int matched, int total})? best;
+    for (final p in PortfolioService.list) {
+      if (p.id == _target) continue;
+      final data = await StorageService.readDataFor(p.id);
+      final tickers = {for (final x in data.purchases) x.ticker.toUpperCase()};
+      final matched = tickers.intersection(report).length;
+      if (matched > 0 && (best == null || matched > best.matched)) {
+        best = (meta: p, matched: matched, total: report.length);
+      }
+    }
+    if (mounted) setState(() => _suggest = best);
+  }
+
+  Future<void> _pickTarget() async {
+    final picked = await showAppSheet<String>(
+      context: context,
+      builder: (ctx) {
+        final list = PortfolioService.list;
+        final active = list.where((p) => p.status == PortfolioStatus.active).toList();
+        final closed = list.where((p) => p.status == PortfolioStatus.closed).toList();
+        Widget tile(PortfolioMeta p) {
+          final selected = p.id == _target;
+          final iis = IisService.settingsFor(p.id) != null;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: AppCard(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              radius: AppRadius.sm,
+              border: Border.all(
+                color: selected ? ctx.accent : ctx.hairline,
+                width: selected ? 1.4 : 1,
+              ),
+              onTap: () => Navigator.pop(ctx, p.id),
+              child: Row(
+                children: [
+                  Icon(
+                    selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                    size: 20,
+                    color: selected ? ctx.accent : ctx.dim,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(p.name, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+                  ),
+                  if (iis) TagChip(text: 'ИИС', color: ctx.accent, fontSize: 10),
+                  if (p.status == PortfolioStatus.closed) ...[
+                    const SizedBox(width: 6),
+                    TagChip(text: 'закрыт', color: ctx.dim, fontSize: 10),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetHeader(
+                title: 'В какой портфель',
+                subtitle: 'Сделки, выплаты и пополнения из отчёта попадут только в него',
+                trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+              ),
+              const SizedBox(height: 14),
+              for (final p in active) tile(p),
+              if (closed.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 6, 0, 8),
+                  child: Text('Закрытые', style: TextStyle(fontSize: 12, color: ctx.dim)),
+                ),
+                for (final p in closed) tile(p),
+              ],
+              const SizedBox(height: 4),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final name = await _askName(ctx);
+                  if (name == null) return;
+                  final meta = await PortfolioService.create(name);
+                  if (ctx.mounted) Navigator.pop(ctx, meta.id);
+                },
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Новый портфель'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked != null && picked != _target && mounted) await _selectTarget(picked);
+  }
+
+  Future<String?> _askName(BuildContext ctx) async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: ctx,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Новый портфель'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Например, ИИС в Сбере'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dctx, ctrl.text.trim()),
+            child: const Text('Создать'),
+          ),
+        ],
+      ),
+    );
+    return name == null || name.isEmpty ? null : name;
+  }
+
+  Widget _targetCard() {
+    final meta = _meta(_target);
+    final iis = IisService.settingsFor(_target) != null;
+    final count = StorageService.purchases.length;
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      border: Border.all(color: context.accent.withOpacity(0.5), width: 1.4),
+      onTap: _busy ? null : _pickTarget,
+      child: Row(
+        children: [
+          Icon(Icons.work_outline_rounded, size: 20, color: context.accent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(meta?.name ?? 'Портфель', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    if (iis) 'ИИС',
+                    count == 0 ? 'пока пустой' : '$count ${Fmt.deals(count)}',
+                  ].join(' · '),
+                  style: TextStyle(fontSize: 11.5, color: context.dim),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _busy ? null : _pickTarget,
+            child: const Text('Сменить', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 0, 0, 8),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 11, letterSpacing: 0.6, fontWeight: FontWeight.w700, color: context.dim),
+        ),
+      );
 
   Future<void> _pickFile() async {
     final broker = _broker;
@@ -71,7 +310,9 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
         _before = BrokerImportService.currentQuantities();
         _imported = false;
         _busy = false;
+        _suggest = null;
       });
+      await _checkAccount(parsed);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -100,10 +341,10 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
       await MoexSyncService.instance.refreshNow(force: true);
       if (!mounted) return;
       setState(() => _busy = false);
-      await showDialog(
+      final openTarget = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Импорт завершён'),
+          title: Text('Импорт в «$_targetName» завершён'),
           content: Text([
             'Добавлено сделок: ${added.trades}',
             'Выплат: ${added.payouts}',
@@ -113,10 +354,23 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
               'Не опознаны бумаги: ${added.unresolved} — такие сделки пропущены',
           ].join('\n')),
           actions: [
-            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Понятно')),
+            // Импорт запускали изнутри этого же портфеля — он и так открыт.
+            if (widget.portfolioId != _target)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('Открыть «$_targetName»'),
+              ),
+            FilledButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Готово')),
           ],
         ),
       );
+      if (openTarget == true && mounted) {
+        _stayInTarget = true;
+        final navigator = Navigator.of(context);
+        navigator.popUntil((route) => route.isFirst);
+        navigator.push(AppPageRoute(builder: (_) => const HomeScreen()));
+        return;
+      }
       // Остаёмся на экране: ниже показывается сверка, и это главное, на что
       // стоит посмотреть после импорта.
       if (mounted) setState(() => _imported = true);
@@ -140,11 +394,14 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         children: [
           Text(
-            'Отчёты у брокеров устроены по-разному, поэтому сначала выберите своего — '
-            'файл будет разобран по его формату.',
+            'Сделки, выплаты и пополнения из отчёта брокера переносятся в выбранный портфель.',
             style: TextStyle(fontSize: 12, height: 1.45, color: context.dim),
           ),
           const SizedBox(height: 16),
+          _sectionLabel('1. В КАКОЙ ПОРТФЕЛЬ'),
+          _targetCard(),
+          const SizedBox(height: 18),
+          _sectionLabel('2. БРОКЕР'),
 
           for (final broker in Broker.values)
             Padding(
@@ -185,9 +442,10 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
               ),
             ),
 
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
+          _sectionLabel('3. ФАЙЛ ОТЧЁТА'),
           GradientButton(
-            label: _busy ? 'Читаю файл…' : 'Выбрать файл отчёта',
+            label: _busy ? 'Подождите…' : 'Выбрать файл отчёта',
             icon: Icons.upload_file_rounded,
             onPressed: (_broker == null || _busy) ? null : _pickFile,
           ),
@@ -220,6 +478,23 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                     'формата — пришли его мне, добавлю разбор.',
               )
             else ...[
+              if (_suggest != null) ...[
+                InfoBanner(
+                  icon: Icons.help_outline_rounded,
+                  color: AppColors.warning,
+                  text: 'Похоже, это отчёт по другому счёту: ни одной бумаги из отчёта нет в портфеле '
+                      '«$_targetName», а в «${_suggest!.meta.name}» совпадают ${_suggest!.matched} из '
+                      '${_suggest!.total}. Проверьте, тот ли портфель выбран.',
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _busy ? null : () => _selectTarget(_suggest!.meta.id),
+                    child: Text('Импортировать в «${_suggest!.meta.name}»'),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
               FadeSlideIn(child: _summary(result)),
               const SizedBox(height: 14),
               AppCheckRow(
@@ -290,8 +565,8 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                 label: _busy
                     ? 'Импортирую…'
                     : _replaceAll
-                        ? 'Заменить портфель данными отчёта'
-                        : 'Импортировать в портфель',
+                        ? 'Заменить «$_targetName» данными отчёта'
+                        : 'Импортировать в «$_targetName»',
                 icon: Icons.check_rounded,
                 onPressed: _busy ? null : _apply,
               ),

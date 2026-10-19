@@ -10,10 +10,41 @@ import '../services/payout_forecast_service.dart';
 import '../services/value_forecast_engine.dart';
 import '../services/value_forecast_service.dart';
 
-/// Окно прогноза стоимости портфеля.
+/// Окно прогноза стоимости портфеля — когда выплат нет и переключать не на
+/// что. Иначе прогноз стоимости открывается в общем окне «Прогноз».
 void showValueForecastSheet(BuildContext context) {
-  showAppSheet(context: context, builder: (_) => const _ValueForecastSheet());
+  var years = ValueForecastService.defaultHorizon;
+  showAppSheet(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        child: StatefulBuilder(
+          builder: (ctx, setSheet) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SheetHeader(
+                title: 'Прогноз стоимости',
+                subtitle: valueForecastSubtitle,
+                trailing: IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+              const SizedBox(height: 14),
+              ValueForecastBody(years: years, onYears: (v) => setSheet(() => years = v)),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
+
+const valueForecastSubtitle = 'Три сценария для текущего портфеля';
+
+String yearsLabel(int n) => _yearsLabel(n);
 
 String _yearsLabel(int n) {
   if (n % 10 == 1 && n % 100 != 11) return '$n год';
@@ -43,15 +74,20 @@ Color _scenarioColor(ForecastScenario s) {
   }
 }
 
-class _ValueForecastSheet extends StatefulWidget {
-  const _ValueForecastSheet();
+/// Содержимое прогноза стоимости: срок, график, сценарии и разбор итога.
+/// Срок хранит родитель — он нужен и карточке-итогу в окне «Прогноз».
+class ValueForecastBody extends StatefulWidget {
+  final int years;
+  final ValueChanged<int> onYears;
+
+  const ValueForecastBody({super.key, required this.years, required this.onYears});
 
   @override
-  State<_ValueForecastSheet> createState() => _ValueForecastSheetState();
+  State<ValueForecastBody> createState() => _ValueForecastBodyState();
 }
 
-class _ValueForecastSheetState extends State<_ValueForecastSheet> {
-  int _years = ValueForecastService.defaultHorizon;
+class _ValueForecastBodyState extends State<ValueForecastBody> {
+  int get _years => widget.years;
   ForecastScenario _scenario = ForecastScenario.realistic;
 
   @override
@@ -92,27 +128,15 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
     final market = ValueForecastService.assumptions;
     final endDate = selected.points.last.date;
 
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-        child: Column(
+    return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            SheetHeader(
-              title: 'Прогноз стоимости',
-              subtitle: 'Три сценария для текущего портфеля',
-              trailing: IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            const SizedBox(height: 14),
             PillTabs<int>(
               values: ValueForecastService.horizons,
               selected: _years,
               labelOf: _yearsLabel,
-              onChanged: (v) => setState(() => _years = v),
+              onChanged: widget.onYears,
             ),
             if (coverage.hasAny) ...[
               const SizedBox(height: 12),
@@ -263,9 +287,7 @@ class _ValueForecastSheetState extends State<_ValueForecastSheet> {
                   'индекса в прошлом, которое не обязано повториться.',
             ),
           ],
-        ),
-      ),
-    );
+        );
   }
 
   static String _pct(double? v) => v == null ? '—' : '${(v * 100).round()}%';

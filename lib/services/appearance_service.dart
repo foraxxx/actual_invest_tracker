@@ -82,6 +82,16 @@ extension PayoutCalendarStyleX on PayoutCalendarStyle {
       };
 }
 
+/// Как показывать показатели на главной: списком или плитками.
+enum MetricsLayout { list, tiles }
+
+extension MetricsLayoutX on MetricsLayout {
+  String get title => switch (this) {
+        MetricsLayout.list => 'Список',
+        MetricsLayout.tiles => 'Плитки',
+      };
+}
+
 /// Настройки внешнего вида, которые не про цвет: что показывать, насколько
 /// плотно и что прятать от посторонних глаз.
 class AppearanceService {
@@ -257,6 +267,16 @@ class AppearanceService {
 
   static Future<void> setPayoutCalendar(PayoutCalendarStyle value) async {
     await _box.put('payoutCalendar', value.name);
+    version.value++;
+  }
+
+  static MetricsLayout get metricsLayout => MetricsLayout.values.firstWhere(
+        (c) => c.name == _box.get('metricsLayout'),
+        orElse: () => MetricsLayout.list,
+      );
+
+  static Future<void> setMetricsLayout(MetricsLayout value) async {
+    await _box.put('metricsLayout', value.name);
     version.value++;
   }
 

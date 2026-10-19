@@ -25,6 +25,7 @@ import 'services/online_settings_service.dart';
 import 'services/auto_backup_service.dart';
 import 'screens/root_screen.dart';
 import 'services/budget_service.dart';
+import 'services/cbr_service.dart';
 import 'design/app_theme.dart';
 
 // Держим ссылку на верхнем уровне, чтобы слушатель жизненного цикла не был
@@ -56,6 +57,7 @@ void main() async {
   await GoalService.init();
   await IisService.init();
   await BudgetService.init();
+  await CbrService.init();
 
   // Убираем курсы, которые могли записаться с биржи по ошибке (своп-инструмент
   // вместо валютной пары давал значения вроде 0,08 ₽).

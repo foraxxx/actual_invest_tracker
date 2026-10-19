@@ -12,6 +12,7 @@ import '../services/analytics_service.dart';
 import '../services/manual_price_service.dart';
 import '../services/plan_apply_service.dart';
 import '../services/price_sanity_service.dart';
+import '../services/portfolio_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../services/moex_sync_service.dart';
@@ -19,6 +20,7 @@ import '../widgets/plan_picker.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
 import '../widgets/trade_edit_sheet.dart';
+import 'broker_import_screen.dart';
 import 'home_screen.dart';
 
 /// Фильтр по типу операции.
@@ -138,6 +140,10 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                           ],
                         ),
                       ),
+                      if (StorageService.purchases.isNotEmpty) ...[
+                        _importButton(),
+                        const SizedBox(width: 10),
+                      ],
                       if (bought > 0 || sold > 0)
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -187,8 +193,28 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                       icon: Icons.swap_horiz_rounded,
                       title: StorageService.purchases.isEmpty ? 'Сделок ещё нет' : 'Ничего не найдено',
                       subtitle: StorageService.purchases.isEmpty
-                          ? 'Нажмите «Сделка», чтобы записать покупку или продажу — можно сразу несколько бумаг за раз.'
+                          ? 'Запишите покупку или продажу вручную — можно сразу несколько бумаг за раз. '
+                              'Или загрузите отчёт брокера: сделки, выплаты и пополнения перенесутся сами.'
                           : 'Попробуйте изменить фильтры или поисковый запрос.',
+                      action: StorageService.purchases.isEmpty
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                GradientButton(
+                                  label: 'Добавить сделку',
+                                  icon: Icons.add_rounded,
+                                  expand: false,
+                                  onPressed: () => _showAddTradeSheet(context),
+                                ),
+                                const SizedBox(height: 8),
+                                OutlinedButton.icon(
+                                  onPressed: _openImport,
+                                  icon: const Icon(Icons.download_rounded, size: 18),
+                                  label: const Text('Загрузить отчёт брокера'),
+                                ),
+                              ],
+                            )
+                          : null,
                     )
                   : _buildList(purchases, taxBreakdown),
             ),
@@ -208,6 +234,35 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
         label: const Text('Сделка', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       ),
+      ),
+    );
+  }
+
+  /// Импорт отчёта брокера сразу в этот портфель.
+  void _openImport() {
+    Navigator.push(
+      context,
+      AppPageRoute(builder: (_) => BrokerImportScreen(portfolioId: PortfolioService.activeId)),
+    );
+  }
+
+  Widget _importButton() {
+    return Pressable(
+      onTap: _openImport,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: context.accent.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.download_rounded, size: 16, color: context.accent),
+            const SizedBox(width: 4),
+            Text('Импорт', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.accent)),
+          ],
+        ),
       ),
     );
   }

@@ -427,6 +427,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           : Icons.view_agenda_outlined,
                       onChanged: AppearanceService.setPayoutCalendar,
                     ),
+                    const SizedBox(height: 16),
+                    _choiceTitle(
+                      'Показатели на главной',
+                      'Вложено, прибыль, доходность и прогноз. Список — строка на показатель, '
+                          'суммы целиком. Плитки — компактная сетка.',
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedToggle<MetricsLayout>(
+                      values: MetricsLayout.values,
+                      selected: AppearanceService.metricsLayout,
+                      labelOf: (c) => c.title,
+                      iconOf: (c) => c == MetricsLayout.list ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                      onChanged: AppearanceService.setMetricsLayout,
+                    ),
                   ],
                 ),
               ),
@@ -594,7 +608,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _actionRow(
                         icon: Icons.ios_share_rounded,
                         title: 'Экспортировать бэкап',
-                        subtitle: 'Все портфели в одном JSON-файле',
+                        subtitle: 'Все портфели и бюджет в одном файле',
                         onTap: () => BackupService.exportToJson(),
                       ),
                       const SizedBox(height: 8),
@@ -608,7 +622,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _actionRow(
                         icon: Icons.account_balance_outlined,
                         title: 'Импорт от брокера',
-                        subtitle: 'Сделки, выплаты и пополнения — в портфель $_portfolioName',
+                        subtitle: 'Сделки, выплаты и пополнения из отчёта брокера. Портфель выбирается в окне импорта',
                         onTap: () => Navigator.push(
                           context,
                           AppPageRoute(builder: (_) => const BrokerImportScreen()),

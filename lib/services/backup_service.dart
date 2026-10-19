@@ -96,6 +96,7 @@ class BackupService {
         'chartHints': AppearanceService.chartHints.name,
         'sectionPreview': AppearanceService.sectionPreview.name,
         'payoutCalendar': AppearanceService.payoutCalendar.name,
+        'metricsLayout': AppearanceService.metricsLayout.name,
       },
       'portfolios': portfolios,
       // Бюджет общий для всех портфелей — хранится как есть.
@@ -494,6 +495,8 @@ class BackupService {
       if (preview != null) await AppearanceService.setSectionPreview(preview);
       final calendar = byName(PayoutCalendarStyle.values, settings['payoutCalendar']);
       if (calendar != null) await AppearanceService.setPayoutCalendar(calendar);
+      final metrics = byName(MetricsLayout.values, settings['metricsLayout']);
+      if (metrics != null) await AppearanceService.setMetricsLayout(metrics);
     }
 
     final missingLogos = <String, String>{};

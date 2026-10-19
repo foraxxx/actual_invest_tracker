@@ -21,13 +21,17 @@ import '../services/online_price_service.dart';
 import '../services/portfolio_service.dart';
 import '../services/tax_service.dart';
 import '../services/benchmark_service.dart';
+import '../services/cbr_service.dart';
+import '../services/real_return_service.dart';
+import '../services/stress_test_service.dart';
 import '../services/portfolio_history_service.dart';
 import '../services/value_forecast_service.dart';
 import '../services/mini_history_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_settings_service.dart';
 import '../widgets/ticker_avatar.dart';
-import '../widgets/payout_forecast_sheet.dart';
+import '../widgets/choice_cards.dart';
+import '../widgets/forecast_sheet.dart';
 import '../widgets/value_forecast_sheet.dart';
 import '../widgets/updated_ago.dart';
 import '../widgets/goal_widgets.dart';
@@ -39,6 +43,8 @@ import '../services/goal_service.dart';
 import '../services/iis_service.dart';
 import '../widgets/payout_calendar.dart';
 import '../widgets/payout_years_chart.dart';
+import '../widgets/real_return_sheet.dart';
+import '../widgets/stress_test_sheet.dart';
 import '../services/payout_calendar_service.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
@@ -88,7 +94,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // появились бумаги, — просим догрузить при входе на вкладку.
     PayoutForecastService.refresh();
     BenchmarkService.refresh();
+    CbrService.refreshInBackground();
     PortfolioHistoryService.refresh();
+    CbrService.version.addListener(_onDataChanged);
     StorageService.dataVersion.addListener(_onDataChanged);
     ManualPriceService.version.addListener(_onDataChanged);
     OnlinePriceService.version.addListener(_onPriceChanged);
@@ -109,6 +117,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     PortfolioHistoryService.refresh();
     PayoutForecastService.refresh(force: true);
     BenchmarkService.refresh();
+    CbrService.refreshInBackground();
     MiniHistoryService.refresh(AnalyticsService.currentHoldings().keys, force: true);
     if (OnlineSettingsService.enabled) {
       await MoexSyncService.instance.refreshNow(force: true);
@@ -121,6 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _chartInspect.dispose();
+    CbrService.version.removeListener(_onDataChanged);
     StorageService.dataVersion.removeListener(_onDataChanged);
     ManualPriceService.version.removeListener(_onDataChanged);
     OnlinePriceService.version.removeListener(_onPriceChanged);
@@ -393,163 +403,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const SizedBox(height: 14),
 
       // --- Показатели ---
-      // Парные величины живут в одной карточке: «вложено» со «свободно»,
-      // «прибыль» с входящими в неё выплатами. Шесть плиток превращаются в
-      // четыре, а сетка теряет целый ряд — при этом ни одно число не
-      // спрятано за жестом, который пришлось бы сначала обнаружить.
+      // Вложено, прибыль, доходность и прогноз. Как показывать — списком или
+      // плитками, — выбирается в настройках оформления. Переключатели XIRR /
+      // TWR и «выплаты / стоимость» — маленькой кнопкой рядом со значением.
       FadeSlideIn(
         delay: Duration(milliseconds: 40 * step++),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: TourSpot(
-                id: 'invested',
-                child: StatTile(
-                  label: 'Вложено',
-                  icon: Icons.account_balance_wallet_outlined,
-                  value: periodCash.invested,
-                  formatter: (v) => Fmt.money(v),
-                  hint: 'пополнения − выводы',
-                  color: AppColors.info,
-                  // Свободные деньги подсвечены золотым: карточка ведётся
-                  // «вложено», но привычный акцент на остатке сохраняется.
-                  secondLabel: 'свободно',
-                  secondText: Fmt.money(cash.cash),
-                  secondColor: AppColors.gold,
-                  onTap: () => _cashSheet(cash),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: StatTile(
-                label: 'Прибыль',
-                icon: Icons.payments_outlined,
-                value: periodProfit,
-                formatter: (v) => Fmt.money(v),
-                hint: 'рост цен и продажи',
-                color: AppColors.pnl(periodProfit),
-                // «Из них»: выплаты — часть прибыли, а не добавка к ней.
-                // Без предлога два числа рядом читаются как слагаемые.
-                secondLabel: 'из них выплаты',
-                secondText: Fmt.money(periodCash.payouts),
-                secondColor: AppColors.positive,
-                // Из чего сложилась прибыль — за тот же период, что на графике.
-                onTap: () => showProfitSheet(context, _period),
-              ),
-            ),
-          ],
-        ),
-      ),
-
-      if (xirr != null || twr != null || hasHoldings) ...[
-        const SizedBox(height: 10),
-        FadeSlideIn(
-          delay: Duration(milliseconds: 40 * step++),
-          child: LayoutBuilder(
-            builder: (context, _) {
-              // XIRR и TWR — не две разные величины, а два способа посчитать
-              // одно и то же. Поэтому они делят одну карточку с явным
-              // переключателем: подпись сама говорит, какой метод сейчас
-              // показан. Если доступен только один — переключателя нет.
-              final hasBoth = xirr != null && twr != null;
-              final showXirr = !hasBoth ? xirr != null : _returnSegment == 0;
-              final shownReturn = showXirr ? xirr : twr;
-
-              final tiles = <Widget>[
-                if (shownReturn != null)
-                  StatTile(
-                    label: 'Доходность',
-                    icon: showXirr ? Icons.percent_rounded : Icons.query_stats_rounded,
-                    text: showXirr ? '${Fmt.pct(shownReturn)} год.' : Fmt.pct(shownReturn),
-                    hint: showXirr
-                        ? 'с учётом дат вложений'
-                        : (benchmark == null
-                            ? (benchmarkError ?? 'без влияния пополнений')
-                            : 'IMOEX ${Fmt.pct(benchmark)}'),
-                    color: AppColors.pnl(shownReturn),
-                    segments: hasBoth ? const ['XIRR', 'TWR'] : null,
-                    selectedSegment: _returnSegment,
-                    onSegmentChanged: (i) => setState(() => _returnSegment = i),
-                    onTap: () => _showReturnInfo(context, xirr: showXirr),
-                  ),
-                if (hasHoldings)
-                  // Прогноз выплат и прогноз стоимости делят одну карточку с
-                  // переключателем — как XIRR и TWR. Если выплат не ожидается,
-                  // переключателя нет и карточка сразу показывает стоимость:
-                  // иначе в режиме «Выплаты» стоял бы бессмысленный ноль.
-                  Builder(builder: (context) {
-                    final showValue = !hasPayouts || _forecastSegment == 1;
-                    if (!showValue) {
-                      return StatTile(
-                        // Заголовок короткий, потому что рядом с ним стоит
-                        // шеврон: «Прогноз выплат» в половину ширины экрана
-                        // уже не помещался и ужимался до нечитаемого кегля.
-                        label: 'Прогноз',
-                        icon: Icons.auto_graph_rounded,
-                        value: payoutForecast,
-                        formatter: (v) => '~${Fmt.money(v)}',
-                        hint: payoutYield > 0
-                            ? 'выплат · ${Fmt.pct(payoutYield)} годовых'
-                            : 'выплат по прошлым годам',
-                        color: AppColors.violet,
-                        segments: const ['Выплаты', 'Стоимость'],
-                        selectedSegment: _forecastSegment,
-                        onSegmentChanged: _onForecastSegment,
-                        onTap: () => showPayoutForecastSheet(context),
-                      );
-                    }
-                    final forecast = ValueForecastService.realistic(ValueForecastService.defaultHorizon);
-                    return StatTile(
-                      label: 'Прогноз',
-                      icon: Icons.stacked_line_chart_rounded,
-                      value: forecast.result.breakdown.end,
-                      formatter: (v) => '~${Fmt.money(v)}',
-                      // «С планами» вместо «реалистично»: в узкую карточку
-                      // длинная подпись не помещается, а сценарий в ней всегда
-                      // один и назван в форме.
-                      hint: forecast.plansApplied
-                          ? 'через ${ValueForecastService.defaultHorizon} года · с планами'
-                          : 'через ${ValueForecastService.defaultHorizon} года · реалистично',
-                      color: AppColors.info,
-                      segments: hasPayouts ? const ['Выплаты', 'Стоимость'] : null,
-                      selectedSegment: _forecastSegment,
-                      onSegmentChanged: _onForecastSegment,
-                      onTap: () => showValueForecastSheet(context),
-                    );
-                  }),
-              ];
-              return Column(
-                children: [
-                  for (int i = 0; i < tiles.length; i += 2) ...[
-                    if (i > 0) const SizedBox(height: 10),
-                    // Выравнивание по верху, без IntrinsicHeight.
-                    //
-                    // IntrinsicHeight здесь применять нельзя: внутри плитки
-                    // сидит AdaptiveSingleLineText на LayoutBuilder, а тот не
-                    // умеет сообщать высоту до разметки и отдаёт ноль. Карточка
-                    // доходности получала высоту меньше своего содержимого, и
-                    // переключатель XIRR/TWR вываливался за нижний край.
-                    Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: tiles[i]),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: i + 1 < tiles.length
-                                ? tiles[i + 1]
-                                : const SizedBox.shrink(),
-                          ),
-                        ],
-                    ),
-                  ],
-                ],
-              );
-            },
+        child: _metricsBlock(context, [
+          _Metric(
+            tourId: 'invested',
+            label: 'Вложено',
+            icon: Icons.account_balance_wallet_outlined,
+            color: AppColors.info,
+            value: Fmt.money(periodCash.invested),
+            money: true,
+            sub: 'свободно ${Fmt.money(cash.cash)}',
+            onTap: () => _cashSheet(cash),
           ),
-        ),
-      ],
+          _Metric(
+            label: 'Прибыль',
+            icon: Icons.payments_outlined,
+            color: AppColors.pnl(periodProfit),
+            value: Fmt.money(periodProfit),
+            valueColor: AppColors.pnl(periodProfit),
+            money: true,
+            sub: 'из них выплаты ${Fmt.money(periodCash.payouts)}',
+            onTap: () => showProfitSheet(context, _period),
+          ),
+          if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
+          if (hasHoldings) _forecastMetric(context, hasPayouts, payoutForecast, payoutYield),
+          if (hasHoldings) _inflationMetric(context),
+          if (hasHoldings) _stressMetric(context),
+        ]),
+      ),
 
       if (taxDue > 0) ...[
         const SizedBox(height: 10),
@@ -861,114 +746,156 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
 
+  /// Окно «Доходность». Если считаются оба способа, сверху две карточки —
+  /// XIRR и TWR, — и нажатие на карточку переключает объяснение ниже, а
+  /// главная запоминает выбор.
   Future<void> _showReturnInfo(BuildContext context, {required bool xirr}) {
-    final title = xirr ? 'Доходность XIRR' : 'Доходность TWR';
-    final intro = xirr
-        ? 'XIRR показывает личную среднегодовую доходность Ваших денег. '
-            'Он учитывает, сколько Вы вложили и в какие именно даты.'
-        : 'TWR показывает, как работал сам портфель, если убрать влияние '
-            'размера и времени пополнений и выводов.';
-    final calculation = xirr
-        ? 'Покупки считаются расходами, продажи и полученные выплаты — доходами, '
-            'а текущая стоимость бумаг — итоговой суммой на сегодня. Затем приложение '
-            'находит такую годовую ставку, которая связывает все эти движения денег.'
-        : 'История делится на отрезки между пополнениями и выводами. Для каждого отрезка '
-            'считается изменение общей стоимости счёта, после чего результаты соединяются. '
-            'Покупки, продажи и выплаты внутри портфеля не считаются внешними вложениями.';
-    final example = xirr
-        ? 'Например, крупная сумма, внесённая недавно, влияет на XIRR сильнее, чем небольшая. '
-            'Поэтому XIRR лучше отвечает на вопрос: «Какую доходность получили именно мои деньги?»'
-        : 'Поэтому TWR удобно сравнивать с индексом МосБиржи или другим портфелем: '
-            'момент пополнения не улучшает и не ухудшает показатель.';
-    final caveat = xirr
-        ? 'Показатель является годовым. Для короткой истории он может заметно меняться '
-            'и не рассчитывается, если данных недостаточно.'
-        : 'Точность зависит от истории стоимости и денежных движений. Если старых котировок '
-            'нет, приложение использует ближайшие известные цены сделок или ручные цены.';
-
-    final value = xirr ? AnalyticsService.xirrPercent() : AnalyticsService.twrPercent();
+    final xirrValue = AnalyticsService.xirrPercent();
+    final twrValue = AnalyticsService.twrPercent();
+    final hasBoth = xirrValue != null && twrValue != null;
+    var current = xirr;
 
     return showAppSheet<void>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SheetHeader(
-                title: title,
-                subtitle: xirr ? 'Личная доходность Ваших денег' : 'Доходность инвестиционной стратегии',
-                trailing: IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (value != null) ...[
-                AppCard(
-                  glow: AppColors.pnl(value),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: AppColors.pnl(value).withOpacity(0.14),
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                        child: Icon(
-                          xirr ? Icons.percent_rounded : Icons.query_stats_rounded,
-                          color: AppColors.pnl(value),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Ваш результат', style: TextStyle(fontSize: 11.5, color: context.dim)),
-                            const SizedBox(height: 3),
-                            Text(
-                              xirr ? '${Fmt.pct(value)} годовых' : Fmt.pct(value),
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.pnl(value),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final x = current;
+          final intro = x
+              ? 'XIRR показывает личную среднегодовую доходность Ваших денег. '
+                  'Он учитывает, сколько Вы вложили и в какие именно даты.'
+              : 'TWR показывает, как работал сам портфель, если убрать влияние '
+                  'размера и времени пополнений и выводов.';
+          final calculation = x
+              ? 'Покупки считаются расходами, продажи и полученные выплаты — доходами, '
+                  'а текущая стоимость бумаг — итоговой суммой на сегодня. Затем приложение '
+                  'находит такую годовую ставку, которая связывает все эти движения денег.'
+              : 'История делится на отрезки между пополнениями и выводами. Для каждого отрезка '
+                  'считается изменение общей стоимости счёта, после чего результаты соединяются. '
+                  'Покупки, продажи и выплаты внутри портфеля не считаются внешними вложениями.';
+          final example = x
+              ? 'Например, крупная сумма, внесённая недавно, влияет на XIRR сильнее, чем небольшая. '
+                  'Поэтому XIRR лучше отвечает на вопрос: «Какую доходность получили именно мои деньги?»'
+              : 'Поэтому TWR удобно сравнивать с индексом МосБиржи или другим портфелем: '
+                  'момент пополнения не улучшает и не ухудшает показатель.';
+          final caveat = x
+              ? 'Показатель является годовым. Для короткой истории он может заметно меняться '
+                  'и не рассчитывается, если данных недостаточно.'
+              : 'Точность зависит от истории стоимости и денежных движений. Если старых котировок '
+                  'нет, приложение использует ближайшие известные цены сделок или ручные цены.';
+          final subtitle = x ? 'Личная доходность Ваших денег' : 'Доходность инвестиционной стратегии';
+          final value = x ? xirrValue : twrValue;
+
+          return SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SheetHeader(
+                    title: hasBoth ? 'Доходность' : (x ? 'Доходность XIRR' : 'Доходность TWR'),
+                    subtitle: hasBoth ? null : subtitle,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(intro, style: const TextStyle(height: 1.4)),
+                  if (hasBoth) ...[
+                    const SizedBox(height: 4),
+                    ChoiceCards(
+                      selected: x ? 0 : 1,
+                      onSelect: (i) {
+                        if ((i == 0) == current) return;
+                        setSheet(() => current = i == 0);
+                        if (mounted) setState(() => _returnSegment = i);
+                      },
+                      items: [
+                        ChoiceCard(
+                          label: 'XIRR',
+                          value: '${Fmt.pct(xirrValue!)} год.',
+                          sub: 'Ваши деньги',
+                          color: AppColors.pnl(xirrValue!),
+                        ),
+                        ChoiceCard(
+                          label: 'TWR',
+                          value: Fmt.pct(twrValue!),
+                          sub: 'сам портфель',
+                          color: AppColors.pnl(twrValue!),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(subtitle, style: TextStyle(fontSize: 12.5, color: ctx.dim)),
+                    const SizedBox(height: 12),
+                  ] else
                     const SizedBox(height: 16),
-                    const Text('Как считается', style: TextStyle(fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 6),
-                    Text(calculation, style: const TextStyle(height: 1.4)),
-                    const SizedBox(height: 14),
-                    Text(example, style: const TextStyle(height: 1.4)),
+                  // Когда карточек нет, результат показывается отдельной
+                  // плашкой; с карточками число уже видно сверху.
+                  if (!hasBoth && value != null) ...[
+                    AppCard(
+                      glow: AppColors.pnl(value),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: AppColors.pnl(value).withOpacity(0.14),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: Icon(
+                              x ? Icons.percent_rounded : Icons.query_stats_rounded,
+                              color: AppColors.pnl(value),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Ваш результат', style: TextStyle(fontSize: 11.5, color: ctx.dim)),
+                                const SizedBox(height: 3),
+                                Text(
+                                  x ? '${Fmt.pct(value)} годовых' : Fmt.pct(value),
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.pnl(value),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                   ],
-                ),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(intro, style: const TextStyle(height: 1.4)),
+                        const SizedBox(height: 16),
+                        const Text('Как считается', style: TextStyle(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 6),
+                        Text(calculation, style: const TextStyle(height: 1.4)),
+                        const SizedBox(height: 14),
+                        Text(example, style: const TextStyle(height: 1.4)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  InfoBanner(
+                    icon: Icons.info_outline_rounded,
+                    color: AppColors.info,
+                    text: caveat,
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              InfoBanner(
-                icon: Icons.info_outline_rounded,
-                color: AppColors.info,
-                text: caveat,
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1458,48 +1385,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }) {
     if (today == null && allTimeRub == null) return null;
 
-    String pctText(double v) => '${v.abs().toStringAsFixed(2).replaceAll('.', ',')}%';
+    // Одна строка: слева изменение за сегодня, справа — за всё время.
+    // Каждая половина при нехватке места уменьшается, а не обрезается.
+    return Builder(builder: (context) {
+      Widget amount(double rub) {
+        final text = Fmt.signedMoney(rub);
+        return HiddenAmount.forText(
+          text,
+          fontSize: 14,
+          child: Text(
+            text,
+            maxLines: 1,
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.pnl(rub)),
+          ),
+        );
+      }
 
-    Widget line(String label, double rub, double? pct) {
-      final text = '${rub >= 0 ? '▲' : '▼'} ${Fmt.money(rub.abs())}${pct == null ? '' : ' · ${pctText(pct)}'}';
-      return Builder(
-        builder: (context) => Row(
-          children: [
-            SizedBox(
-              width: 86,
-              child: Text(
-                label,
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim),
+      Widget label(String text) => Text(
+            text,
+            maxLines: 1,
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim),
+          );
+
+      return Row(
+        children: [
+          if (today != null)
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [amount(today.rub), const SizedBox(width: 5), label('сегодня')],
+                ),
               ),
             ),
+          if (today != null && allTimeRub != null) const SizedBox(width: 12),
+          if (allTimeRub != null)
             Flexible(
-              child: HiddenAmount.forText(
-                text,
-                fontSize: 15,
+              child: Align(
+                alignment: today == null ? Alignment.centerLeft : Alignment.centerRight,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    text,
-                    maxLines: 1,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.pnl(rub)),
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [label('за всё время'), const SizedBox(width: 5), amount(allTimeRub)],
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+        ],
       );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (today != null) line('Сегодня', today.rub, today.pct),
-        if (today != null && allTimeRub != null) const SizedBox(height: 4),
-        if (allTimeRub != null) line('Всё время', allTimeRub, allTimePct),
-      ],
-    );
+    });
   }
 
   // --- Сворачиваемые разделы главной ---
@@ -1658,6 +1596,286 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   /// Превью «Выплат»: 12 квадратиков месяцев, чем ярче — тем больше выплат.
+  _Metric _returnMetric(BuildContext context, double? xirr, double? twr, double? benchmark, String? benchmarkError) {
+    final hasBoth = xirr != null && twr != null;
+    final showXirr = !hasBoth ? xirr != null : _returnSegment == 0;
+    final shown = (showXirr ? xirr : twr)!;
+    return _Metric(
+      label: 'Доходность',
+      listLabel: hasBoth ? 'Доходность ${showXirr ? 'XIRR' : 'TWR'}' : null,
+      icon: showXirr ? Icons.percent_rounded : Icons.query_stats_rounded,
+      color: AppColors.pnl(shown),
+      value: showXirr ? '${Fmt.pct(shown)} год.' : Fmt.pct(shown),
+      valueColor: AppColors.pnl(shown),
+      sub: showXirr
+          ? 'с учётом дат вложений'
+          : (benchmark == null ? (benchmarkError ?? 'без влияния пополнений') : 'индекс МосБиржи ${Fmt.pct(benchmark)}'),
+      switchLabel: hasBoth ? (showXirr ? 'XIRR' : 'TWR') : null,
+      onSwitch: hasBoth ? () => setState(() => _returnSegment = _returnSegment == 0 ? 1 : 0) : null,
+      onTap: () => _showReturnInfo(context, xirr: showXirr),
+    );
+  }
+
+  _Metric _forecastMetric(BuildContext context, bool hasPayouts, double payoutForecast, double payoutYield) {
+    final showValue = !hasPayouts || _forecastSegment == 1;
+    if (!showValue) {
+      return _Metric(
+        label: 'Прогноз выплат',
+        icon: Icons.auto_graph_rounded,
+        color: AppColors.violet,
+        value: '~${Fmt.money(payoutForecast)}',
+        money: true,
+        sub: payoutYield > 0 ? 'за 12 месяцев · ${Fmt.pct(payoutYield)} годовых' : 'по выплатам прошлых лет',
+        switchLabel: 'Выплаты',
+        onSwitch: () => _onForecastSegment(1),
+        onTap: () => showForecastSheet(context, initial: 0, onChanged: _onForecastSegment),
+      );
+    }
+    final forecast = ValueForecastService.realistic(ValueForecastService.defaultHorizon);
+    return _Metric(
+      label: 'Прогноз стоимости',
+      icon: Icons.stacked_line_chart_rounded,
+      color: AppColors.info,
+      value: '~${Fmt.money(forecast.result.breakdown.end)}',
+      money: true,
+      sub: 'через ${ValueForecastService.defaultHorizon} года · '
+          '${forecast.plansApplied ? 'с учётом планов' : 'обычный сценарий'}',
+      switchLabel: hasPayouts ? 'Стоимость' : null,
+      onSwitch: hasPayouts ? () => _onForecastSegment(0) : null,
+      onTap: () => hasPayouts
+          ? showForecastSheet(context, initial: 1, onChanged: _onForecastSegment)
+          : showValueForecastSheet(context),
+    );
+  }
+
+  /// «Против инфляции»: на сколько портфель обогнал рост цен за период
+  /// главного экрана. Инфляция и ключевая ставка — с сайта Банка России.
+  _Metric _inflationMetric(BuildContext context) {
+    final r = RealReturnService.forPeriod(_period);
+    if (r == null) {
+      final String sub;
+      if (!CbrService.hasData && !OnlineSettingsService.enabled) {
+        sub = 'включите загрузку данных из интернета';
+      } else if (!CbrService.hasData) {
+        sub = CbrService.error.value == null ? 'загружаем данные Банка России' : 'нет данных Банка России';
+      } else {
+        sub = 'за этот период нет вложений';
+      }
+      return _Metric(
+        label: 'Против инфляции',
+        icon: Icons.shield_outlined,
+        color: AppColors.warning,
+        value: '—',
+        sub: sub,
+        onTap: () => showRealReturnSheet(context, _period),
+      );
+    }
+    return _Metric(
+      label: 'Против инфляции',
+      icon: Icons.shield_outlined,
+      color: AppColors.pnl(r.vsInflation),
+      value: formatPoints(r.vsInflation),
+      valueColor: AppColors.pnl(r.vsInflation),
+      sub: '${r.vsInflation >= 0 ? 'обогнал' : 'отстал от'} рост${r.vsInflation >= 0 ? '' : 'а'} цен ${realReturnPeriodText(_period)}',
+      onTap: () => showRealReturnSheet(context, _period),
+    );
+  }
+
+  /// «Стресс-тест»: насколько подешевеет портфель, если акции упадут на 20%.
+  _Metric _stressMetric(BuildContext context) {
+    final scenario = StressTestService.scenarios.first;
+    final r = StressTestService.run(scenario);
+    return _Metric(
+      label: 'Стресс-тест',
+      icon: Icons.bolt_rounded,
+      color: AppColors.negative,
+      value: Fmt.pct(r.pct),
+      valueColor: r.pct.abs() < 0.05 ? null : AppColors.pnl(r.pct),
+      sub: scenario.caption,
+      onTap: () => showStressTestSheet(context),
+    );
+  }
+
+  Widget _metricValue(_Metric m, double fontSize) {
+    final text = Text(
+      m.value,
+      maxLines: 1,
+      style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800, color: m.valueColor),
+    );
+    return m.money ? HiddenAmount.forText(m.value, fontSize: fontSize, child: text) : text;
+  }
+
+  /// [compact] — только значок ⇄: в строке списка рядом с длинным
+  /// названием («Прогноз выплат») подпись на кнопке не помещается.
+  Widget _switchChip(_Metric m, {bool compact = false}) {
+    if (compact) {
+      return Pressable(
+        onTap: m.onSwitch,
+        child: Container(
+          width: 24,
+          height: 20,
+          decoration: BoxDecoration(
+            color: context.accent.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(Icons.swap_horiz_rounded, size: 14, color: context.accent),
+        ),
+      );
+    }
+    return Pressable(
+      onTap: m.onSwitch,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: context.accent.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(m.switchLabel!, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: context.accent)),
+            const SizedBox(width: 2),
+            Icon(Icons.swap_horiz_rounded, size: 11, color: context.accent),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metricsBlock(BuildContext context, List<_Metric> metrics) {
+    Widget spot(_Metric m, Widget child) => m.tourId == null ? child : TourSpot(id: m.tourId!, child: child);
+
+    if (AppearanceService.metricsLayout == MetricsLayout.list) {
+      final rows = <Widget>[];
+      for (int i = 0; i < metrics.length; i++) {
+        final m = metrics[i];
+        if (i > 0) rows.add(Container(height: 1, color: context.hairline));
+        rows.add(spot(
+          m,
+          Pressable(
+            onTap: m.onTap,
+            scale: 0.99,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: m.color.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(m.icon, size: 17, color: m.color),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(m.listLabel ?? m.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                            ),
+                            if (m.switchLabel != null) ...[const SizedBox(width: 6), _switchChip(m, compact: true)],
+                          ],
+                        ),
+                        const SizedBox(height: 1),
+                        Text(m.sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: context.dim)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _metricValue(m, 14.5),
+                  Icon(Icons.chevron_right_rounded, size: 18, color: context.dim),
+                ],
+              ),
+            ),
+          ),
+        ));
+      }
+      return AppCard(
+        padding: const EdgeInsets.fromLTRB(14, 2, 10, 2),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows),
+      );
+    }
+
+    // Плитки: по три в ряд, если показателей больше четырёх, иначе по две.
+    final perRow = metrics.length > 4 ? 3 : 2;
+    Widget tile(_Metric m) => spot(
+          m,
+          AppCard(
+            padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+            radius: AppRadius.sm,
+            border: Border.all(color: m.color.withOpacity(0.35)),
+            onTap: m.onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 74),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // В узкой плитке длинное название («Против инфляции»)
+                  // переносится на вторую строку, а не обрезается.
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Icon(m.icon, size: 13, color: m.color),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(m.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11.5, height: 1.2, fontWeight: FontWeight.w700, color: m.color)),
+                      ),
+                      if (m.switchLabel != null && perRow == 2) _switchChip(m),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 17)),
+                  const SizedBox(height: 2),
+                  Text(m.sub,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10.5, height: 1.3, color: context.dim)),
+                  // В плитке по три в ряд кнопке переключения тесно рядом с
+                  // названием — она переезжает вниз.
+                  if (m.switchLabel != null && perRow == 3) ...[
+                    const SizedBox(height: 6),
+                    _switchChip(m),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+    final rows = <Widget>[];
+    for (int i = 0; i < metrics.length; i += perRow) {
+      if (i > 0) rows.add(const SizedBox(height: 8));
+      // Плитки одного ряда одной высоты, даже если у одной подпись длиннее.
+      rows.add(IntrinsicHeight(
+          child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (int k = 0; k < perRow; k++) ...[
+            if (k > 0) const SizedBox(width: 8),
+            Expanded(child: i + k < metrics.length ? tile(metrics[i + k]) : const SizedBox.shrink()),
+          ],
+        ],
+      )));
+    }
+    return Column(children: rows);
+  }
+
   /// Выплаты по годам: линия с точками и рост к прошлому году.
   Widget _payoutYears(BuildContext context, List<int> years) {
     final now = DateTime.now();
@@ -2037,4 +2255,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+}
+
+/// Показатель на главной: вложено, прибыль, доходность, прогноз.
+class _Metric {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final String value;
+  final Color? valueColor;
+  final String sub;
+  final VoidCallback onTap;
+
+  /// Сумма в рублях — прячется вместе с остальными суммами.
+  final bool money;
+
+  /// Кнопка переключения способа расчёта: «XIRR ⇄», «Выплаты ⇄».
+  final String? switchLabel;
+  final VoidCallback? onSwitch;
+
+  final String? tourId;
+
+  /// Название для вида «Список», где кнопка переключения — только значок и
+  /// способ расчёта приходится писать в названии: «Доходность XIRR».
+  final String? listLabel;
+
+  const _Metric({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.sub,
+    required this.onTap,
+    this.valueColor,
+    this.money = false,
+    this.switchLabel,
+    this.onSwitch,
+    this.tourId,
+    this.listLabel,
+  });
 }
