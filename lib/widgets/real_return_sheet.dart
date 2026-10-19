@@ -229,7 +229,10 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
                   ],
                 ),
               ),
-              Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color)),
+              if (value.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color)),
+              ],
             ],
           ),
         );
@@ -292,8 +295,10 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
             child: Padding(
               padding: const EdgeInsets.only(bottom: 5),
               child: Text(
-                ahead ? 'портфель обогнал инфляцию' : 'портфель отстал от инфляции',
-                style: TextStyle(fontSize: 12.5, color: ctx.dim),
+                '${ahead ? 'портфель обогнал инфляцию' : 'портфель отстал от инфляции'}\n'
+                '${Fmt.pct(r.portfolioPct, decimals: 2)} против ${Fmt.pct(r.inflationPct, decimals: 2)}'
+                '${r.annual ? ' в год' : ' за период'}',
+                style: TextStyle(fontSize: 12.5, height: 1.3, color: ctx.dim),
               ),
             ),
           ),
@@ -403,8 +408,12 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
         legend(_portfolioColor, 'Портфель', 'за последние 12 месяцев, в пересчёте на год',
             r.portfolio12m == null ? '—' : _pct(r.portfolio12m!)),
         if (hasEarly)
-          legend(_portfolioColor, 'Портфель с начала', 'пока истории меньше полугода: заработок с первой сделки, без пересчёта на год',
-              hasAnnualLine ? 'до ${_monthGen(points.firstWhere((p) => p.portfolio != null).date)}' : 'сейчас',
+          legend(
+              _portfolioColor,
+              'Портфель с начала',
+              '${hasAnnualLine ? 'до ${_monthGen(points.firstWhere((p) => p.portfolio != null).date)}' : 'пока истории меньше полугода'}: '
+                  'заработок с первой сделки, без пересчёта на год',
+              '',
               dashed: true),
         legend(_inflationColor, 'Инфляция', 'рост цен за последние 12 месяцев',
             lastInfl == null ? '—' : _pct(lastInfl)),
@@ -422,9 +431,12 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
           children: annualMode
               ? [
                   summaryRow('Портфель ${realReturnPeriodText(_period)}',
-                      '${Fmt.pct(r.portfolioPct)}${r.annual ? unitSuffix : ''}', AppColors.pnl(r.portfolioPct)),
-                  summaryRow('Инфляция за тот же период', '${Fmt.pct(r.inflationPct)}${r.annual ? ' в год' : ''}',
-                      _inflationColor),
+                      '${Fmt.pct(r.portfolioPct, decimals: 2)}${r.annual ? unitSuffix : ''}', AppColors.pnl(r.portfolioPct)),
+                  if (!r.annual && r.portfolioPerYear != null)
+                    summaryRow('То же в пересчёте на год', '≈ ${Fmt.pct(r.portfolioPerYear!, decimals: 2)}',
+                        AppColors.pnl(r.portfolioPerYear!)),
+                  summaryRow('Инфляция за тот же период',
+                      '${Fmt.pct(r.inflationPct, decimals: 2)}${r.annual ? ' в год' : ''}', _inflationColor),
                   if (r.keyRateAvg != null)
                     summaryRow('Ключевая ставка в среднем', _rate(r.keyRateAvg!), _keyRateColor),
                 ]

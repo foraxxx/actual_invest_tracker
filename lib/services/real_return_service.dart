@@ -62,6 +62,10 @@ class RealReturn {
   final double portfolioPct;
   final double inflationPct;
 
+  /// Доходность портфеля за период в пересчёте на год — для подписи
+  /// «≈ +7.6% годовых» рядом с результатом за неполный год.
+  final double? portfolioPerYear;
+
   /// Средняя ключевая ставка за период, % годовых.
   final double? keyRateAvg;
 
@@ -77,6 +81,7 @@ class RealReturn {
     required this.annual,
     required this.portfolioPct,
     required this.inflationPct,
+    this.portfolioPerYear,
     required this.keyRateAvg,
     required this.points,
     required this.weekly,
@@ -182,42 +187,6 @@ class RealReturnService {
 
   static DateTime _monthEnd(int year, int month) => DateTime(year, month + 1, 0, 23, 59, 59);
 
-  /// Даты точек: по неделям, если период не длиннее полутора лет, иначе по
-  /// концам месяцев. Последняя точка — всегда [to].
-  static (List<DateTime>, bool) _grid(DateTime from, DateTime to) {
-    final weekly = to.difference(from).inDays <= 550;
-    // Точки — на конец дня: стоимость бумаг берётся по закрытию, и все
-    // сделки и пополнения этого дня должны в неё уже войти.
-    DateTime endOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59);
-    final dates = <DateTime>[endOfDay(from)];
-    if (weekly) {
-      var d = endOfDay(from).add(const Duration(days: 7));
-      while (d.isBefore(to)) {
-        dates.add(d);
-        d = endOfDay(d.add(const Duration(days: 7)));
-      }
-    } else {
-      var y = from.year;
-      var m = from.month;
-      while (true) {
-        final e = _monthEnd(y, m);
-        if (!e.isBefore(to)) break;
-        if (e.isAfter(dates.first)) dates.add(e);
-        m++;
-        if (m > 12) {
-          m = 1;
-          y++;
-        }
-      }
-    }
-    if (dates.last.isBefore(to)) {
-      dates.add(to);
-    } else {
-      dates[dates.length - 1] = to;
-    }
-    return (dates, weekly);
-  }
-
   /// Доходность портфеля на отрезке, %. Отрезок может начинаться до первой
   /// операции — тогда счёт на начало пуст.
   static double? _segment(_Account acc, DateTime a, DateTime b, DateTime first, DateTime now) {
@@ -263,50 +232,90 @@ class RealReturnService {
     final to = now;
     final acc = _Account.load();
     final first = acc.start;
-    if (first == null) return null;
+    if (first == null || !to.isAfter(first)) return null;
 
+    // Одна шкала на всю историю: недели с первой операции до сегодня. По ней
+    // цепочкой считается «индекс» портфеля — сколько стал бы стоить рубль,
+    // вложенный в первый день, без влияния пополнений и выводов. Из этого
+    // одного индекса берутся и «с начала периода», и «в годовых», и итог под
+    // графиком — поэтому цифры между собой сходятся.
+    DateTime endOfDay(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59);
+    final grid = <DateTime>[endOfDay(first)];
+    var g = endOfDay(first).add(const Duration(days: 7));
+    while (g.isBefore(to)) {
+      grid.add(g);
+      g = endOfDay(g.add(const Duration(days: 7)));
+    }
+    if (grid.last.isBefore(to)) {
+      grid.add(to);
+    } else {
+      grid[grid.length - 1] = to;
+    }
+
+    final idx = <double>[1.0];
+    for (int i = 1; i < grid.length; i++) {
+      final r = _segment(acc, grid[i - 1], grid[i], first, to);
+      // Неделя с падением больше 40% или ростом больше 60% — почти
+      // наверняка дыра в истории цен, а не настоящий результат.
+      final ok = r != null && r > -0.4 && r < 0.6;
+      idx.add(idx.last * (ok ? 1 + r : 1));
+    }
+
+    // Начало периода — ближайшая неделя шкалы.
     final periodStart = AnalyticsService.periodStart(f, now: to);
-    final from = periodStart == null || periodStart.isBefore(first) ? first : periodStart;
-    if (!to.isAfter(from)) return null;
-
-    final (dates, weekly) = _grid(from, to);
-    final points = <ReturnPoint>[];
-    var cum = 1.0;
-    for (int i = 0; i < dates.length; i++) {
-      final d = dates[i];
-      if (i > 0) {
-        // Доходность «с начала периода» — цепочкой по отрезкам между точками:
-        // так пополнения не выглядят заработком.
-        final r = _segment(acc, dates[i - 1], d, first, to);
-        // Неделя с падением больше 40% или ростом больше 60% — почти
-        // наверняка дыра в истории цен, а не настоящий результат.
-        final limit = weekly ? (-0.4, 0.6) : (-0.6, 1.0);
-        if (r != null && r > limit.$1 && r < limit.$2) cum *= 1 + r;
+    var p = 0;
+    if (periodStart != null) {
+      while (p < grid.length - 1 && grid[p].isBefore(periodStart)) {
+        p++;
       }
+    }
+    final from = p == 0 ? first : grid[p];
+    if (p >= grid.length - 1) return null;
 
-      // Годовая доходность: последние 12 месяцев, а пока истории меньше —
-      // с первой сделки.
-      final yearAgo = DateTime(d.year - 1, d.month, d.day);
-      final windowStart = yearAgo.isAfter(first) ? yearAgo : first;
-      final windowDays = d.difference(windowStart).inDays;
+    // На длинной истории показываем по одной точке на месяц.
+    final weekly = to.difference(from).inDays <= 550;
+    final shown = <int>[];
+    for (int k = p; k < grid.length; k++) {
+      final isLast = k == grid.length - 1;
+      if (weekly || isLast || grid[k + 1].month != grid[k].month) shown.add(k);
+    }
+
+    double annualAt(int k) {
+      final days = grid[k].difference(grid[0]).inDays;
+      if (days >= 365) {
+        final yearAgo = DateTime(grid[k].year - 1, grid[k].month, grid[k].day);
+        var j = 0;
+        while (j < k && grid[j + 1].isBefore(yearAgo)) {
+          j++;
+        }
+        final span = grid[k].difference(grid[j]).inDays;
+        final r = idx[k] / idx[j];
+        return (span >= 360 && span <= 372 ? r - 1 : math.pow(r, 365 / span).toDouble() - 1) * 100;
+      }
+      return (math.pow(idx[k] / idx[0], 365 / days).toDouble() - 1) * 100;
+    }
+
+    final points = <ReturnPoint>[];
+    var bridged = false;
+    for (int n = 0; n < shown.length; n++) {
+      final k = shown[n];
+      final d = grid[k];
+      final sinceFirst = d.difference(grid[0]).inDays;
       double? annual;
       double? early;
-      if (windowDays >= 7) {
-        final r = _segment(acc, windowStart, d, first, to);
-        if (r != null && r > -0.6 && r < 1.5) {
-          if (windowDays >= 182) {
-            annual = (windowDays >= 360 ? r : math.pow(1 + r, 365 / windowDays).toDouble() - 1) * 100;
-          } else {
-            early = r * 100;
-          }
-        }
+      if (sinceFirst >= 182) {
+        annual = annualAt(k);
+        // Пунктир доводим до первой точки сплошной линии — без разрыва.
+        if (!bridged && n > 0 && points.last.portfolioEarly != null) early = annual;
+        bridged = true;
+      } else if (sinceFirst >= 7) {
+        early = (idx[k] / idx[0] - 1) * 100;
       }
-
       final infl = CbrService.inflationFactor(from, d);
       final dep = CbrService.keyRateFactor(from, d);
       points.add(ReturnPoint(
         date: d,
-        cumPortfolio: (cum - 1) * 100,
+        cumPortfolio: (idx[k] / idx[p] - 1) * 100,
         cumInflation: infl == null ? null : (infl - 1) * 100,
         cumDeposit: dep == null ? null : (dep - 1) * 100,
         portfolio: annual,
@@ -320,6 +329,7 @@ class RealReturnService {
     if (infl == null) return null;
     final days = to.difference(from).inDays;
     final annualPeriod = days >= 365;
+    final growth = idx.last / idx[p];
     double pct(double factor) =>
         annualPeriod ? (math.pow(math.max(0.0001, factor), 365 / days).toDouble() - 1) * 100 : (factor - 1) * 100;
 
@@ -327,8 +337,9 @@ class RealReturnService {
       from: from,
       to: to,
       annual: annualPeriod,
-      portfolioPct: pct(cum),
+      portfolioPct: pct(growth),
       inflationPct: pct(infl),
+      portfolioPerYear: days >= 30 ? (math.pow(math.max(0.0001, growth), 365 / days).toDouble() - 1) * 100 : null,
       keyRateAvg: CbrService.averageKeyRate(from, to),
       points: points,
       weekly: weekly,
