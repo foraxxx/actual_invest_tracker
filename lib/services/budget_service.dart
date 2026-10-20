@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import 'work_calendar.dart';
+
 /// Как делить трату между выплатами.
 ///
 /// [half] — поровну с обеих. [salary] и [advance] — целиком с первой или со
@@ -29,6 +31,14 @@ class PayDay {
         day = 31;
 
   int inMonth(int year, int month) => last ? daysInMonth(year, month) : math.min(day, daysInMonth(year, month));
+
+  /// День выплаты с учётом выходных и праздников: если он нерабочий, деньги
+  /// приходят в ближайший рабочий день раньше (можно выключить в настройках).
+  int scheduled(int year, int month) {
+    final d = inMonth(year, month);
+    if (!BudgetService.shiftToWorkday) return d;
+    return WorkCalendar.payDay(DateTime(year, month, d)).day;
+  }
 
   Map<String, dynamic> toJson() => {'l': last, 'd': day};
 
@@ -393,11 +403,11 @@ class BudgetMonthView {
   int payDay(int i) {
     final o = data.dayOverride[i];
     if (o != null) return math.min(o, daysInMonth(year, month));
-    return config.days[i].inMonth(year, month);
+    return config.days[i].scheduled(year, month);
   }
 
   DateTime payDate(int i) => DateTime(year, month, payDay(i));
-  bool dayMoved(int i) => data.dayOverride[i] != null && data.dayOverride[i] != config.days[i].inMonth(year, month);
+  bool dayMoved(int i) => data.dayOverride[i] != null && data.dayOverride[i] != config.days[i].scheduled(year, month);
 
   double extrasFor(int i) => data.extras.where((e) => e.payout == i).fold(0.0, (a, e) => a + e.amount);
 
@@ -460,6 +470,21 @@ class BudgetService {
   /// Начат ли бюджет: пользователь хоть раз его открывал.
   static bool get started => _box.containsKey('cats');
 
+  /// Переносить выплату с выходного или праздника на рабочий день раньше.
+  static bool get shiftToWorkday {
+    try {
+      return _box.get('shift') != '0';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<void> setShiftToWorkday(bool value) async {
+    await _touch();
+    await _box.put('shift', value ? '1' : '0');
+    version.value++;
+  }
+
   // --- Настройки ---
 
   static BudgetConfig get config {
@@ -480,7 +505,7 @@ class BudgetService {
     for (final d in _months()) {
       if (_ord(d.year, d.month) >= now) continue;
       final o = [
-        for (int i = 0; i < 2; i++) d.dayOverride[i] ?? old.days[i].inMonth(d.year, d.month),
+        for (int i = 0; i < 2; i++) d.dayOverride[i] ?? old.days[i].scheduled(d.year, d.month),
       ];
       await _box.put('m:${d.key}', jsonEncode(d.copyWith(dayOverride: o).toJson()));
     }

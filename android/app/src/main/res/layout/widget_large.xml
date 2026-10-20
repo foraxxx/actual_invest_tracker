@@ -1,118 +1,246 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 4×2 и больше: портфель с графиком за месяц, зарплата и аванс. -->
+<!-- 4×2 и больше: слева портфель с графиком, справа зарплата, аванс и итог месяца.
+     Карточка стоит внутри места под виджет: на всю клетку или меньше и по
+     центру. Фон, рамка и тень — отдельные картинки, их цвет задаётся при
+     отрисовке по настройкам конструктора. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@android:id/background"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_bg"
-    android:orientation="horizontal"
-    android:paddingStart="16dp"
-    android:paddingEnd="16dp"
-    android:paddingTop="14dp"
-    android:paddingBottom="12dp">
-
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1.1"
-        android:orientation="vertical">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/title"
-                style="@style/WidgetLabel"
-                android:layout_width="0dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/time"
-                style="@style/WidgetDim"
-                android:layout_width="wrap_content"
-                android:layout_marginStart="6dp" />
-        </LinearLayout>
-
-        <TextView android:id="@+id/value" style="@style/WidgetValue" android:layout_height="34dp" android:autoSizeMaxTextSize="26dp" />
-
-        <TextView android:id="@+id/day" style="@style/WidgetChange" />
-
-        <TextView android:id="@+id/total" style="@style/WidgetDim" android:layout_marginTop="3dp" />
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:layout_marginTop="8dp">
-
-            <ImageView
-                android:id="@+id/chart"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:scaleType="fitXY" />
-
-            <TextView
-                android:id="@+id/chart_empty"
-                style="@style/WidgetDim"
-                android:layout_gravity="center"
-                android:gravity="center"
-                android:maxLines="2"
-                android:text="График появится через пару дней"
-                android:visibility="gone" />
-        </FrameLayout>
-    </LinearLayout>
+    android:gravity="center"
+    android:orientation="vertical">
 
     <FrameLayout
-        android:layout_width="1dp"
-        android:layout_height="match_parent"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
-        android:background="@drawable/widget_divider" />
+        android:id="@android:id/background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
 
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:orientation="vertical">
-
-        <TextView android:id="@+id/b1_title" style="@style/WidgetLabel" />
-
-        <TextView android:id="@+id/b1_main" style="@style/WidgetMain" android:layout_marginTop="4dp" />
-
-        <TextView android:id="@+id/b1_sub" style="@style/WidgetDim" android:layout_marginTop="2dp" />
-
-        <ProgressBar
-            android:id="@+id/b1_bar"
-            style="?android:attr/progressBarStyleHorizontal"
+        <ImageView
+            android:id="@+id/shadow"
             android:layout_width="match_parent"
-            android:layout_height="4dp"
-            android:layout_marginTop="6dp"
-            android:max="1000"
-            android:indeterminate="false"
-            android:progressDrawable="@drawable/widget_progress" />
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:src="@drawable/wshadow_sys"
+            android:visibility="gone" />
 
         <FrameLayout
+            android:id="@+id/inner"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:minHeight="8dp" />
+            android:layout_height="match_parent">
 
-        <TextView android:id="@+id/b2_title" style="@style/WidgetLabel" />
+            <ImageView
+                android:id="@+id/fill"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/wfill_sys" />
 
-        <TextView android:id="@+id/b2_main" style="@style/WidgetMain" android:layout_marginTop="4dp" />
+            <ImageView
+                android:id="@+id/stroke"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/wstroke_sys" />
 
-        <TextView android:id="@+id/b2_sub" style="@style/WidgetDim" android:layout_marginTop="2dp" />
+            <ImageView
+                android:id="@+id/edge"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/wedge_sys"
+                android:visibility="gone" />
 
-        <ProgressBar
-            android:id="@+id/b2_bar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="4dp"
-            android:layout_marginTop="6dp"
-            android:max="1000"
-            android:indeterminate="false"
-            android:progressDrawable="@drawable/widget_progress" />
-    </LinearLayout>
+            <LinearLayout
+                android:id="@+id/content"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp">
+                <LinearLayout
+                    android:id="@+id/left"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="58"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:id="@+id/hdr"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+                            <TextView android:id="@+id/title" style="@style/WidgetLabel" android:layout_width="0dp" android:layout_weight="1" />
+                            <TextView android:id="@+id/time" style="@style/WidgetDim" android:layout_width="wrap_content" android:layout_marginStart="6dp" android:visibility="gone" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/value" style="@style/WidgetValue" android:layout_height="30dp" android:autoSizeMaxTextSize="24dp" />
+                        <TextView android:id="@+id/day" style="@style/WidgetChange" />
+                        <TextView android:id="@+id/total" style="@style/WidgetDim" android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <FrameLayout
+                        android:id="@+id/chart_box"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp" android:layout_weight="1"
+                        android:layout_marginTop="8dp"
+                        android:visibility="gone">
+                        <ImageView
+                            android:id="@+id/chart"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="fitXY" />
+                        <TextView android:id="@+id/chart_empty" style="@style/WidgetDim" android:layout_gravity="center" android:gravity="center" android:maxLines="2" android:visibility="gone" android:text="График появится после загрузки цен" />
+                    </FrameLayout>
+                </LinearLayout>
+                <FrameLayout android:id="@+id/vdiv" android:layout_width="1dp" android:layout_height="match_parent" android:layout_marginStart="12dp" android:layout_marginEnd="12dp" android:background="#14FFFFFF" />
+                <LinearLayout
+                    android:id="@+id/right"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="42"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:id="@+id/budget_box"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                    <TextView android:id="@+id/b1_title" style="@style/WidgetLabel" />
+                    <TextView android:id="@+id/b1_main" style="@style/WidgetMain" android:layout_marginTop="3dp" android:textSize="13dp" />
+                    <TextView android:id="@+id/b1_sub" style="@style/WidgetDim" android:layout_marginTop="1dp" />
+                    <FrameLayout
+                        android:id="@+id/b1_bar"
+                        android:layout_width="match_parent"
+                        android:layout_height="4dp"
+                        android:layout_marginTop="5dp">
+                        <ImageView
+                            android:id="@+id/b1_bar_bg"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="fitXY"
+                            android:src="@drawable/wbar"
+                            android:alpha="0.16" />
+                        <ImageView
+                            android:id="@+id/b1_bar_fg"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="fitXY"
+                            android:src="@drawable/wbar_clip" />
+                    </FrameLayout>
+                    <FrameLayout android:id="@+id/b_gap" android:layout_width="match_parent" android:layout_height="10dp" />
+                    <TextView android:id="@+id/b2_title" style="@style/WidgetLabel" />
+                    <TextView android:id="@+id/b2_main" style="@style/WidgetMain" android:layout_marginTop="3dp" android:textSize="13dp" />
+                    <TextView android:id="@+id/b2_sub" style="@style/WidgetDim" android:layout_marginTop="1dp" />
+                    <FrameLayout
+                        android:id="@+id/b2_bar"
+                        android:layout_width="match_parent"
+                        android:layout_height="4dp"
+                        android:layout_marginTop="5dp">
+                        <ImageView
+                            android:id="@+id/b2_bar_bg"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="fitXY"
+                            android:src="@drawable/wbar"
+                            android:alpha="0.16" />
+                        <ImageView
+                            android:id="@+id/b2_bar_fg"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="fitXY"
+                            android:src="@drawable/wbar_clip" />
+                    </FrameLayout>
+                    </LinearLayout>
+                    <LinearLayout
+                        android:id="@+id/list_box"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+                        <TextView android:id="@+id/l_title" style="@style/WidgetLabel" />
+                        <LinearLayout
+                        android:id="@+id/r1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+                            <TextView android:id="@+id/r1_name" style="@style/WidgetRow" android:layout_width="0dp" android:layout_weight="1" />
+                            <TextView android:id="@+id/r1_val" style="@style/WidgetRow" android:layout_width="wrap_content" android:layout_marginStart="6dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/r1_sub" style="@style/WidgetDim" android:textSize="10dp" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:id="@+id/r2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+                            <TextView android:id="@+id/r2_name" style="@style/WidgetRow" android:layout_width="0dp" android:layout_weight="1" />
+                            <TextView android:id="@+id/r2_val" style="@style/WidgetRow" android:layout_width="wrap_content" android:layout_marginStart="6dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/r2_sub" style="@style/WidgetDim" android:textSize="10dp" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:id="@+id/r3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+                            <TextView android:id="@+id/r3_name" style="@style/WidgetRow" android:layout_width="0dp" android:layout_weight="1" />
+                            <TextView android:id="@+id/r3_val" style="@style/WidgetRow" android:layout_width="wrap_content" android:layout_marginStart="6dp" />
+                        </LinearLayout>
+                        <TextView android:id="@+id/r3_sub" style="@style/WidgetDim" android:textSize="10dp" />
+                    </LinearLayout>
+                    </LinearLayout>
+                    <FrameLayout
+                        android:id="@+id/r_space"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1"
+                        android:minHeight="10dp" />
+                    <LinearLayout
+                        android:id="@+id/month_box"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+                        <TextView android:id="@+id/m_text" style="@style/WidgetDim" />
+                        <FrameLayout
+                            android:id="@+id/m_bar"
+                            android:layout_width="match_parent"
+                            android:layout_height="4dp"
+                            android:layout_marginTop="5dp">
+                            <ImageView
+                                android:id="@+id/m_bar_bg"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:scaleType="fitXY"
+                                android:src="@drawable/wbar"
+                                android:alpha="0.16" />
+                            <ImageView
+                                android:id="@+id/m_bar_fg"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:scaleType="fitXY"
+                                android:src="@drawable/wbar_clip" />
+                        </FrameLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+    </FrameLayout>
 </LinearLayout>

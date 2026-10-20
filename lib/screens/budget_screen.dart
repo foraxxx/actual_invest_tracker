@@ -1440,7 +1440,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
     final days = [v.payDay(0), v.payDay(1)];
     final extras = [...v.data.extras];
     final dim = daysInMonth(_y, _m);
-    int defaultDay(int i) => config.days[i].inMonth(_y, _m);
+    int defaultDay(int i) => config.days[i].scheduled(_y, _m);
 
     await showAppSheet(
       context: context,
@@ -1574,7 +1574,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
     final amountCtrl = TextEditingController(text: existing == null ? '' : _plain(existing.amount));
     final dim = daysInMonth(_y, _m);
     var day = math.min(existing?.day ?? DateTime.now().day, dim);
-    var payout = existing?.payout ?? (day < config.days[1].inMonth(_y, _m) ? 0 : 1);
+    var payout = existing?.payout ?? (day < config.days[1].scheduled(_y, _m) ? 0 : 1);
     String? error;
     return showAppSheet<_ExtraResult>(
       context: context,

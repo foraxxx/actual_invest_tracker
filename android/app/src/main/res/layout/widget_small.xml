@@ -1,25 +1,110 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 2×1: стоимость и изменение за сегодня. -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@android:id/background"
+<!-- 2×1: стоимость или только бюджет.
+     Карточка стоит внутри места под виджет: на всю клетку или меньше и по
+     центру. Фон, рамка и тень — отдельные картинки, их цвет задаётся при
+     отрисовке по настройкам конструктора. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_bg"
-    android:paddingStart="14dp"
-    android:paddingEnd="12dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp">
+    android:gravity="center"
+    android:orientation="vertical">
 
-    <LinearLayout
+    <FrameLayout
+        android:id="@android:id/background"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical"
-        android:orientation="vertical">
+        android:layout_height="match_parent">
 
-        <TextView android:id="@+id/title" style="@style/WidgetLabel" />
+        <ImageView
+            android:id="@+id/shadow"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:src="@drawable/wshadow_sys"
+            android:visibility="gone" />
 
-        <TextView android:id="@+id/value" style="@style/WidgetValue" />
+        <FrameLayout
+            android:id="@+id/inner"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
 
-        <TextView android:id="@+id/day" style="@style/WidgetChange" />
-    </LinearLayout>
-</FrameLayout>
+            <ImageView
+                android:id="@+id/fill"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/wfill_sys" />
+
+            <ImageView
+                android:id="@+id/stroke"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/wstroke_sys" />
+
+            <ImageView
+                android:id="@+id/edge"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="fitXY"
+                android:src="@drawable/wedge_sys"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/content"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp">
+                <LinearLayout
+                    android:id="@+id/hdr"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        <TextView android:id="@+id/title" style="@style/WidgetLabel" android:layout_width="0dp" android:layout_weight="1" />
+                        <TextView android:id="@+id/time" style="@style/WidgetDim" android:layout_width="wrap_content" android:layout_marginStart="6dp" android:visibility="gone" />
+                    </LinearLayout>
+                    <TextView android:id="@+id/value" style="@style/WidgetValue" android:layout_height="25dp" android:autoSizeMaxTextSize="22dp" />
+                    <TextView android:id="@+id/day" style="@style/WidgetChange" />
+                    <TextView android:id="@+id/total" style="@style/WidgetDim" android:layout_marginTop="2dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/budget_box"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                <TextView android:id="@+id/b1_title" style="@style/WidgetLabel" />
+                <TextView android:id="@+id/b1_main" style="@style/WidgetMain" android:layout_marginTop="3dp" android:textSize="15dp" />
+                <TextView android:id="@+id/b1_sub" style="@style/WidgetDim" android:layout_marginTop="1dp" />
+                <FrameLayout
+                    android:id="@+id/b1_bar"
+                    android:layout_width="match_parent"
+                    android:layout_height="4dp"
+                    android:layout_marginTop="5dp">
+                    <ImageView
+                        android:id="@+id/b1_bar_bg"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="fitXY"
+                        android:src="@drawable/wbar"
+                        android:alpha="0.16" />
+                    <ImageView
+                        android:id="@+id/b1_bar_fg"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="fitXY"
+                        android:src="@drawable/wbar_clip" />
+                </FrameLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+    </FrameLayout>
+</LinearLayout>

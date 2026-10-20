@@ -163,89 +163,11 @@ class PortfolioHistoryService {
     loading.value = true;
     error.value = null;
     try {
-      final trades = [...StorageService.purchases]
-        ..sort(AnalyticsService.compareTrades);
-      final from = trades.first.date;
-      final tickers = trades.map((p) => p.ticker).toSet();
-      final typeByTicker = <String, AssetType>{};
-      for (final trade in trades) {
-        typeByTicker[trade.ticker] = trade.type;
-      }
-      final fx = await _loadCurrencies(trades, from);
-      final entries = await Future.wait(tickers.map((ticker) async {
-        final type = typeByTicker[ticker];
-        if (type == AssetType.bond) {
-          return MapEntry(ticker, await _bondHistory(ticker, from));
-        }
-        if (type == AssetType.currency) {
-          final c = _currencyOfPosition(ticker);
-          return MapEntry(ticker, c == null ? const <MapEntry<DateTime, double>>[] : (fx[c] ?? const []));
-        }
-        if (type != AssetType.stock && type != AssetType.etf) {
-          return MapEntry(ticker, const <MapEntry<DateTime, double>>[]);
-        }
-        final points = await PriceHistoryCache.history(ticker, from: from, market: 'shares');
-        return MapEntry(ticker, points);
-      }));
-      final histories = Map<String, List<MapEntry<DateTime, double>>>.fromEntries(
-        entries.where((entry) => entry.value.isNotEmpty),
-      );
-      if (histories.isEmpty) {
+      final result = await valueHistory(StorageService.purchases, remember: true);
+      if (result == null) {
         error.value = 'История MOEX недоступна — показаны локальные данные';
         return;
       }
-      _prices = histories;
-
-      final dates = histories.values
-          .expand((points) => points.map((point) => point.key))
-          .toSet()
-          .toList()
-        ..sort();
-
-      // Каждая бумага проходится один раз: для неё по порядку двигаются
-      // указатели на сделки и на цены. Раньше для каждого дня заново
-      // перебирались все сделки всех бумаг — на длинной истории это были
-      // миллионы шагов.
-      final tradesByTicker = <String, List<Purchase>>{};
-      for (final trade in trades) {
-        (tradesByTicker[trade.ticker] ??= []).add(trade);
-      }
-      final totals = List<double>.filled(dates.length, 0);
-      for (final ticker in tickers) {
-        final list = tradesByTicker[ticker]!;
-        final points = histories[ticker] ?? const <MapEntry<DateTime, double>>[];
-        final currency = list.last.currency;
-        var ti = 0;
-        var pi = 0;
-        double quantity = 0;
-        double? lastTradePrice;
-        double? historyPrice;
-        for (int di = 0; di < dates.length; di++) {
-          final date = dates[di];
-          // Цена — закрытие дня, поэтому и сделки берём все за этот день, с
-          // любым временем. Иначе бумаги, купленные днём, не попадали в
-          // стоимость, хотя деньги на них уже ушли со счёта.
-          final dayEnd = DateTime(date.year, date.month, date.day, 23, 59, 59);
-          while (ti < list.length && !list[ti].date.isAfter(dayEnd)) {
-            quantity += list[ti].signedQuantity;
-            lastTradePrice = list[ti].pricePerUnit;
-            ti++;
-          }
-          while (pi < points.length && !points[pi].key.isAfter(date)) {
-            historyPrice = points[pi].value;
-            pi++;
-          }
-          if (quantity <= 1e-9) continue;
-          final price = historyPrice ?? lastTradePrice;
-          if (price == null) continue;
-          totals[di] += CurrencyService.toRub(quantity * price, currency, date: date);
-        }
-      }
-
-      final result = <MapEntry<DateTime, double>>[
-        for (int di = 0; di < dates.length; di++)
-          if (totals[di] > 0) MapEntry(dates[di], totals[di]),
-      ];
       if (result.isNotEmpty) {
         result.add(MapEntry(
           DateTime.now(),
@@ -260,5 +182,100 @@ class PortfolioHistoryService {
     } finally {
       loading.value = false;
     }
+  }
+
+  /// Стоимость в рублях на закрытие каждого торгового дня для любых сделок —
+  /// одного портфеля или нескольких сразу. [from] — с какого дня нужны точки
+  /// (по умолчанию с первой сделки). Цены берутся из сохранённой на телефоне
+  /// истории; с биржи докачиваются только новые дни, не чаще раза в день.
+  /// null — истории с биржи нет ни по одной бумаге.
+  static Future<List<MapEntry<DateTime, double>>?> valueHistory(
+    List<Purchase> purchases, {
+    DateTime? from,
+    bool remember = false,
+  }) async {
+    if (purchases.isEmpty) return const [];
+    final trades = [...purchases]..sort(AnalyticsService.compareTrades);
+    final first = trades.first.date;
+    final since = from == null || from.isBefore(first) ? first : from;
+    final sinceDay = DateTime(since.year, since.month, since.day);
+    final tickers = trades.map((p) => p.ticker).toSet();
+    final typeByTicker = <String, AssetType>{};
+    for (final trade in trades) {
+      typeByTicker[trade.ticker] = trade.type;
+    }
+    final fx = await _loadCurrencies(trades, since);
+    final entries = await Future.wait(tickers.map((ticker) async {
+      final type = typeByTicker[ticker];
+      if (type == AssetType.bond) {
+        return MapEntry(ticker, await _bondHistory(ticker, since));
+      }
+      if (type == AssetType.currency) {
+        final c = _currencyOfPosition(ticker);
+        return MapEntry(ticker, c == null ? const <MapEntry<DateTime, double>>[] : (fx[c] ?? const []));
+      }
+      if (type != AssetType.stock && type != AssetType.etf) {
+        return MapEntry(ticker, const <MapEntry<DateTime, double>>[]);
+      }
+      final points = await PriceHistoryCache.history(ticker, from: since, market: 'shares');
+      return MapEntry(ticker, points);
+    }));
+    final histories = Map<String, List<MapEntry<DateTime, double>>>.fromEntries(
+      entries.where((entry) => entry.value.isNotEmpty),
+    );
+    if (histories.isEmpty) return null;
+    if (remember) _prices = histories;
+
+    final dates = histories.values
+        .expand((points) => points.map((point) => point.key))
+        .where((d) => !d.isBefore(sinceDay))
+        .toSet()
+        .toList()
+      ..sort();
+
+    // Каждая бумага проходится один раз: для неё по порядку двигаются
+    // указатели на сделки и на цены. Раньше для каждого дня заново
+    // перебирались все сделки всех бумаг — на длинной истории это были
+    // миллионы шагов.
+    final tradesByTicker = <String, List<Purchase>>{};
+    for (final trade in trades) {
+      (tradesByTicker[trade.ticker] ??= []).add(trade);
+    }
+    final totals = List<double>.filled(dates.length, 0);
+    for (final ticker in tickers) {
+      final list = tradesByTicker[ticker]!;
+      final points = histories[ticker] ?? const <MapEntry<DateTime, double>>[];
+      final currency = list.last.currency;
+      var ti = 0;
+      var pi = 0;
+      double quantity = 0;
+      double? lastTradePrice;
+      double? historyPrice;
+      for (int di = 0; di < dates.length; di++) {
+        final date = dates[di];
+        // Цена — закрытие дня, поэтому и сделки берём все за этот день, с
+        // любым временем. Иначе бумаги, купленные днём, не попадали в
+        // стоимость, хотя деньги на них уже ушли со счёта.
+        final dayEnd = DateTime(date.year, date.month, date.day, 23, 59, 59);
+        while (ti < list.length && !list[ti].date.isAfter(dayEnd)) {
+          quantity += list[ti].signedQuantity;
+          lastTradePrice = list[ti].pricePerUnit;
+          ti++;
+        }
+        while (pi < points.length && !points[pi].key.isAfter(date)) {
+          historyPrice = points[pi].value;
+          pi++;
+        }
+        if (quantity <= 1e-9) continue;
+        final price = historyPrice ?? lastTradePrice;
+        if (price == null) continue;
+        totals[di] += CurrencyService.toRub(quantity * price, currency, date: date);
+      }
+    }
+
+    return <MapEntry<DateTime, double>>[
+      for (int di = 0; di < dates.length; di++)
+        if (totals[di] > 0) MapEntry(dates[di], totals[di]),
+    ];
   }
 }

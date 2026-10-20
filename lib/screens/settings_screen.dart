@@ -11,6 +11,7 @@ import '../services/auto_backup_service.dart';
 import '../services/backup_crypto_service.dart';
 import '../services/backup_service.dart';
 import '../services/backup_settings_service.dart';
+import '../services/budget_service.dart';
 import '../services/currency_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_settings_service.dart';
@@ -18,8 +19,9 @@ import '../services/portfolio_service.dart';
 import '../services/sector_service.dart';
 import '../services/tax_service.dart';
 import '../services/theme_service.dart';
-import '../widgets/home_widget_settings.dart';
+import '../services/home_widget_service.dart';
 import 'annual_report_screen.dart';
+import 'widget_constructor_screen.dart';
 import 'broker_import_screen.dart';
 import 'budget_screen.dart';
 import 'home_screen.dart';
@@ -84,118 +86,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
           physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
           children: [
             Text('Настройки', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 2),
-            Text(
-              'Оформление, биржа, портфели, бюджет и резервные копии',
-              style: TextStyle(fontSize: 12, color: context.dim),
-            ),
-            const SizedBox(height: 18),
-            _group(
+            const SizedBox(height: 16),
+            FadeSlideIn.staggered(
               index: 0,
-              icon: Icons.palette_outlined,
-              title: 'Оформление',
-              subtitle: 'Акцентный цвет и тема',
-              builder: () => [_appearanceSection()],
+              child: _navGroup([
+                _navRow(
+                  icon: Icons.save_outlined,
+                  title: 'Данные',
+                  value: _backupStatus(),
+                  tourId: 'data',
+                  open: () => _openGroup('Данные', () => [_dataSection()]),
+                ),
+              ]),
             ),
-            _group(
+            FadeSlideIn.staggered(
               index: 1,
-              icon: Icons.cloud_download_outlined,
-              title: 'Биржа и котировки',
-              subtitle: 'Загрузка с Мосбиржи, курсы валют, логотипы',
-              tourId: 'online',
-              builder: () => [_onlineSection(), const SizedBox(height: 14), _ratesSection()],
+              child: _navGroup([
+                _navRow(
+                  icon: Icons.palette_outlined,
+                  title: 'Оформление',
+                  open: () => _openGroup('Оформление', () => [_appearanceSection()]),
+                ),
+                _navRow(
+                  icon: Icons.widgets_outlined,
+                  title: 'Виджет на экране',
+                  value: _widgetSourceName(),
+                  open: () => Navigator.push(
+                    context,
+                    AppPageRoute(builder: (_) => const WidgetConstructorScreen()),
+                  ),
+                ),
+                _navRow(
+                  icon: Icons.cloud_download_outlined,
+                  title: 'Биржа и котировки',
+                  value: OnlineSettingsService.enabled ? 'включено' : 'выключено',
+                  tourId: 'online',
+                  open: () => _openGroup(
+                    'Биржа и котировки',
+                    () => [_onlineSection(), const SizedBox(height: 14), _ratesSection()],
+                  ),
+                ),
+              ]),
             ),
-            _group(
+            FadeSlideIn.staggered(
               index: 2,
-              icon: Icons.pie_chart_outline_rounded,
-              title: 'Портфель',
-              subtitle: 'Секторы портфеля $_portfolioName и налог с продаж',
-              tourId: 'portfolio',
-              builder: () => [_sectorsSection(), const SizedBox(height: 14), _taxSection()],
-            ),
-            _group(
-              index: 3,
-              icon: Icons.account_balance_wallet_outlined,
-              title: 'Бюджет',
-              subtitle: 'Дни зарплаты и аванса',
-              builder: () => [_budgetSection()],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: FadeSlideIn.staggered(
-                index: 3,
-                child: AppCard(
-                  padding: const EdgeInsets.all(14),
-                  onTap: () => Navigator.push(
+              child: _navGroup([
+                _navRow(
+                  icon: Icons.pie_chart_outline_rounded,
+                  title: 'Портфель',
+                  value: PortfolioService.active.name,
+                  tourId: 'portfolio',
+                  open: () => _openGroup(
+                    'Портфель',
+                    () => [_sectorsSection(), const SizedBox(height: 14), _taxSection()],
+                  ),
+                ),
+                _navRow(
+                  icon: Icons.summarize_outlined,
+                  title: 'Итоги года',
+                  open: () => Navigator.push(
                     context,
                     AppPageRoute(builder: (_) => const AnnualReportScreen()),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          gradient: LinearGradient(
-                            colors: [context.accent.withOpacity(0.26), context.accent.withOpacity(0.08)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: Icon(Icons.summarize_outlined, size: 19, color: context.accent),
-                      ),
-                      const SizedBox(width: 13),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Итоги года',
-                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Портфель $_portfolioName: отчёт по бумагам за год, PDF',
-                              style: TextStyle(fontSize: 11.5, color: context.dim),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
-                    ],
-                  ),
                 ),
-              ),
+                _navRow(
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: 'Бюджет',
+                  open: () => _openGroup('Бюджет', () => [_budgetSection()]),
+                ),
+              ]),
             ),
-            _group(
-              index: 4,
-              icon: Icons.widgets_outlined,
-              title: 'Виджет на экране',
-              subtitle: 'Какой портфель показывать: один или все вместе',
-              builder: () => [const HomeWidgetSettings()],
-            ),
-            _group(
-              index: 5,
-              icon: Icons.save_outlined,
-              title: 'Данные',
-              subtitle: 'Резервные копии и восстановление',
-              tourId: 'data',
-              builder: () => [_dataSection()],
-            ),
-            const SizedBox(height: 22),
-            Center(
-              child: Column(
-                children: [
-                  Icon(Icons.lock_outline_rounded, size: 18, color: context.dim),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Данные хранятся только на этом устройстве. Интернет используется для получения\n'
-                    'котировок, курсов валют, сведений о бумагах и логотипов. Онлайн-загрузка\n'
-                    'работает только с Вашего разрешения.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: context.dim, fontSize: 11.5, height: 1.5),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_outline_rounded, size: 14, color: context.dim),
+                const SizedBox(width: 6),
+                Text('Данные хранятся только на телефоне', style: TextStyle(color: context.dim, fontSize: 11.5)),
+              ],
             ),
             const SizedBox(height: kListBottomPadding),
           ],
@@ -205,60 +173,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// Раздел настроек — строка в списке, которая открывает свою страницу.
-  /// Раньше всё лежало одной простынёй, и найти нужное было тяжело.
-  Widget _group({
-    required int index,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required List<Widget> Function() builder,
-    String? tourId,
-  }) {
-    final card = AppCard(
-          padding: const EdgeInsets.all(14),
-          onTap: () => Navigator.push(
-            context,
-            AppPageRoute(builder: (_) => _SettingsGroupScreen(title: title, children: builder)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: LinearGradient(
-                    colors: [context.accent.withOpacity(0.26), context.accent.withOpacity(0.08)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Icon(icon, size: 19, color: context.accent),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: TextStyle(fontSize: 11.5, color: context.dim)),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
-            ],
-          ),
-    );
+  /// Раздел настроек — строка в группе, открывает свою страницу.
+  void _openGroup(String title, List<Widget> Function() builder) {
+    Navigator.push(
+      context,
+      AppPageRoute(builder: (_) => _SettingsGroupScreen(title: title, children: builder)),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
 
+  String _backupStatus() {
+    final at = BackupSettingsService.lastBackupAt;
+    if (!BackupSettingsService.enabled || at == null) return '';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(at.year, at.month, at.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'бэкап сегодня';
+    if (diff == 1) return 'бэкап вчера';
+    return 'бэкап ${at.day}.${at.month.toString().padLeft(2, '0')}';
+  }
+
+  String _widgetSourceName() {
+    final id = HomeWidgetService.source;
+    if (id == HomeWidgetService.allId) return 'все портфели';
+    for (final p in PortfolioService.list) {
+      if (p.id == id) return p.name;
+    }
+    return '';
+  }
+
+  Widget _navGroup(List<Widget> rows) {
+    final line = context.isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.06);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: FadeSlideIn.staggered(
-        index: index,
-        child: tourId == null ? card : TourSpot(id: tourId, child: card),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            for (int i = 0; i < rows.length; i++) ...[
+              if (i > 0) Divider(height: 1, thickness: 1, indent: 52, color: line),
+              rows[i],
+            ],
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _navRow({
+    required IconData icon,
+    required String title,
+    required VoidCallback open,
+    String value = '',
+    String? tourId,
+  }) {
+    final row = InkWell(
+      onTap: open,
+      borderRadius: AppRadius.all(AppRadius.sm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(9),
+                color: context.accent.withOpacity(0.14),
+              ),
+              child: Icon(icon, size: 17, color: context.accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+            ),
+            if (value.isNotEmpty)
+              Flexible(
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: context.dim),
+                ),
+              ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
+          ],
+        ),
+      ),
+    );
+    return tourId == null ? row : TourSpot(id: tourId, child: row);
   }
 
 
@@ -592,11 +598,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         subtitle: 'Общие настройки для всех месяцев',
         icon: Icons.account_balance_wallet_outlined,
         child: Builder(
-          builder: (context) => _actionRow(
-            icon: Icons.event_outlined,
-            title: 'Дни зарплаты и аванса',
-            subtitle: 'Когда обычно приходит каждая выплата и как она называется',
-            onTap: () => showPayDaysSheet(context),
+          builder: (context) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _actionRow(
+                icon: Icons.event_outlined,
+                title: 'Дни зарплаты и аванса',
+                subtitle: 'Когда обычно приходит каждая выплата и как она называется',
+                onTap: () => showPayDaysSheet(context),
+              ),
+              const SizedBox(height: 14),
+              ValueListenableBuilder<int>(
+                valueListenable: BudgetService.version,
+                builder: (context, _, __) => _switchRow(
+                  title: 'Выплата в выходной или праздник',
+                  subtitle: 'Переносить на ближайший рабочий день раньше, как требует Трудовой кодекс. '
+                      'Например, аванс 31 октября 2026 года (суббота) придёт 30-го.',
+                  value: BudgetService.shiftToWorkday,
+                  onChanged: BudgetService.setShiftToWorkday,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -615,14 +637,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       _actionRow(
                         icon: Icons.ios_share_rounded,
-                        title: 'Экспортировать бэкап',
+                        title: 'Сохранить бэкап',
                         subtitle: 'Все портфели и бюджет в одном файле',
                         onTap: () => BackupService.exportToJson(),
                       ),
                       const SizedBox(height: 8),
                       _actionRow(
                         icon: Icons.file_download_outlined,
-                        title: 'Импортировать бэкап',
+                        title: 'Восстановить из бэкапа',
                         subtitle: 'Восстановить данные из ранее сохранённого файла',
                         onTap: () => _importBackup(context),
                       ),
@@ -646,51 +668,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
   }
 
+  /// Названия страниц настроек: у раздела с таким же заголовком подпись не
+  /// нужна — она повторяла бы заголовок страницы.
+  static const _pageTitles = {'Оформление', 'Бюджет', 'Данные'};
+
+  /// Раздел внутри страницы настроек: короткая подпись и карточка.
   Widget _section({
     required String title,
     required String subtitle,
     required IconData icon,
     required Widget child,
   }) {
-    final accent = context.accent;
-    return AppCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(11),
-                  gradient: LinearGradient(
-                    colors: [accent.withOpacity(0.26), accent.withOpacity(0.08)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Icon(icon, size: 18, color: accent),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: TextStyle(fontSize: 11.5, color: context.dim)),
-
-                  ],
-                ),
-              ),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!_pageTitles.contains(title))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+            child: Text(
+              title.toUpperCase(),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim),
+            ),
           ),
-          const SizedBox(height: 16),
-          child,
-        ],
-      ),
+        AppCard(padding: const EdgeInsets.all(14), child: child),
+      ],
     );
   }
 
@@ -737,24 +738,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Pressable(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(13),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
         decoration: BoxDecoration(
           color: context.isDark ? Colors.white.withOpacity(0.035) : AppColors.lightSurfaceHigh,
           borderRadius: AppRadius.all(AppRadius.sm),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: context.accent),
+            Icon(icon, size: 19, color: context.accent),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: TextStyle(fontSize: 11.3, color: context.dim)),
-                ],
-              ),
+              child: Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
             ),
             Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
           ],
