@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -261,17 +260,19 @@ class DividendHistoryService {
     try {
       // Разбор страницы — в отдельном потоке: страницы большие, и на телефоне
       // разбор в основном потоке подвешивал экран.
-      fresh = await compute(parseDohod, await _get('https://www.dohod.ru/ik/analytics/dividend/${ticker.toLowerCase()}'));
+      final html = await _get('https://www.dohod.ru/ik/analytics/dividend/${ticker.toLowerCase()}');
+      final parsed = await compute<String, List<DividendRecord>>(parseDohod, html);
       source = 'Доход.ру';
-      if (fresh.isEmpty) fresh = null;
+      fresh = parsed.isEmpty ? null : parsed;
     } catch (_) {
       fresh = null;
     }
     if (fresh == null) {
       try {
-        fresh = await compute(parseSmartLab, await _get('https://smart-lab.ru/q/${ticker.toUpperCase()}/dividend/'));
+        final html = await _get('https://smart-lab.ru/q/${ticker.toUpperCase()}/dividend/');
+        final parsed = await compute<String, List<DividendRecord>>(parseSmartLab, html);
         source = 'smart-lab';
-        if (fresh.isEmpty) fresh = null;
+        fresh = parsed.isEmpty ? null : parsed;
       } catch (_) {
         fresh = null;
       }
