@@ -289,29 +289,45 @@ class DividendHistoryService {
     final r = await http.get(Uri.parse(url), headers: const {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 14) InvestTracker',
       'Accept': 'text/html',
-    }).timeout(const Duration(seconds: 15));
+    }).timeout(const Duration(seconds: 10));
     if (r.statusCode != 200) throw Exception('код ${r.statusCode}');
     return utf8.decode(r.bodyBytes, allowMalformed: true);
   }
 
-  /// Обновляет историю по всем акциям из списка — по очереди, с паузой,
-  /// чтобы не нагружать ни телефон, ни сайт. [onProgress] — сколько
-  /// бумаг из скольких уже пройдено.
+  /// Обновляет историю по всем акциям из списка — несколькими потоками
+  /// сразу ([parallel]), с короткой паузой между запросами каждого, чтобы не
+  /// нагружать ни телефон, ни сайт. [onProgress] — сколько бумаг пройдено,
+  /// у скольких загрузить не удалось и какая бумага сейчас в работе.
   static Future<void> refreshAll(
     Iterable<String> tickers, {
-    void Function(int done, int total)? onProgress,
+    int parallel = 1,
+    void Function(int done, int failed, int total, String current)? onProgress,
   }) async {
     if (!OnlineSettingsService.enabled) return;
     final list = tickers.map(_key).toSet().toList();
-    for (var i = 0; i < list.length; i++) {
-      final t = list[i];
-      final h = of(t);
-      if (!(_freshToday(h) && h?.error == null)) {
-        await update(t);
-        await Future<void>.delayed(const Duration(milliseconds: 400));
+    var next = 0;
+    var done = 0;
+    var failed = 0;
+    Future<void> worker() async {
+      while (next < list.length) {
+        final t = list[next++];
+        onProgress?.call(done, failed, list.length, t);
+        final h = of(t);
+        if (!(_freshToday(h) && h?.error == null)) {
+          try {
+            final r = await update(t);
+            if (r == null || r.error != null) failed++;
+          } catch (_) {
+            failed++;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        }
+        done++;
+        onProgress?.call(done, failed, list.length, t);
       }
-      onProgress?.call(i + 1, list.length);
     }
+
+    await Future.wait([for (var i = 0; i < parallel.clamp(1, 6); i++) worker()]);
   }
 
   static bool _portfoliosRunning = false;

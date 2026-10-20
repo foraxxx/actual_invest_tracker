@@ -1424,7 +1424,8 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
 class _DividendLoadRow extends StatelessWidget {
   const _DividendLoadRow();
 
-  static final ValueNotifier<(int, int)?> _progress = ValueNotifier(null);
+  /// Пройдено, не удалось, всего, текущая бумага.
+  static final ValueNotifier<(int, int, int, String)?> _progress = ValueNotifier(null);
 
   Future<void> _start(BuildContext context) async {
     if (_progress.value != null) return;
@@ -1442,9 +1443,13 @@ class _DividendLoadRow extends StatelessWidget {
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
-    _progress.value = (0, tickers.length);
+    _progress.value = (0, 0, tickers.length, '');
     try {
-      await DividendHistoryService.refreshAll(tickers, onProgress: (d, t) => _progress.value = (d, t));
+      await DividendHistoryService.refreshAll(
+        tickers,
+        parallel: 4,
+        onProgress: (d, f, t, c) => _progress.value = (d, f, t, c),
+      );
       messenger.showSnackBar(SnackBar(
         content: Text('Готово. Акций с историей дивидендов: ${DividendHistoryService.storedCount}. '
             'Теперь сохраните бэкап без шифрования'),
@@ -1456,7 +1461,7 @@ class _DividendLoadRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<(int, int)?>(
+    return ValueListenableBuilder<(int, int, int, String)?>(
       valueListenable: _progress,
       builder: (context, p, _) {
         return Pressable(
@@ -1486,7 +1491,8 @@ class _DividendLoadRow extends StatelessWidget {
                 Text(
                   p == null
                       ? 'Временная кнопка. Займёт несколько минут. Потом сохраните бэкап без шифрования и пришлите его — история войдёт в приложение'
-                      : 'Загружено ${p.$1} из ${p.$2}. Можно уйти с экрана — загрузка продолжится',
+                      : 'Пройдено ${p.$1} из ${p.$3}${p.$2 > 0 ? ', не загрузилось ${p.$2}' : ''}. '
+                          '${p.$4.isEmpty ? '' : 'Сейчас: ${p.$4}. '}Можно уйти с экрана — загрузка продолжится',
                   style: TextStyle(fontSize: 11.3, height: 1.35, color: context.dim),
                 ),
                 if (p != null) ...[
@@ -1494,7 +1500,7 @@ class _DividendLoadRow extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(2),
                     child: LinearProgressIndicator(
-                      value: p.$2 == 0 ? null : p.$1 / p.$2,
+                      value: p.$3 == 0 ? null : p.$1 / p.$3,
                       minHeight: 4,
                     ),
                   ),

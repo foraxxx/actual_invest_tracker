@@ -37,10 +37,12 @@ class YearBar {
   bool get isFuture => parts.isNotEmpty && parts.every((p) => p.kind != BarKind.paid);
 }
 
-/// Столбики по годам: сумма над столбиком, сверху процент, снизу год. Если в
-/// году несколько выплат — бледный контур высотой в сумму за год, а внутри
-/// узкие столбики по каждой выплате. С [selectable]
-/// на столбик можно нажать: над годом появится эта выплата.
+/// Столбики по годам: сумма над столбиком, сверху процент, снизу год. У
+/// каждого года один цельный столбик высотой в сумму за год, под годом точки
+/// по числу выплат. С [selectable] нажатие в любом месте колонки года
+/// перебирает его выплаты по очереди: часть столбика, которая приходится на
+/// выбранную выплату, и её точка становятся золотыми, а над годом — её дата,
+/// доходность и сумма. После последней выплаты нажатие снимает выбор.
 /// Больше шести лет — график листается, открывается на последних годах.
 class YearBars extends StatefulWidget {
   final List<YearBar> bars;
@@ -75,9 +77,12 @@ class _YearBarsState extends State<YearBars> {
     if (old.bars.length != widget.bars.length) _selected = null;
   }
 
-  void _tap(int year, int part) {
-    if (!widget.selectable) return;
-    setState(() => _selected = _selected == (year, part) ? null : (year, part));
+  /// Следующая выплата этого года, после последней — снять выбор.
+  void _tap(int year) {
+    if (!widget.selectable || widget.bars[year].parts.isEmpty) return;
+    final sel = _selected;
+    final next = sel != null && sel.$1 == year ? sel.$2 + 1 : 0;
+    setState(() => _selected = next < widget.bars[year].parts.length ? (year, next) : null);
   }
 
   @override
@@ -88,6 +93,7 @@ class _YearBarsState extends State<YearBars> {
     // единицах, поэтому рост и падение по годам видно сразу.
     final max = bars.map((b) => b.total).fold(0.0, math.max);
     final hasNotes = bars.any((b) => b.note != null) || widget.selectable;
+    final hasDots = bars.any((b) => b.parts.length > 1);
     return LayoutBuilder(builder: (context, box) {
       final scroll = bars.length > _visible;
       final slot = scroll ? box.maxWidth / _visible : box.maxWidth / bars.length;
@@ -95,7 +101,7 @@ class _YearBarsState extends State<YearBars> {
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (int i = 0; i < bars.length; i++) SizedBox(width: slot, child: _bar(context, i, max, hasNotes)),
+          for (int i = 0; i < bars.length; i++) SizedBox(width: slot, child: _bar(context, i, max, hasNotes, hasDots)),
         ],
       );
       final body = GestureDetector(
@@ -122,18 +128,19 @@ class _YearBarsState extends State<YearBars> {
     });
   }
 
-  Widget _bar(BuildContext context, int index, double max, bool hasNotes) {
+  Widget _bar(BuildContext context, int index, double max, bool hasNotes, bool hasDots) {
     final b = widget.bars[index];
     final dim = context.dim;
     final sel = _selected;
-    final selectedHere = sel != null && sel.$1 == index ? b.parts[sel.$2] : null;
+    final selPart = sel != null && sel.$1 == index ? sel.$2 : null;
+    final selectedHere = selPart == null ? null : b.parts[selPart];
     final future = b.isFuture;
 
     final note = selectedHere != null ? selectedHere.selectedNote : b.note;
     final top = selectedHere != null ? selectedHere.selectedTop : b.top;
     final value = selectedHere != null ? selectedHere.value : b.total;
 
-    return Column(
+    final column = Column(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
@@ -155,7 +162,11 @@ class _YearBarsState extends State<YearBars> {
           style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w700,
-            color: future && selectedHere == null ? dim : (b.topColor ?? AppColors.positive),
+            color: selectedHere != null
+                ? _gold
+                : future
+                    ? dim
+                    : (b.topColor ?? AppColors.positive),
           ),
         ),
         FittedBox(
@@ -175,87 +186,99 @@ class _YearBarsState extends State<YearBars> {
         SizedBox(
           height: widget.barHeight,
           child: FractionallySizedBox(
-            widthFactor: 0.72,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Бледный контур — сумма за год, если выплат было несколько.
-                if (b.parts.length > 1 && b.total > 0)
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      width: double.infinity,
-                      height: max <= 0 ? 0 : widget.barHeight * b.total / max,
-                      decoration: BoxDecoration(
-                        color: widget.color.withOpacity(0.10),
-                        border: Border.all(color: widget.color.withOpacity(0.35)),
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(5), bottom: Radius.circular(2)),
-                      ),
-                    ),
-                  ),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: b.parts.length > 1 ? 3 : 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      for (int p = 0; p < b.parts.length; p++) ...[
-                        if (p > 0) const SizedBox(width: 3),
-                        Expanded(child: _part(index, p, b.parts[p], max)),
-                      ],
-                      if (b.parts.isEmpty || b.total <= 0)
-                        Expanded(
-                          child: Container(
-                            height: 2,
-                            decoration: BoxDecoration(
-                              color: widget.color.withOpacity(0.5),
-                              borderRadius: BorderRadius.circular(1),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+            widthFactor: 0.62,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: _column(b, max, selPart),
             ),
           ),
         ),
         const SizedBox(height: 3),
         Text('${b.year}', style: TextStyle(fontSize: 10, color: dim)),
+        if (hasDots)
+          SizedBox(
+            height: 10,
+            child: b.parts.length > 1 ? _dots(b.parts.length, selPart) : null,
+          ),
       ],
+    );
+    if (!widget.selectable) return column;
+    // Вся колонка года — одна большая кнопка: попадать в столбик не нужно.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _tap(index),
+      child: column,
     );
   }
 
-  Widget _part(int year, int index, BarPart p, double max) {
-    final h = max <= 0 ? 2.0 : math.max(2.0, widget.barHeight * p.value / max);
-    final sel = _selected;
-    final on = sel == (year, index);
-    final faded = sel != null && !on;
-    const radius = BorderRadius.vertical(top: Radius.circular(4), bottom: Radius.circular(2));
-    final bar = Container(
-      height: h,
-      // Ширина обязательна: без неё заливка и штриховка, у которых нет своего
-      // размера, сжимаются в ноль и столбик пропадает.
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        border: on ? Border.all(color: _gold, width: 2) : null,
-      ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: p.kind == BarKind.paid
-            ? ColoredBox(color: widget.color)
-            : CustomPaint(painter: _Stripes(widget.color, faint: p.kind == BarKind.forecast)),
+  /// Цельный столбик года. Соседние выплаты одного вида сливаются в один
+  /// кусок; выбранная выплата — отдельный золотой кусок на своём месте
+  /// (снизу самая ранняя).
+  Widget _column(YearBar b, double max, int? selPart) {
+    if (b.parts.isEmpty || b.total <= 0 || max <= 0) {
+      return Container(
+        height: 2,
+        decoration: BoxDecoration(
+          color: widget.color.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(1),
+        ),
+      );
+    }
+    final full = math.max(2.0, widget.barHeight * b.total / max);
+    // Куски снизу вверх: (вид, сумма, выбран ли).
+    final pieces = <(BarKind, double, bool)>[];
+    for (int i = 0; i < b.parts.length; i++) {
+      final p = b.parts[i];
+      final on = i == selPart;
+      if (!on && pieces.isNotEmpty && !pieces.last.$3 && pieces.last.$1 == p.kind) {
+        pieces[pieces.length - 1] = (p.kind, pieces.last.$2 + p.value, false);
+      } else {
+        pieces.add((p.kind, p.value, on));
+      }
+    }
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(5), bottom: Radius.circular(2)),
+      child: SizedBox(
+        width: double.infinity,
+        height: full,
+        child: Column(
+          children: [
+            for (final piece in pieces.reversed)
+              SizedBox(
+                width: double.infinity,
+                height: full * piece.$2 / b.total,
+                child: _fill(piece.$1, piece.$3),
+              ),
+          ],
+        ),
       ),
     );
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: widget.selectable ? () => _tap(year, index) : null,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 150),
-        opacity: faded ? 0.45 : 1,
-        // Нажимать удобно по всей высоте колонки, а не только по столбику.
-        child: Container(height: widget.barHeight, alignment: Alignment.bottomCenter, child: bar),
-      ),
+  }
+
+  Widget _fill(BarKind kind, bool on) {
+    final color = on ? _gold : widget.color;
+    // Ширина и высота заданы снаружи: без них заливка и штриховка, у
+    // которых нет своего размера, сжимаются в ноль.
+    if (kind == BarKind.paid) return ColoredBox(color: color);
+    return CustomPaint(painter: _Stripes(color, faint: kind == BarKind.forecast && !on));
+  }
+
+  /// Точки под годом — по числу выплат, выбранная золотая и крупнее.
+  Widget _dots(int count, int? selected) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (int i = 0; i < count; i++)
+          Container(
+            width: i == selected ? 7 : 5,
+            height: i == selected ? 7 : 5,
+            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: i == selected ? _gold : context.dim.withOpacity(0.55),
+            ),
+          ),
+      ],
     );
   }
 }
