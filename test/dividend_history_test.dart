@@ -84,4 +84,14 @@ void main() {
     expect(by[2024]!.paid, closeTo(38.3, 1e-9));
     expect(by[2099]!.forecast, 44.53);
   });
+
+  test('выплата находит свою отсечку', () {
+    final h = DividendHistory(records: [
+      DividendRecord(date: DateTime(2025, 7, 18), amount: 0.8),
+      DividendRecord(date: DateTime(2026, 7, 17), amount: 0.85),
+      DividendRecord(date: DateTime(2026, 8, 20), amount: 5, forecast: true),
+    ]);
+    expect(h.paidBy(DateTime(2026, 7, 31))!.amount, 0.85);
+    expect(h.paidBy(DateTime(2026, 7, 10)), isNull);
+  });
 }

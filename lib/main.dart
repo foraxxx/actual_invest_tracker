@@ -10,6 +10,7 @@ import 'services/tax_service.dart';
 import 'services/sector_service.dart';
 import 'services/manual_price_service.dart';
 import 'services/logo_service.dart';
+import 'services/dividend_tax_service.dart';
 import 'services/appearance_service.dart';
 import 'services/backup_crypto_service.dart';
 import 'services/backup_settings_service.dart';
@@ -77,6 +78,8 @@ void main() async {
   // Автообновление котировок стартует, только если пользователь его включил.
   if (OnlineSettingsService.enabled) MoexSyncService.instance.start();
   AutoBackupService.attach();
+  // Дивиденды, записанные без налога, сверяются с историей выплат.
+  DividendTaxService.attach();
   // Виджет на экране телефона получает свежий снимок при изменении данных.
   HomeWidgetService.attach();
   unawaited(AutoBackupService.runNowIfEnabled());

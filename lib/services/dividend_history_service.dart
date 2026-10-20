@@ -106,6 +106,17 @@ class DividendHistory {
         .fold(0.0, (s, r) => s + r.amount);
   }
 
+  /// Выплата, за которую пришли деньги [paid]: последняя отсечка не позже
+  /// этой даты и не раньше чем за 45 дней до неё.
+  DividendRecord? paidBy(DateTime paid) {
+    DividendRecord? best;
+    for (final r in records) {
+      if (r.forecast || r.date.isAfter(paid) || paid.difference(r.date).inDays > 45) continue;
+      if (best == null || r.date.isAfter(best.date)) best = r;
+    }
+    return best;
+  }
+
   /// Ближайшая объявленная компанией выплата.
   DividendRecord? get nextAnnounced {
     final list = records.where((r) => r.isAnnounced).toList()..sort((a, b) => a.date.compareTo(b.date));
@@ -248,7 +259,9 @@ class DividendHistoryService {
     var source = '';
     String? error;
     try {
-      fresh = parseDohod(await _get('https://www.dohod.ru/ik/analytics/dividend/${ticker.toLowerCase()}'));
+      // Разбор страницы — в отдельном потоке: страницы большие, и на телефоне
+      // разбор в основном потоке подвешивал экран.
+      fresh = await compute(parseDohod, await _get('https://www.dohod.ru/ik/analytics/dividend/${ticker.toLowerCase()}'));
       source = 'Доход.ру';
       if (fresh.isEmpty) fresh = null;
     } catch (_) {
@@ -256,7 +269,7 @@ class DividendHistoryService {
     }
     if (fresh == null) {
       try {
-        fresh = parseSmartLab(await _get('https://smart-lab.ru/q/${ticker.toUpperCase()}/dividend/'));
+        fresh = await compute(parseSmartLab, await _get('https://smart-lab.ru/q/${ticker.toUpperCase()}/dividend/'));
         source = 'smart-lab';
         if (fresh.isEmpty) fresh = null;
       } catch (_) {
@@ -315,7 +328,8 @@ class DividendHistoryService {
         final h = of(t);
         if (!(_freshToday(h) && h?.error == null)) {
           try {
-            final r = await update(t);
+            // Страховка: одна бумага не держит всю загрузку дольше минуты.
+            final r = await update(t).timeout(const Duration(seconds: 60));
             if (r == null || r.error != null) failed++;
           } catch (_) {
             failed++;

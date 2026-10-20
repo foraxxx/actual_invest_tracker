@@ -8,6 +8,7 @@ import '../services/analytics_service.dart';
 import '../services/appearance_service.dart';
 import '../services/currency_service.dart';
 import '../services/dividend_history_service.dart';
+import '../services/dividend_tax_service.dart';
 import '../services/moex_service.dart';
 import '../services/online_settings_service.dart';
 import 'payout_yield_sheet.dart' show yieldPct;
@@ -340,7 +341,21 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
   Widget _received(BuildContext context, bool hidden) {
     final incomes = widget.incomes;
     final net = incomes.fold(0.0, (s, i) => s + CurrencyService.toRub(i.amountNet, i.currency, date: i.date));
-    final gross = incomes.fold(0.0, (s, i) => s + CurrencyService.toRub(i.amountGross, i.currency, date: i.date));
+    // Если брокер не указал налог, сумма до налога считается по дивиденду
+    // на акцию и числу акций на дату отсечки.
+    var noTax = 0;
+    final gross = incomes.fold(0.0, (s, i) {
+      var g = i.amountGross;
+      if (i.taxPaid <= 0) {
+        final info = DividendTaxService.infoFor(i);
+        if (info != null && info.gross > g) {
+          g = info.gross;
+        } else {
+          noTax++;
+        }
+      }
+      return s + CurrencyService.toRub(g, i.currency, date: i.date);
+    });
     final shown = _expanded ? incomes : incomes.take(2).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -368,7 +383,11 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
                 children: [
                   Text(hidden ? '••• ₽' : Fmt.money(net), style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                   Text(
-                    hidden ? 'до налога ••• ₽' : 'до налога ${Fmt.money(gross)}',
+                    hidden
+                        ? 'до налога ••• ₽'
+                        : noTax == incomes.length
+                            ? 'налог брокер не указал'
+                            : 'до налога ${noTax > 0 ? '≈ ' : ''}${Fmt.money(gross)}',
                     style: TextStyle(fontSize: 11, color: context.dim),
                   ),
                 ],
@@ -402,8 +421,13 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
   }
 
   Widget _incomeRow(BuildContext context, Income i, bool hidden) {
-    final qty = AnalyticsService.holdingsAt(date: DateTime(i.date.year, i.date.month, i.date.day, 23, 59, 59))[i.ticker]?.qty ?? 0;
-    final perShare = qty > 0 ? i.amountGross / qty : null;
+    // На акцию — дивиденд из истории выплат. Если его там нет — сумма до
+    // налога, делённая на число акций на дату выплаты.
+    final info = DividendTaxService.infoFor(i);
+    final qty = info != null
+        ? info.shares
+        : AnalyticsService.holdingsAt(date: DateTime(i.date.year, i.date.month, i.date.day, 23, 59, 59))[i.ticker]?.qty ?? 0;
+    final perShare = info != null ? info.record.amount : (qty > 0 ? i.amountGross / qty : null);
     return Dismissible(
       key: Key('div-${i.id}'),
       direction: DismissDirection.endToStart,
