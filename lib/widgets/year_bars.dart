@@ -4,18 +4,25 @@ import 'package:flutter/material.dart';
 
 import '../design/tokens.dart';
 
+/// Вид части столбика.
+enum BarKind { paid, announced, forecast }
+
+/// Одна выплата внутри года — свой узкий столбик.
+class BarPart {
+  final double value;
+  final BarKind kind;
+
+  /// Что показать над годом, когда нажали на этот столбик.
+  final String? selectedTop;
+  final String? selectedNote;
+
+  const BarPart(this.value, {this.kind = BarKind.paid, this.selectedTop, this.selectedNote});
+}
+
 /// Один год на графике выплат.
 class YearBar {
   final int year;
-
-  /// Уже выплачено — сплошная часть.
-  final double paid;
-
-  /// Объявлено компанией — заштрихованная часть.
-  final double announced;
-
-  /// Прогноз аналитиков — бледная штриховка с рамкой.
-  final double forecast;
+  final List<BarPart> parts;
 
   /// Процент над столбиком и его цвет.
   final String? top;
@@ -24,27 +31,22 @@ class YearBar {
   /// Подпись над процентом: «объявлено», «прогноз».
   final String? note;
 
-  const YearBar({
-    required this.year,
-    this.paid = 0,
-    this.announced = 0,
-    this.forecast = 0,
-    this.top,
-    this.topColor,
-    this.note,
-  });
+  const YearBar({required this.year, required this.parts, this.top, this.topColor, this.note});
 
-  double get total => paid + announced + forecast;
-  bool get isFuture => paid <= 0 && (announced > 0 || forecast > 0);
+  double get total => parts.fold(0.0, (s, p) => s + p.value);
+  bool get isFuture => parts.isNotEmpty && parts.every((p) => p.kind != BarKind.paid);
 }
 
-/// Столбики по годам: сумма над столбиком, сверху процент, снизу год.
+/// Столбики по годам: сумма над столбиком, сверху процент, снизу год. Если в
+/// году несколько выплат — столько же узких столбиков рядом. С [selectable]
+/// на столбик можно нажать: над годом появится эта выплата.
 /// Больше шести лет — график листается, открывается на последних годах.
-class YearBars extends StatelessWidget {
+class YearBars extends StatefulWidget {
   final List<YearBar> bars;
   final String Function(double) format;
   final double barHeight;
   final Color color;
+  final bool selectable;
 
   const YearBars({
     super.key,
@@ -52,86 +54,137 @@ class YearBars extends StatelessWidget {
     required this.format,
     this.barHeight = 60,
     this.color = AppColors.info,
+    this.selectable = false,
   });
 
+  @override
+  State<YearBars> createState() => _YearBarsState();
+}
+
+class _YearBarsState extends State<YearBars> {
   static const _visible = 6;
+  static const _gold = AppColors.gold;
+
+  /// Выбранная выплата: (индекс года, индекс выплаты).
+  (int, int)? _selected;
+
+  @override
+  void didUpdateWidget(YearBars old) {
+    super.didUpdateWidget(old);
+    if (old.bars.length != widget.bars.length) _selected = null;
+  }
+
+  void _tap(int year, int part) {
+    if (!widget.selectable) return;
+    setState(() => _selected = _selected == (year, part) ? null : (year, part));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final bars = widget.bars;
     if (bars.isEmpty) return const SizedBox.shrink();
-    final max = bars.map((b) => b.total).fold(0.0, math.max);
-    final hasNotes = bars.any((b) => b.note != null);
-    final total = barHeight + 16 + 14 + 15 + (hasNotes ? 12 : 0);
+    final max = bars.expand((b) => b.parts).map((p) => p.value).fold(0.0, math.max);
+    final hasNotes = bars.any((b) => b.note != null) || widget.selectable;
     return LayoutBuilder(builder: (context, box) {
       final scroll = bars.length > _visible;
       final slot = scroll ? box.maxWidth / _visible : box.maxWidth / bars.length;
       final row = Row(
         crossAxisAlignment: CrossAxisAlignment.end,
-        children: [for (final b in bars) SizedBox(width: slot, child: _bar(context, b, max, hasNotes))],
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < bars.length; i++) SizedBox(width: slot, child: _bar(context, i, max, hasNotes)),
+        ],
       );
-      if (!scroll) return SizedBox(height: total, child: row);
-      return SizedBox(
-        height: total,
-        child: ShaderMask(
-          // Затемнение у левого края — там есть более ранние годы.
-          shaderCallback: (r) => const LinearGradient(
-            colors: [Colors.transparent, Colors.black],
-            stops: [0, 0.09],
-          ).createShader(r),
-          blendMode: BlendMode.dstIn,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            reverse: true,
-            physics: const BouncingScrollPhysics(),
-            child: row,
-          ),
+      final body = GestureDetector(
+        // Нажатие мимо столбиков снимает выбор.
+        behavior: HitTestBehavior.translucent,
+        onTap: _selected == null ? null : () => setState(() => _selected = null),
+        child: row,
+      );
+      if (!scroll) return body;
+      return ShaderMask(
+        // Затемнение у левого края — там есть более ранние годы.
+        shaderCallback: (r) => const LinearGradient(
+          colors: [Colors.transparent, Colors.black],
+          stops: [0, 0.09],
+        ).createShader(r),
+        blendMode: BlendMode.dstIn,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          reverse: true,
+          physics: const BouncingScrollPhysics(),
+          child: body,
         ),
       );
     });
   }
 
-  Widget _bar(BuildContext context, YearBar b, double max, bool hasNotes) {
-    double h(double v) => max <= 0 ? 0 : barHeight * v / max;
+  Widget _bar(BuildContext context, int index, double max, bool hasNotes) {
+    final b = widget.bars[index];
     final dim = context.dim;
+    final sel = _selected;
+    final selectedHere = sel != null && sel.$1 == index ? b.parts[sel.$2] : null;
     final future = b.isFuture;
+
+    final note = selectedHere != null ? selectedHere.selectedNote : b.note;
+    final top = selectedHere != null ? selectedHere.selectedTop : b.top;
+    final value = selectedHere != null ? selectedHere.value : b.total;
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         if (hasNotes)
-          SizedBox(
-            height: 12,
-            child: Text(b.note ?? '', style: TextStyle(fontSize: 9, color: dim)),
+          Text(
+            note ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            style: TextStyle(fontSize: 9, color: selectedHere != null ? _gold : dim),
           ),
-        SizedBox(
-          height: 14,
-          child: Text(
-            b.top ?? '',
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: future ? dim : (b.topColor ?? dim)),
+        Text(
+          top ?? '',
+          maxLines: 1,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: future && selectedHere == null ? dim : (b.topColor ?? AppColors.positive),
           ),
         ),
         Text(
-          format(b.total),
+          widget.format(value),
           maxLines: 1,
+          softWrap: false,
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w800,
-            color: future ? dim : null,
+            color: selectedHere != null ? _gold : (future ? dim : null),
           ),
         ),
         const SizedBox(height: 2),
-        FractionallySizedBox(
-          widthFactor: 0.72,
-          child: Column(
-            children: [
-              if (b.forecast > 0) _part(h(b.forecast), _Pattern.faint, top: true, bottom: b.paid + b.announced <= 0),
-              if (b.announced > 0) _part(h(b.announced), _Pattern.striped, top: b.forecast <= 0, bottom: b.paid <= 0),
-              if (b.paid > 0) _part(h(b.paid), _Pattern.solid, top: b.forecast + b.announced <= 0, bottom: true),
-              if (b.total <= 0)
-                Container(
-                  height: 2,
-                  decoration: BoxDecoration(color: color.withOpacity(0.5), borderRadius: BorderRadius.circular(1)),
-                ),
-            ],
+        SizedBox(
+          height: widget.barHeight,
+          child: FractionallySizedBox(
+            widthFactor: 0.76,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (int p = 0; p < b.parts.length; p++) ...[
+                  if (p > 0) const SizedBox(width: 3),
+                  Expanded(child: _part(index, p, b.parts[p], max)),
+                ],
+                if (b.parts.isEmpty || b.total <= 0)
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      decoration: BoxDecoration(
+                        color: widget.color.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 3),
@@ -140,25 +193,37 @@ class YearBars extends StatelessWidget {
     );
   }
 
-  Widget _part(double height, _Pattern p, {required bool top, required bool bottom}) {
-    final radius = BorderRadius.vertical(
-      top: Radius.circular(top ? 5 : 0),
-      bottom: Radius.circular(bottom ? 2 : 0),
-    );
-    return SizedBox(
-      height: math.max(height, 2),
-      width: double.infinity,
+  Widget _part(int year, int index, BarPart p, double max) {
+    final h = max <= 0 ? 2.0 : math.max(2.0, widget.barHeight * p.value / max);
+    final sel = _selected;
+    final on = sel == (year, index);
+    final faded = sel != null && !on;
+    const radius = BorderRadius.vertical(top: Radius.circular(4), bottom: Radius.circular(2));
+    final bar = Container(
+      height: h,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: on ? Border.all(color: _gold, width: 2) : null,
+      ),
       child: ClipRRect(
         borderRadius: radius,
-        child: p == _Pattern.solid
-            ? ColoredBox(color: color)
-            : CustomPaint(painter: _Stripes(color, faint: p == _Pattern.faint)),
+        child: p.kind == BarKind.paid
+            ? ColoredBox(color: widget.color)
+            : CustomPaint(painter: _Stripes(widget.color, faint: p.kind == BarKind.forecast)),
+      ),
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.selectable ? () => _tap(year, index) : null,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: faded ? 0.45 : 1,
+        // Нажимать удобно по всей высоте колонки, а не только по столбику.
+        child: Container(height: widget.barHeight, alignment: Alignment.bottomCenter, child: bar),
       ),
     );
   }
 }
-
-enum _Pattern { solid, striped, faint }
 
 class _Stripes extends CustomPainter {
   final Color color;

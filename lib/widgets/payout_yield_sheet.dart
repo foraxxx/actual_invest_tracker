@@ -136,7 +136,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
                         for (int i = 0; i < years.length; i++)
                           YearBar(
                             year: years[i],
-                            paid: s.byYear[years[i]]!,
+                            parts: [BarPart(s.byYear[years[i]]!)],
                             top: _growth(years, i, s.byYear, now),
                             topColor: _growthColor(years, i, s.byYear),
                           ),

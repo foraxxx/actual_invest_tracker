@@ -123,7 +123,8 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
               ),
             )
           else ...[
-            YearBars(bars: _bars(h, avg), format: _amount),
+            YearBars(bars: _bars(h, avg), format: _amount, selectable: true),
+            _legend(context),
             ..._yields(context, h, avg, price),
             if (h.nextAnnounced != null) _expected(context, h.nextAnnounced!, hidden),
           ],
@@ -171,15 +172,32 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
   }
 
   List<YearBar> _bars(DividendHistory h, double? avg) {
-    final by = h.byYear();
-    if (by.isEmpty) return const [];
-    final first = by.keys.reduce((a, b) => a < b ? a : b);
-    final last = by.keys.reduce((a, b) => a > b ? a : b);
+    if (h.records.isEmpty) return const [];
+    final byYear = <int, List<DividendRecord>>{};
+    for (final r in h.records) {
+      (byYear[r.date.year] ??= []).add(r);
+    }
+    final first = byYear.keys.reduce((a, b) => a < b ? a : b);
+    final last = byYear.keys.reduce((a, b) => a > b ? a : b);
+    String? yieldOf(double v) => avg != null && avg > 0 && v > 0 ? yieldPct(v / avg * 100) : null;
     final result = <YearBar>[];
     double? prev;
     for (int y = first; y <= last; y++) {
-      final v = by[y] ?? (paid: 0.0, announced: 0.0, forecast: 0.0);
-      final total = v.paid + v.announced + v.forecast;
+      final list = <DividendRecord>[...?byYear[y]]..sort((a, b) => a.date.compareTo(b.date));
+      final parts = [
+        for (final r in list)
+          BarPart(
+            r.amount,
+            kind: r.forecast
+                ? BarKind.forecast
+                : r.isFuture
+                    ? BarKind.announced
+                    : BarKind.paid,
+            selectedTop: yieldOf(r.amount),
+            selectedNote: r.forecast ? 'прогноз' : Fmt.dateLong(r.date),
+          ),
+      ];
+      final total = parts.fold(0.0, (s, p) => s + p.value);
       String? top;
       Color? color;
       if (_growth) {
@@ -188,26 +206,49 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
           top = '${g >= 0 ? '+' : '−'}${Fmt.group(g.abs(), decimals: 0)}%';
           color = g >= 0 ? AppColors.positive : AppColors.negative;
         }
-      } else if (avg != null && avg > 0 && total > 0) {
-        top = yieldPct(total / avg * 100);
+      } else {
+        top = yieldOf(total);
         color = AppColors.positive;
       }
+      final onlyForecast = parts.isNotEmpty && parts.every((p) => p.kind == BarKind.forecast);
       result.add(YearBar(
         year: y,
-        paid: v.paid,
-        announced: v.announced,
-        forecast: v.forecast,
+        parts: parts,
         top: top,
         topColor: color,
-        note: v.forecast > 0 && v.paid + v.announced <= 0
+        note: onlyForecast
             ? 'прогноз'
-            : v.announced > 0
+            : parts.any((p) => p.kind == BarKind.announced)
                 ? 'объявлено'
                 : null,
       ));
       prev = total;
     }
     return result;
+  }
+
+  Widget _legend(BuildContext context) {
+    Widget item(Widget mark, String label) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [mark, const SizedBox(width: 4), Text(label, style: TextStyle(fontSize: 10.5, color: context.dim))],
+        );
+    Widget box({Color? fill, Border? border, Gradient? gradient}) => Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: fill, border: border, gradient: gradient, borderRadius: BorderRadius.circular(2)),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 4,
+        children: [
+          item(box(fill: AppColors.info), 'выплачено'),
+          item(box(fill: AppColors.info.withOpacity(0.45)), 'объявлено'),
+          item(box(border: Border.all(color: AppColors.info.withOpacity(0.6))), 'прогноз'),
+        ],
+      ),
+    );
   }
 
   List<Widget> _yields(BuildContext context, DividendHistory h, double? avg, double? price) {
@@ -238,9 +279,10 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
   Widget _expected(BuildContext context, DividendRecord r, bool hidden) {
     final qty = widget.holding?.qty ?? 0;
     final you = qty * r.amount * 0.87;
+    final month = Fmt.dateLong(r.date).split(' ')[1];
     return Container(
       margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
       decoration: BoxDecoration(
         color: AppColors.info.withOpacity(0.08),
         borderRadius: AppRadius.all(AppRadius.sm),
@@ -248,28 +290,48 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
       ),
       child: Row(
         children: [
+          Container(
+            width: 58,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.info.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              children: [
+                Text('${r.date.day}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, height: 1.05)),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(month, style: TextStyle(fontSize: 10, color: context.dim)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Ожидается · отсечка ${Fmt.dateLong(r.date)}', style: TextStyle(fontSize: 11, color: context.dim)),
-                const SizedBox(height: 2),
-                Text('${_amount(r.amount)} ₽ на акцию', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                Text(
+                  r.date.year == DateTime.now().year ? 'Ожидается · отсечка' : 'Ожидается · отсечка в ${r.date.year} году',
+                  style: TextStyle(fontSize: 11, color: context.dim),
+                ),
+                const SizedBox(height: 1),
+                Text('${_amount(r.amount)} ₽ на акцию', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800)),
+                if (qty > 0)
+                  Text.rich(
+                    TextSpan(children: [
+                      const TextSpan(text: 'получено после налога '),
+                      TextSpan(
+                        text: hidden ? '••• ₽' : '≈ ${Fmt.money(you)}',
+                        style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.positive),
+                      ),
+                    ]),
+                    style: TextStyle(fontSize: 12, color: context.dim),
+                  ),
               ],
             ),
           ),
-          if (qty > 0)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('вам после налога', style: TextStyle(fontSize: 11, color: context.dim)),
-                const SizedBox(height: 2),
-                Text(
-                  hidden ? '••• ₽' : '≈ ${Fmt.money(you)}',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.positive),
-                ),
-              ],
-            ),
         ],
       ),
     );
@@ -277,47 +339,64 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
 
   Widget _received(BuildContext context, bool hidden) {
     final incomes = widget.incomes;
-    final total = incomes.fold(0.0, (s, i) => s + CurrencyService.toRub(i.amountNet, i.currency, date: i.date));
+    final net = incomes.fold(0.0, (s, i) => s + CurrencyService.toRub(i.amountNet, i.currency, date: i.date));
+    final gross = incomes.fold(0.0, (s, i) => s + CurrencyService.toRub(i.amountGross, i.currency, date: i.date));
     final shown = _expanded ? incomes : incomes.take(2).toList();
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text('Получено', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                   Text(
-                    incomes.isEmpty ? 'Всего получено' : 'Всего получено · ${incomes.length} ${Fmt.payouts(incomes.length)}',
+                    incomes.isEmpty
+                        ? 'Выплаты по этой акции ещё не записаны'
+                        : '${incomes.length} ${Fmt.payouts(incomes.length)} · после налога',
                     style: TextStyle(fontSize: 11.5, color: context.dim),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    hidden ? '••• ₽' : Fmt.money(total),
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                   ),
                 ],
               ),
             ),
-            OutlinedButton.icon(
-              onPressed: widget.onAdd,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Выплата', style: TextStyle(fontWeight: FontWeight.w700)),
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                shape: const StadiumBorder(),
+            if (incomes.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(hidden ? '••• ₽' : Fmt.money(net), style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                  Text(
+                    hidden ? 'до налога ••• ₽' : 'до налога ${Fmt.money(gross)}',
+                    style: TextStyle(fontSize: 11, color: context.dim),
+                  ),
+                ],
               ),
-            ),
           ],
         ),
+        const SizedBox(height: 4),
         for (final i in shown) _incomeRow(context, i, hidden),
         if (!_expanded && incomes.length > 2)
-          TextButton(
-            style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-            onPressed: () => setState(() => _expanded = true),
-            child: Text('Ещё ${incomes.length - 2} ${Fmt.payouts(incomes.length - 2)} ›'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+              onPressed: () => setState(() => _expanded = true),
+              child: Text('Ещё ${incomes.length - 2} ${Fmt.payouts(incomes.length - 2)} ›'),
+            ),
           ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: widget.onAdd,
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: const Text('Добавить выплату', style: TextStyle(fontWeight: FontWeight.w800)),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            side: BorderSide(color: context.accent.withOpacity(0.45)),
+            shape: RoundedRectangleBorder(borderRadius: AppRadius.all(AppRadius.sm)),
+          ),
+        ),
       ],
     );
   }
