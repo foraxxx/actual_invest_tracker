@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Пример графика для картинки виджета в списке виджетов. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="60dp"
+    android:viewportWidth="200"
+    android:viewportHeight="60">
+    <path
+        android:fillColor="#1FFFFFFF"
+        android:pathData="M0,40 C30,22 55,22 80,34 C105,46 125,48 150,36 C170,26 185,14 200,8 L200,60 L0,60 Z" />
+    <path
+        android:strokeColor="#F2F2F4"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M0,40 C30,22 55,22 80,34 C105,46 125,48 150,36 C170,26 185,14 200,8" />
+</vector>

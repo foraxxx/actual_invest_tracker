@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Виджет «Графит»: матовый чёрный, цветное только изменение. -->
+    <color name="widget_bg">#111214</color>
+    <color name="widget_text">#F2F2F4</color>
+    <color name="widget_dim">#8B8F98</color>
+    <color name="widget_line">#14FFFFFF</color>
+    <dimen name="widget_radius">22dp</dimen>
+    <string name="widget_description">Стоимость портфеля, изменение за сегодня и бюджет</string>
+
+    <style name="WidgetLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">11dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/widget_dim</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <style name="WidgetValue">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">30dp</item>
+        <item name="android:gravity">center_vertical|start</item>
+        <item name="android:textSize">24dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/widget_text</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">13dp</item>
+        <item name="android:autoSizeMaxTextSize">24dp</item>
+        <item name="android:autoSizeStepGranularity">1dp</item>
+    </style>
+
+    <style name="WidgetChange">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">11.5dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#3EE6A8</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <style name="WidgetDim">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">11dp</item>
+        <item name="android:textColor">@color/widget_dim</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <style name="WidgetMain">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">15dp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/widget_text</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+</resources>

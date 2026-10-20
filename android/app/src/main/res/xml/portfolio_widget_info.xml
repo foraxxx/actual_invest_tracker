@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Обновление по расписанию системы выключено (updatePeriodMillis = 0):
+     цены подтягивает WidgetUpdateWorker раз в полчаса и только в торговые
+     часы, а приложение присылает свежий снимок само. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:maxResizeWidth="600dp"
+    android:maxResizeHeight="400dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/widget_small"
+    android:previewLayout="@layout/widget_preview"
+    android:description="@string/widget_description"
+    android:updatePeriodMillis="0" />

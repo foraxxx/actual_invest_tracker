@@ -18,6 +18,7 @@ import '../services/portfolio_service.dart';
 import '../services/sector_service.dart';
 import '../services/tax_service.dart';
 import '../services/theme_service.dart';
+import '../widgets/home_widget_settings.dart';
 import 'annual_report_screen.dart';
 import 'broker_import_screen.dart';
 import 'budget_screen.dart';
@@ -167,6 +168,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _group(
               index: 4,
+              icon: Icons.widgets_outlined,
+              title: 'Виджет на экране',
+              subtitle: 'Какой портфель показывать: один или все вместе',
+              builder: () => [const HomeWidgetSettings()],
+            ),
+            _group(
+              index: 5,
               icon: Icons.save_outlined,
               title: 'Данные',
               subtitle: 'Резервные копии и восстановление',

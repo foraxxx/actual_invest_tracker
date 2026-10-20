@@ -29,6 +29,7 @@ import 'services/beta_service.dart';
 import 'services/portfolio_history_service.dart';
 import 'services/price_history_cache.dart';
 import 'services/cbr_service.dart';
+import 'services/home_widget_service.dart';
 import 'design/app_theme.dart';
 
 // Держим ссылку на верхнем уровне, чтобы слушатель жизненного цикла не был
@@ -74,6 +75,8 @@ void main() async {
   // Автообновление котировок стартует, только если пользователь его включил.
   if (OnlineSettingsService.enabled) MoexSyncService.instance.start();
   AutoBackupService.attach();
+  // Виджет на экране телефона получает свежий снимок при изменении данных.
+  HomeWidgetService.attach();
   unawaited(AutoBackupService.runNowIfEnabled());
 
   // "Вход и выход из приложения" на Android/iOS обычно НЕ перезапускают
