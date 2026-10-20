@@ -3,12 +3,17 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import 'html_table_reader.dart';
+import '../models/purchase.dart';
 import 'moex_service.dart';
+import 'moex_sync_service.dart';
 import 'online_settings_service.dart';
+import 'portfolio_service.dart';
+import 'storage_service.dart';
 
 /// Одна выплата дивиденда на акцию.
 class DividendRecord {
@@ -121,11 +126,41 @@ class DividendHistoryService {
   static const boxName = 'dividend_history';
   static Box<String>? _box;
   static final ValueNotifier<int> version = ValueNotifier(0);
+
+  /// Меняется, только когда в истории появились новые или уточнённые
+  /// выплаты, — по нему запускается автобэкап. Простое «проверено сегодня,
+  /// ничего нового» его не трогает.
+  static final ValueNotifier<int> changed = ValueNotifier(0);
+
   static final Map<String, Future<DividendHistory?>> _inFlight = {};
+
+  /// Служебные ключи в том же хранилище: не тикеры.
+  static const _bundledKey = '#bundled';
+  static const _bundledAsset = 'assets/dividends/history.json';
   static final Map<String, DividendHistory?> _cache = {};
 
   static Future<void> init() async {
     _box = await Hive.openBox<String>(boxName);
+    await _applyBundled();
+  }
+
+  /// История, встроенная в приложение: у всех акций биржи она есть сразу,
+  /// без загрузки. Добавляется к сохранённой по тем же правилам, что и
+  /// восстановление из бэкапа, — один раз на каждую новую версию файла.
+  static Future<void> _applyBundled() async {
+    try {
+      final raw = jsonDecode(await rootBundle.loadString(_bundledAsset)) as Map;
+      final v = '${raw['v'] ?? 0}';
+      final data = raw['d'];
+      if (_box?.get(_bundledKey) == v || data is! Map) return;
+      await importAll({
+        for (final e in data.entries)
+          if (e.value is String) '${e.key}': e.value as String,
+      });
+      await _box?.put(_bundledKey, v);
+    } catch (_) {
+      // Файла нет или он повреждён — работаем с тем, что сохранено.
+    }
   }
 
   static String _key(String ticker) => ticker.toUpperCase();
@@ -159,6 +194,10 @@ class DividendHistoryService {
 
   static Future<void> _save(String ticker, DividendHistory h) async {
     final key = _key(ticker);
+    final before = of(key);
+    final sameRecords = before != null &&
+        jsonEncode([for (final r in before.records) r.toJson()]) ==
+            jsonEncode([for (final r in h.records) r.toJson()]);
     _cache[key] = h;
     await _box?.put(
       key,
@@ -170,6 +209,7 @@ class DividendHistoryService {
       }),
     );
     version.value++;
+    if (!sameRecords) changed.value++;
   }
 
   static bool _freshToday(DividendHistory? h) {
@@ -255,16 +295,66 @@ class DividendHistoryService {
   }
 
   /// Обновляет историю по всем акциям из списка — по очереди, с паузой,
-  /// чтобы не нагружать ни телефон, ни сайт.
-  static Future<void> refreshAll(Iterable<String> tickers) async {
+  /// чтобы не нагружать ни телефон, ни сайт. [onProgress] — сколько
+  /// бумаг из скольких уже пройдено.
+  static Future<void> refreshAll(
+    Iterable<String> tickers, {
+    void Function(int done, int total)? onProgress,
+  }) async {
     if (!OnlineSettingsService.enabled) return;
-    for (final t in tickers) {
+    final list = tickers.map(_key).toSet().toList();
+    for (var i = 0; i < list.length; i++) {
+      final t = list[i];
       final h = of(t);
-      if (_freshToday(h) && h?.error == null) continue;
-      await update(t);
-      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (!(_freshToday(h) && h?.error == null)) {
+        await update(t);
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+      onProgress?.call(i + 1, list.length);
     }
   }
+
+  static bool _portfoliosRunning = false;
+  static DateTime? _portfoliosDone;
+
+  /// Раз в день — история акций из всех портфелей, а не только из
+  /// открытого: так она есть и в бэкапе, и в карточке любой вашей бумаги.
+  static Future<void> refreshPortfolios() async {
+    final now = DateTime.now();
+    final done = _portfoliosDone;
+    if (_portfoliosRunning || !OnlineSettingsService.enabled) return;
+    if (done != null && done.year == now.year && done.month == now.month && done.day == now.day) return;
+    _portfoliosRunning = true;
+    try {
+      final tickers = <String>{};
+      for (final meta in PortfolioService.list) {
+        final snap = await StorageService.readDataFor(meta.id);
+        for (final p in snap.purchases) {
+          if (p.type == AssetType.stock) tickers.add(_key(p.ticker));
+        }
+      }
+      await refreshAll(tickers);
+      _portfoliosDone = now;
+    } catch (_) {
+      // Следующая синхронизация попробует снова.
+    } finally {
+      _portfoliosRunning = false;
+    }
+  }
+
+  /// Все акции, что торгуются на бирже (основной режим TQBR), — для
+  /// разовой загрузки истории целиком.
+  static List<String> marketStocks() {
+    final list = <String>{
+      for (final q in MoexSyncService.marketSnapshot.value.values)
+        if (q.board == 'TQBR') _key(q.ticker),
+    }.toList()
+      ..sort();
+    return list;
+  }
+
+  /// Сколько акций уже с историей.
+  static int get storedCount => (_box?.keys ?? const []).where((k) => !'$k'.startsWith('#')).length;
 
   /// Пометка прогноза аналитиков в выплатах для прогноза.
   static const forecastMark = 'прогноз';
@@ -404,13 +494,14 @@ class DividendHistoryService {
 
   static Map<String, String> exportAll() => {
         for (final k in _box?.keys ?? const [])
-          if (_box!.get(k) != null) '$k': _box!.get(k)!,
+          if (!'$k'.startsWith('#') && _box!.get(k) != null) '$k': _box!.get(k)!,
       };
 
   /// Восстановление из бэкапа: сохранённые записи склеиваются с теми, что
   /// уже есть, — ничего не теряется ни с той, ни с другой стороны.
   static Future<void> importAll(Map<String, String> data) async {
     for (final e in data.entries) {
+      if (e.key.startsWith('#')) continue;
       DividendHistory? incoming;
       try {
         final m = jsonDecode(e.value) as Map;

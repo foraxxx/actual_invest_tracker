@@ -1,13 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import '../data/securities.dart';
-import '../services/moex_service.dart';
 import '../services/moex_sync_service.dart';
-import '../services/online_settings_service.dart';
 import '../services/logo_service.dart';
 
-/// Показывает загруженный пользователем логотип бумаги, если он есть, иначе
-/// генерирует стабильную (одинаковую между запусками) градиентную аватарку
+/// Показывает свою картинку бумаги, если её поставили вручную, затем
+/// встроенный в приложение логотип, иначе генерирует стабильную (одинаковую между запусками) градиентную аватарку
 /// с инициалами тикера. В редизайне добавлены мягкое цветное свечение под
 /// аватаркой и тонкая светлая кромка — так иконки не «прилипают» к фону
 /// карточек и выглядят объёмно на обеих темах.
@@ -50,7 +47,6 @@ class TickerAvatar extends StatelessWidget {
     return null;
   }
 
-  bool get _isGovernmentBond => ticker.toUpperCase().startsWith('SU');
 
   String get _initials {
     if (ticker.isEmpty) return '?';
@@ -67,35 +63,12 @@ class TickerAvatar extends StatelessWidget {
       valueListenable: LogoService.version,
       builder: (context, _, __) {
         final logoPath = LogoService.getPath(ticker);
-        if (logoPath == null && OnlineSettingsService.enabled && !_isGovernmentBond) {
-          // Тянем логотип только для бумаг, которые реально попали на экран:
-          // на вкладке «Биржа» строк тысячи, и грузить всё подряд нельзя.
-          // Повторные попытки отсекает сам LogoService.
-          final isin = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()]?.isin;
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            final quote = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()];
-            final referenceName = SecuritiesDatabase.byTicker(ticker)?.name;
-            if (await LogoService.fetchIfMissing(
-              ticker,
-              isin: isin,
-              companyName: referenceName ?? quote?.shortName,
-            )) {
-              return;
-            }
-            // Своего логотипа нет — берём логотип эмитента. Так облигации
-            // получают картинку компании, которая их выпустила.
-            final issuer = await MoexService.issuerShareFor(ticker);
-            if (issuer == null) return;
-            await LogoService.fetchIfMissing(
-              ticker,
-              isin: isin,
-              issuerTicker: issuer,
-              issuerIsin: await MoexService.isinOf(issuer),
-              companyName: referenceName ?? quote?.shortName,
-              issuerName: await MoexService.nameOf(issuer),
-            );
-          });
-        }
+        final bundled = logoPath == null
+            ? LogoService.bundled(
+                ticker,
+                isin: MoexSyncService.marketSnapshot.value[ticker.toUpperCase()]?.isin,
+              )
+            : null;
         final colors = _gradient;
         return Container(
           width: size,
@@ -122,6 +95,17 @@ class TickerAvatar extends StatelessWidget {
                     errorBuilder: (context, error, stack) => _fallback(colors),
                   ),
                 )
+              : bundled != null
+                  ? ClipOval(
+                      child: Image(
+                        image: bundled,
+                        width: size,
+                        height: size,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (context, error, stack) => _fallback(colors),
+                      ),
+                    )
               : _fallback(colors),
         );
       },

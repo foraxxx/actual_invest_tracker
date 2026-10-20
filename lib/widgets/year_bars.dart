@@ -38,7 +38,8 @@ class YearBar {
 }
 
 /// Столбики по годам: сумма над столбиком, сверху процент, снизу год. Если в
-/// году несколько выплат — столько же узких столбиков рядом. С [selectable]
+/// году несколько выплат — бледный контур высотой в сумму за год, а внутри
+/// узкие столбики по каждой выплате. С [selectable]
 /// на столбик можно нажать: над годом появится эта выплата.
 /// Больше шести лет — график листается, открывается на последних годах.
 class YearBars extends StatefulWidget {
@@ -83,7 +84,9 @@ class _YearBarsState extends State<YearBars> {
   Widget build(BuildContext context) {
     final bars = widget.bars;
     if (bars.isEmpty) return const SizedBox.shrink();
-    final max = bars.expand((b) => b.parts).map((p) => p.value).fold(0.0, math.max);
+    // Масштаб — по сумме за год: столбики выплат и контур года в одних
+    // единицах, поэтому рост и падение по годам видно сразу.
+    final max = bars.map((b) => b.total).fold(0.0, math.max);
     final hasNotes = bars.any((b) => b.note != null) || widget.selectable;
     return LayoutBuilder(builder: (context, box) {
       final scroll = bars.length > _visible;
@@ -135,12 +138,16 @@ class _YearBarsState extends State<YearBars> {
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         if (hasNotes)
-          Text(
-            note ?? '',
-            maxLines: 1,
-            overflow: TextOverflow.visible,
-            softWrap: false,
-            style: TextStyle(fontSize: 9, color: selectedHere != null ? _gold : dim),
+          // Подпись не шире своей колонки: длинная уменьшается, а не
+          // наезжает на соседние годы.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              note ?? '',
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(fontSize: 9, color: selectedHere != null ? _gold : dim),
+            ),
           ),
         Text(
           top ?? '',
@@ -151,38 +158,63 @@ class _YearBarsState extends State<YearBars> {
             color: future && selectedHere == null ? dim : (b.topColor ?? AppColors.positive),
           ),
         ),
-        Text(
-          widget.format(value),
-          maxLines: 1,
-          softWrap: false,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: selectedHere != null ? _gold : (future ? dim : null),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            widget.format(value),
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: selectedHere != null ? _gold : (future ? dim : null),
+            ),
           ),
         ),
         const SizedBox(height: 2),
         SizedBox(
           height: widget.barHeight,
           child: FractionallySizedBox(
-            widthFactor: 0.76,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+            widthFactor: 0.72,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                for (int p = 0; p < b.parts.length; p++) ...[
-                  if (p > 0) const SizedBox(width: 3),
-                  Expanded(child: _part(index, p, b.parts[p], max)),
-                ],
-                if (b.parts.isEmpty || b.total <= 0)
-                  Expanded(
+                // Бледный контур — сумма за год, если выплат было несколько.
+                if (b.parts.length > 1 && b.total > 0)
+                  Align(
+                    alignment: Alignment.bottomCenter,
                     child: Container(
-                      height: 2,
+                      width: double.infinity,
+                      height: max <= 0 ? 0 : widget.barHeight * b.total / max,
                       decoration: BoxDecoration(
-                        color: widget.color.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(1),
+                        color: widget.color.withOpacity(0.10),
+                        border: Border.all(color: widget.color.withOpacity(0.35)),
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(5), bottom: Radius.circular(2)),
                       ),
                     ),
                   ),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: b.parts.length > 1 ? 3 : 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (int p = 0; p < b.parts.length; p++) ...[
+                        if (p > 0) const SizedBox(width: 3),
+                        Expanded(child: _part(index, p, b.parts[p], max)),
+                      ],
+                      if (b.parts.isEmpty || b.total <= 0)
+                        Expanded(
+                          child: Container(
+                            height: 2,
+                            decoration: BoxDecoration(
+                              color: widget.color.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

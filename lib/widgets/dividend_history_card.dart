@@ -194,7 +194,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
                     ? BarKind.announced
                     : BarKind.paid,
             selectedTop: yieldOf(r.amount),
-            selectedNote: r.forecast ? 'прогноз' : Fmt.dateLong(r.date),
+            selectedNote: r.forecast ? 'прогноз' : Fmt.dayShort(r.date),
           ),
       ];
       final total = parts.fold(0.0, (s, p) => s + p.value);

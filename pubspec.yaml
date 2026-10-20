@@ -65,3 +65,6 @@ flutter:
   assets:
     - assets/fonts/DejaVuSansCondensed.ttf
     - assets/fonts/DejaVuSansCondensed-Bold.ttf
+    # Встроенные логотипы бумаг и история дивидендов.
+    - assets/logos/logos.bin
+    - assets/dividends/history.json

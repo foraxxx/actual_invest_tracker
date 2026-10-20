@@ -145,6 +145,8 @@ class BackupService {
         };
       }
       data['logosBase64'] = logosB64;
+      // Только свои картинки: встроенные логотипы в бэкап не входят.
+      data['logosCustom'] = true;
     } catch (_) {}
     try {
       data['favorites'] = FavoritesService.all;
@@ -514,12 +516,17 @@ class BackupService {
     }
 
     final missingLogos = <String, String>{};
+    // В старых бэкапах лежат и скачанные приложением логотипы. Там, где есть
+    // встроенный, он лучше — скачанный пропускаем.
+    final onlyCustom = data['logosCustom'] == true;
+    bool skipLogo(String ticker) => !onlyCustom && LogoService.hasBundled(ticker);
     final logosB64 = (data['logosBase64'] as Map?) ?? {};
     if (logosB64.isNotEmpty) {
       // Новый формат — иконки встроены прямо в бэкап (base64), отдельная
       // папка не нужна.
       for (final entry in logosB64.entries) {
         final ticker = entry.key as String;
+        if (skipLogo(ticker)) continue;
         try {
           final info = entry.value as Map;
           final bytes = base64Decode(info['data'] as String);
@@ -535,6 +542,7 @@ class BackupService {
       final logos = (data['logos'] as Map?) ?? {};
       for (final entry in logos.entries) {
         final ticker = entry.key as String;
+        if (skipLogo(ticker)) continue;
         final relativePath = entry.value as String;
         final source = logosBaseDir != null ? File('$logosBaseDir/$relativePath') : null;
         if (source != null && await source.exists()) {

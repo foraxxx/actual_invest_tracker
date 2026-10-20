@@ -12,11 +12,12 @@ import 'currency_service.dart';
 import 'sector_service.dart';
 import 'favorites_service.dart';
 import 'logo_service.dart';
+import 'dividend_history_service.dart';
 
 /// Автоматически сохраняет JSON-бэкап в папку, указанную в настройках,
 /// при каждом изменении данных — без участия пользователя. Слушает версии
 /// всех источников, которые входят в бэкап (сделки/доходы/планы/депозиты,
-/// ручные цены, курсы валют, секторы, избранное, логотипы) и ждёт короткую
+/// ручные цены, курсы валют, секторы, избранное, свои логотипы, история дивидендов) и ждёт короткую
 /// паузу после последнего изменения (дебаунс), чтобы не писать файл на
 /// каждую отдельную мелкую правку, если их несколько подряд.
 ///
@@ -35,6 +36,8 @@ class AutoBackupService {
     SectorService.version.addListener(_onChange);
     FavoritesService.version.addListener(_onChange);
     LogoService.version.addListener(_onChange);
+    // История дивидендов — только когда в ней появилось новое.
+    DividendHistoryService.changed.addListener(_onChange);
     GoalService.version.addListener(_onChange);
     IisService.version.addListener(_onChange);
     PortfolioService.version.addListener(_onChange);

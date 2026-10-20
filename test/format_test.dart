@@ -35,5 +35,10 @@ void main() {
     test('keeps genitive case inside a full date', () {
       expect(Fmt.dateLong(DateTime(2026, 7, 2)), '2 июля 2026');
     });
+
+    test('short date above chart bars', () {
+      expect(Fmt.dayShort(DateTime(2026, 12, 9)), '9 дек');
+      expect(Fmt.dayShort(DateTime(2024, 5, 6)), '6 мая');
+    });
   });
 }

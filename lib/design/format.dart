@@ -118,6 +118,9 @@ class Fmt {
     return '${date(d)} $hh:$mm';
   }
 
+  /// Короткая дата для подписей над столбиками: «9 дек», «6 мая».
+  static String dayShort(DateTime d) => '${d.day} ${d.month == 5 ? 'мая' : _months[d.month - 1]}';
+
   static String dateLong(DateTime d) => '${d.day} ${_monthsFull[d.month - 1]} ${d.year}';
 
   static String monthShort(int month) => _months[month - 1];
