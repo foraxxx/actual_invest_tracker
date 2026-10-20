@@ -220,6 +220,31 @@ class PayoutForecastService {
     final firstMonth = DateTime(now.year, now.month + 1);
     final horizon = DateTime(firstMonth.year, firstMonth.month + 12);
 
+    // Объявленные компанией выплаты и прогнозы аналитиков (Доход.ру) на
+    // ближайшие 12 месяцев — то же, что заштриховано на графике в карточке
+    // акции. Если они есть, прогноз строится по ним, а не по темпу роста.
+    final ahead = [
+      for (final d in dividends)
+        if (d.amount > 0 &&
+            (d.dateKnown || d.extra == DividendHistoryService.forecastMark) &&
+            !d.date.isBefore(firstMonth) &&
+            d.date.isBefore(horizon))
+          d,
+    ];
+    if (ahead.isNotEmpty) {
+      final sum = ahead.fold(0.0, (s, d) => s + d.amount);
+      final hasForecast = ahead.any((d) => d.extra == DividendHistoryService.forecastMark);
+      final hasAnnounced = ahead.any((d) => d.extra != DividendHistoryService.forecastMark);
+      return (
+        value: sum,
+        source: !hasForecast
+            ? 'объявленные дивиденды'
+            : hasAnnounced
+                ? 'объявленные и прогноз Доход.ру'
+                : 'прогноз Доход.ру',
+      );
+    }
+
     // Суммы по календарным годам: компания может платить в несколько заходов,
     // и сравнивать надо годовые суммы, а не отдельные выплаты.
     final byYear = <int, double>{};

@@ -266,11 +266,23 @@ class DividendHistoryService {
     }
   }
 
-  /// Выплаты в виде, привычном прогнозу: выплаченные и объявленные, без
-  /// оценок аналитиков.
+  /// Пометка прогноза аналитиков в выплатах для прогноза.
+  static const forecastMark = 'прогноз';
+
+  /// Выплаты в виде, привычном прогнозу. Прогнозы аналитиков тоже идут —
+  /// с пометкой [forecastMark] и без точной даты (dateKnown: false): в
+  /// календарь объявленных выплат и годовую статистику они не попадают, а в
+  /// прогноз на 12 месяцев — попадают, как и на графике в карточке.
   static List<MoexPayout> asPayouts(String ticker) => [
         for (final r in of(ticker)?.records ?? const <DividendRecord>[])
-          if (!r.forecast) MoexPayout(date: r.date, amount: r.amount, currency: 'RUB', kind: 'Дивиденд'),
+          MoexPayout(
+            date: r.date,
+            amount: r.amount,
+            currency: 'RUB',
+            kind: 'Дивиденд',
+            dateKnown: !r.forecast,
+            extra: r.forecast ? forecastMark : null,
+          ),
       ];
 
   // --- Склейка ---

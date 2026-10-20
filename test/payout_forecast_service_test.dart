@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:invest_tracker/services/moex_service.dart';
+import 'package:invest_tracker/services/dividend_history_service.dart';
 import 'package:invest_tracker/services/payout_forecast_service.dart';
 
 /// Прогноз дивидендов. Проверяется главное свойство расчёта: незаконченный
@@ -73,6 +74,27 @@ void main() {
         PayoutForecastService.dividendPerUnit(withAnnounced).value,
         closeTo(PayoutForecastService.dividendPerUnit(base).value, 0.001),
       );
+    });
+
+    test('объявленная выплата и прогноз Доход.ру на год вперёд берутся как есть', () {
+      final soon = DateTime.now().add(const Duration(days: 75));
+      final later = DateTime.now().add(const Duration(days: 250));
+      final result = PayoutForecastService.dividendPerUnit([
+        dividend(DateTime(year - 2, 7, 10), 20),
+        dividend(DateTime(year - 1, 7, 10), 40),
+        dividend(soon, 10),
+        MoexPayout(
+          date: later,
+          amount: 12,
+          currency: 'RUB',
+          kind: 'Дивиденд',
+          dateKnown: false,
+          extra: DividendHistoryService.forecastMark,
+        ),
+      ]);
+      // Не темп роста (+100%), а то, что объявлено и спрогнозировано.
+      expect(result.value, closeTo(22, 0.001));
+      expect(result.source, 'объявленные и прогноз Доход.ру');
     });
 
     test('единственная выплата в текущем году всё же даёт прогноз', () {
