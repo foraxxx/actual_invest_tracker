@@ -94,7 +94,11 @@ class PayoutForecastService {
           try {
             moex = await MoexService.fetchPayouts(ticker, isBond: false);
           } catch (_) {}
-          await DividendHistoryService.update(ticker, moex: moex, force: force);
+          try {
+            await DividendHistoryService.update(ticker, moex: moex, force: force);
+          } catch (_) {
+            // Сбой одной бумаги не должен останавливать обновление остальных.
+          }
           _payouts[ticker] = DividendHistoryService.asPayouts(ticker);
           _loadedAsBond[ticker] = false;
           _loadedAt[ticker] = DateTime.now();
@@ -134,7 +138,7 @@ class PayoutForecastService {
     final holding = AnalyticsService.currentHoldings()[ticker];
     if (holding == null || holding.qty <= 0) return (rub: 0, source: 'нет позиции');
 
-    final list = _payouts[ticker] ?? const <MoexPayout>[];
+    final list = payoutsFor(ticker);
     final coupons = list.where((p) => p.kind == 'Купон').toList();
 
     final perUnit = coupons.isNotEmpty
@@ -398,7 +402,7 @@ class PayoutForecastService {
       if (annual <= 0) continue;
 
       final weights = List<double>.filled(months.length, 0);
-      final payouts = _payouts[ticker] ?? const <MoexPayout>[];
+      final payouts = payoutsFor(ticker);
       final horizon = DateTime(firstMonth.year, firstMonth.month + 12);
 
       // Объявленные выплаты точнее любой экстраполяции.

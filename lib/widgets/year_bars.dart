@@ -201,6 +201,9 @@ class _YearBarsState extends State<YearBars> {
     const radius = BorderRadius.vertical(top: Radius.circular(4), bottom: Radius.circular(2));
     final bar = Container(
       height: h,
+      // Ширина обязательна: без неё заливка и штриховка, у которых нет своего
+      // размера, сжимаются в ноль и столбик пропадает.
+      width: double.infinity,
       decoration: BoxDecoration(
         borderRadius: radius,
         border: on ? Border.all(color: _gold, width: 2) : null,

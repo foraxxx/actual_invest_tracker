@@ -1,5 +1,6 @@
 import 'beta_service.dart';
 import 'currency_service.dart';
+import 'dividend_history_service.dart';
 import 'manual_price_service.dart';
 import 'moex_sync_service.dart';
 import 'online_price_service.dart';
@@ -35,6 +36,7 @@ class Memo {
       _safe(() => OnlineSettingsService.enabled),
       SectorService.version.value,
       PayoutForecastService.version.value,
+      DividendHistoryService.version.value,
       BetaService.version.value,
       identityHashCode(MoexSyncService.marketSnapshot.value),
       identityHashCode(PortfolioHistoryService.timeline.value),
