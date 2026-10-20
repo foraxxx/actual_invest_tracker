@@ -7,7 +7,7 @@ import '../services/payout_calendar_service.dart';
 import '../services/payout_forecast_service.dart';
 import 'payout_calendar.dart';
 
-const payoutForecastSubtitle = 'Дивиденды и купоны на 12 месяцев со следующего месяца';
+const payoutForecastSubtitle = 'Прогноз выплат на следующие 12 месяцев';
 
 /// Сумма ожидаемых выплат за 12 месяцев.
 double payoutForecastTotal() =>

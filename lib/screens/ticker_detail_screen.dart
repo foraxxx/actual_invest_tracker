@@ -31,6 +31,7 @@ import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../widgets/plan_picker.dart';
 import '../widgets/income_sheet.dart';
+import '../widgets/dividend_history_card.dart';
 import '../widgets/trade_edit_sheet.dart';
 import '../widgets/ticker_avatar.dart';
 
@@ -197,7 +198,17 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
   bool get _isBond =>
       MoexSyncService.marketSnapshot.value[widget.ticker.toUpperCase()]?.isBond ?? false;
 
+  /// Акция: у неё свой блок «Дивидендная история», выплаты с биржи для него
+  /// не нужны.
+  bool get _isStock {
+    for (final p in StorageService.purchases) {
+      if (p.ticker == widget.ticker) return p.type == AssetType.stock;
+    }
+    return !_isBond;
+  }
+
   Future<void> _loadPayouts() async {
+    if (_isStock) return;
     setState(() {
       _payoutsLoading = true;
       _payoutsError = null;
@@ -613,6 +624,19 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 _exchangeHistoryCard(),
 
                 const SizedBox(height: 14),
+                if (assetType == AssetType.stock)
+                  DividendHistoryCard(
+                    ticker: ticker,
+                    holding: holding,
+                    price: holding?.displayPrice ?? quote?.price,
+                    incomes: incomes,
+                    onAdd: () async {
+                      await showAddIncomeSheet(context, ticker: ticker, name: name, isBond: false);
+                      if (mounted) setState(() {});
+                    },
+                    onDelete: _deleteIncome,
+                  )
+                else ...[
                 _payoutsCard(),
 
                 // Свои выплаты по бумаге. Раздел есть всегда — с кнопкой
@@ -641,7 +665,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   InfoBanner(
                     icon: Icons.auto_graph_rounded,
                     color: AppColors.violet,
-                    text: 'Ожидаемый доход за 12 мес со следующего месяца: ~${Fmt.money(forecast.rub)} '
+                    text: 'Прогноз выплат на следующие 12 месяцев: ~${Fmt.money(forecast.rub)} '
                         '(доходность ~${forecastYield.toStringAsFixed(1)}%) — ${forecast.source}. Не гарантия.',
                   ),
                   const SizedBox(height: 10),
@@ -650,6 +674,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _incomeRow(i),
                     )),
+                ],
 
                 const SizedBox(height: 22),
                 SectionTitle(
@@ -1315,7 +1340,13 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         padding: const EdgeInsets.only(right: 22),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
       ),
-      onDismissed: (_) {
+      onDismissed: (_) => _deleteIncome(i),
+      child: _incomeTile(i),
+    );
+  }
+
+  /// Удаляет выплату с возможностью вернуть её из всплывающей подсказки.
+  void _deleteIncome(Income i) {
         // Копия до удаления: удалённый объект Hive повторно не сохранить.
         final copy = Income(
           id: i.id,
@@ -1342,8 +1373,10 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
               },
             ),
           ));
-      },
-      child: AppCard(
+  }
+
+  Widget _incomeTile(Income i) {
+    return AppCard(
         padding: const EdgeInsets.all(13),
         child: Row(
           children: [
@@ -1384,7 +1417,6 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 

@@ -6,6 +6,7 @@ import '../models/plan.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
+import 'dividend_history_service.dart';
 import 'memo.dart';
 import 'moex_service.dart';
 import 'moex_sync_service.dart';
@@ -33,7 +34,12 @@ class PayoutForecastService {
 
   static bool get hasData => _payouts.isNotEmpty;
 
-  static List<MoexPayout> payoutsFor(String ticker) => _payouts[ticker] ?? const [];
+  static List<MoexPayout> payoutsFor(String ticker) {
+    final loaded = _payouts[ticker];
+    if (loaded != null) return loaded;
+    // До первой загрузки — сохранённая на телефоне история дивидендов.
+    return DividendHistoryService.of(ticker) == null ? const [] : DividendHistoryService.asPayouts(ticker);
+  }
 
   /// Загружает графики выплат для бумаг портфеля и для облигаций из активных
   /// планов.
@@ -57,6 +63,10 @@ class PayoutForecastService {
           if (trade.type == AssetType.bond) trade.ticker.toUpperCase(),
         ...planBonds,
       };
+      final portfolioStocks = <String>{
+        for (final trade in StorageService.purchases)
+          if (trade.type == AssetType.stock) trade.ticker.toUpperCase(),
+      };
       final heldUpper = {for (final t in holdings.keys) t.toUpperCase()};
       final tickers = <String>[
         ...holdings.keys,
@@ -74,6 +84,20 @@ class PayoutForecastService {
         final fresh = loadedAt != null &&
             DateTime.now().difference(loadedAt) < const Duration(hours: 24);
         if (!force && _payouts.containsKey(ticker) && loadedAsBond == isBond && fresh) {
+          continue;
+        }
+        if (!isBond && portfolioStocks.contains(upper)) {
+          // Дивиденды биржа больше не отдаёт бесплатно — история акций берётся
+          // с Доход.ру и хранится на телефоне; ответ биржи, если он есть,
+          // подмешивается.
+          var moex = const <MoexPayout>[];
+          try {
+            moex = await MoexService.fetchPayouts(ticker, isBond: false);
+          } catch (_) {}
+          await DividendHistoryService.update(ticker, moex: moex, force: force);
+          _payouts[ticker] = DividendHistoryService.asPayouts(ticker);
+          _loadedAsBond[ticker] = false;
+          _loadedAt[ticker] = DateTime.now();
           continue;
         }
         try {

@@ -11,6 +11,7 @@ import 'sector_service.dart';
 import 'manual_price_service.dart';
 import 'backup_crypto_service.dart';
 import 'budget_service.dart';
+import 'dividend_history_service.dart';
 import 'currency_service.dart';
 import 'package:flutter/material.dart';
 import 'tour_service.dart';
@@ -104,6 +105,9 @@ class BackupService {
       'portfolios': portfolios,
       // Бюджет общий для всех портфелей — хранится как есть.
       'budget': BudgetService.exportAll(),
+      // История дивидендов, однажды загруженная с сайтов: если сайт
+      // поменяется, она останется в бэкапе.
+      'dividendHistory': DividendHistoryService.exportAll(),
     };
 
     // Дополнительные данные — каждая обёрнута в свой try/catch: сбой в одной
@@ -542,6 +546,14 @@ class BackupService {
           missingLogos[ticker] = relativePath;
         }
       }
+    }
+
+    final dividends = data['dividendHistory'];
+    if (dividends is Map) {
+      await DividendHistoryService.importAll({
+        for (final e in dividends.entries)
+          if (e.value is String) '${e.key}': e.value as String,
+      });
     }
 
     // Бюджет: в старых бэкапах его нет — тогда не трогаем.

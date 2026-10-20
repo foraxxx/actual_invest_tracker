@@ -29,6 +29,7 @@ import 'services/beta_service.dart';
 import 'services/portfolio_history_service.dart';
 import 'services/price_history_cache.dart';
 import 'services/cbr_service.dart';
+import 'services/dividend_history_service.dart';
 import 'services/home_widget_service.dart';
 import 'design/app_theme.dart';
 
@@ -64,6 +65,7 @@ void main() async {
   await CbrService.init();
   await BetaService.init();
   await PriceHistoryCache.init();
+  await DividendHistoryService.init();
   // Курсы валют с биржи, сохранённые раньше, — прошлые суммы сразу по курсу
   // своей даты, ещё до связи с биржей.
   PortfolioHistoryService.loadCachedCurrencies();

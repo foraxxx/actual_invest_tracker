@@ -46,7 +46,9 @@ import '../widgets/payout_calendar.dart';
 import '../widgets/payout_years_chart.dart';
 import '../widgets/real_return_sheet.dart';
 import '../widgets/stress_test_sheet.dart';
+import '../widgets/payout_yield_sheet.dart';
 import '../services/payout_calendar_service.dart';
+import '../services/payout_yield_service.dart';
 import 'home_screen.dart';
 import 'ticker_detail_screen.dart';
 import 'wrapped_screen.dart';
@@ -636,6 +638,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _payoutYieldRow(context),
             // Несколько лет — график по годам; нажатие на год открывает его
             // месяцы ниже.
             if (years.length > 1) ...[
@@ -1607,6 +1610,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
           style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.dim),
         ),
       ],
+    );
+  }
+
+  /// Строка «Доходность выплат» в разделе «Выплаты»: открывает окно с
+  /// подробностями.
+  Widget _payoutYieldRow(BuildContext context) {
+    final s = PayoutYieldService.summary(PayoutKind.all);
+    final toCost = s.toCost;
+    if (toCost == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Pressable(
+        onTap: () => showPayoutYieldSheet(context),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: AppColors.positive.withOpacity(0.07),
+            borderRadius: AppRadius.all(AppRadius.sm),
+            border: Border.all(color: AppColors.positive.withOpacity(0.22)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Доходность выплат', style: TextStyle(fontSize: 12, color: context.dim)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${yieldPct(toCost)} в год',
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.positive),
+                    ),
+                  ],
+                ),
+              ),
+              if (s.toValue != null)
+                Text('к текущей цене ${yieldPct(s.toValue!)}', style: TextStyle(fontSize: 11.5, color: context.dim)),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
