@@ -58,6 +58,10 @@ String _rate(double v) => '${v.toStringAsFixed(2)}%';
 /// «данные Банка России за сентябрь 2026».
 String cbrSourceText() {
   final last = CbrService.lastInflation;
+  final manual = CbrService.manualInflation;
+  if (last == null && manual != null) {
+    return 'Ключевая ставка — Банк России; инфляция ${manual.toStringAsFixed(2)}% указана вручную';
+  }
   if (last == null) return 'Инфляция и ключевая ставка — Банк России';
   return 'Инфляция и ключевая ставка — Банк России, данные за ${_months[last.month - 1]} ${last.year}';
 }
@@ -177,6 +181,9 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
           'инфляцию и ключевую ставку приложение берёт у Банка России.';
     } else if (!CbrService.hasData) {
       text = 'Данные Банка России ещё не загружены. Проверьте интернет и попробуйте ещё раз.';
+    } else if (!CbrService.hasInflation) {
+      text = 'Инфляцию с сайта Банка России получить не удалось. Можно указать её вручную — '
+          'годовую, как её публикуют в новостях, — и сравнение заработает.';
     } else {
       text = 'За этот период нет своих денег в портфеле — сравнивать не с чем.';
     }
@@ -195,8 +202,60 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
             ),
           ),
         ],
+        if (!CbrService.hasInflation) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _askInflation(ctx),
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Указать инфляцию вручную'),
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  /// Ввод инфляции вручную — запасной путь, если сайт Банка России
+  /// недоступен или поменял вёрстку.
+  Future<void> _askInflation(BuildContext ctx) async {
+    final controller = TextEditingController(text: CbrService.manualInflation?.toStringAsFixed(2) ?? '');
+    final value = await showDialog<double?>(
+      context: ctx,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Инфляция за год'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Рост цен за последние 12 месяцев, в процентах. Используется, только пока с сайта '
+              'Банка России данные получить не удаётся.',
+              style: TextStyle(fontSize: 13, height: 1.35),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(suffixText: '%', hintText: 'например, 6.5'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, double.tryParse(controller.text.replaceAll(',', '.').trim())),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    // Контроллер не освобождаем сразу: поле ещё видно, пока окно закрывается.
+    if (value != null && value > -50 && value < 100) {
+      await CbrService.setManualInflation(value);
+    }
   }
 
   List<Widget> _content(BuildContext ctx, RealReturn r) {

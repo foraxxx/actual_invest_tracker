@@ -26,6 +26,7 @@ import 'services/auto_backup_service.dart';
 import 'screens/root_screen.dart';
 import 'services/budget_service.dart';
 import 'services/beta_service.dart';
+import 'services/portfolio_history_service.dart';
 import 'services/price_history_cache.dart';
 import 'services/cbr_service.dart';
 import 'design/app_theme.dart';
@@ -62,6 +63,9 @@ void main() async {
   await CbrService.init();
   await BetaService.init();
   await PriceHistoryCache.init();
+  // Курсы валют с биржи, сохранённые раньше, — прошлые суммы сразу по курсу
+  // своей даты, ещё до связи с биржей.
+  PortfolioHistoryService.loadCachedCurrencies();
 
   // Убираем курсы, которые могли записаться с биржи по ошибке (своп-инструмент
   // вместо валютной пары давал значения вроде 0,08 ₽).

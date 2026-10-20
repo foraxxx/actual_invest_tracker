@@ -6,6 +6,7 @@ import '../models/plan.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
 import 'currency_service.dart';
+import 'memo.dart';
 import 'moex_service.dart';
 import 'moex_sync_service.dart';
 import 'online_settings_service.dart';
@@ -283,7 +284,10 @@ class PayoutForecastService {
   }
 
   /// Прогноз по всему портфелю.
-  static ({double total, int fromExchange, int fromHistory}) portfolioForecast() {
+  static ({double total, int fromExchange, int fromHistory}) portfolioForecast() =>
+      Memo.get('payoutForecast', _portfolioForecast);
+
+  static ({double total, int fromExchange, int fromHistory}) _portfolioForecast() {
     double total = 0;
     int fromExchange = 0;
     int fromHistory = 0;
@@ -311,14 +315,17 @@ class PayoutForecastService {
   /// пользователя. Равномерное распределение остаётся последним запасным
   /// вариантом, когда никаких дат нет.
   static Map<String, double> portfolioForecastByMonth({DateTime? from}) =>
-      _forecastByMonth(from ?? DateTime.now()).totals;
+      (from == null ? _forecastByMonthToday() : _forecastByMonth(from)).totals;
 
   /// То же, но с разбивкой каждого месяца по бумагам: месяц → бумага → рубли.
   /// Нужна календарю выплат, чтобы показать, от каких бумаг ждать деньги.
   /// Сумма по бумагам месяца совпадает с [portfolioForecastByMonth] с
   /// точностью до копеек округления.
   static Map<String, Map<String, double>> portfolioForecastByMonthDetailed({DateTime? from}) =>
-      _forecastByMonth(from ?? DateTime.now()).detail;
+      (from == null ? _forecastByMonthToday() : _forecastByMonth(from)).detail;
+
+  static ({Map<String, double> totals, Map<String, Map<String, double>> detail}) _forecastByMonthToday() =>
+      Memo.get('payoutByMonth', () => _forecastByMonth(DateTime.now()));
 
   static ({Map<String, double> totals, Map<String, Map<String, double>> detail}) _forecastByMonth(
     DateTime now,

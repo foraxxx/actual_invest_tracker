@@ -74,8 +74,25 @@ class PriceHistoryCache {
     required DateTime from,
     String? market,
     String? board,
-  }) async {
-    final key = ticker.toUpperCase();
+  }) =>
+      _cached(
+        ticker.toUpperCase(),
+        from,
+        (since) => MoexService.fetchSecurityHistory(ticker, from: since, market: market, board: board),
+      );
+
+  /// История курса валюты к рублю с биржи — по тем же правилам.
+  static Future<List<MapEntry<DateTime, double>>> currency(String code, {required DateTime from}) =>
+      _cached('FX:$code', from, (since) => MoexService.fetchCurrencyHistory(code, from: since));
+
+  /// Сохранённая история курса без обращения к бирже.
+  static List<MapEntry<DateTime, double>> cachedCurrency(String code) => _read('FX:$code')?.points ?? const [];
+
+  static Future<List<MapEntry<DateTime, double>>> _cached(
+    String key,
+    DateTime from,
+    Future<List<MapEntry<DateTime, double>>> Function(DateTime since) fetch,
+  ) async {
     final cached = _read(key);
     final now = DateTime.now();
     final covers = cached != null && cached.points.isNotEmpty && !cached.from.isAfter(from);
@@ -83,12 +100,7 @@ class PriceHistoryCache {
       final at = cached.at;
       if (at.year == now.year && at.month == now.month && at.day == now.day) return cached.points;
       try {
-        final fresh = await MoexService.fetchSecurityHistory(
-          ticker,
-          from: cached.points.last.key.subtract(const Duration(days: 5)),
-          market: market,
-          board: board,
-        );
+        final fresh = await fetch(cached.points.last.key.subtract(const Duration(days: 5)));
         final merged = merge(cached.points, fresh);
         await _write(key, cached.from, merged);
         return merged;
@@ -97,7 +109,7 @@ class PriceHistoryCache {
       }
     }
     try {
-      final points = await MoexService.fetchSecurityHistory(ticker, from: from, market: market, board: board);
+      final points = await fetch(from);
       if (points.isNotEmpty) await _write(key, from, points);
       return points.isNotEmpty ? points : (cached?.points ?? const []);
     } catch (_) {

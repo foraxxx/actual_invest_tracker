@@ -8,6 +8,8 @@ import 'online_settings_service.dart';
 import 'sector_service.dart';
 import 'cash_service.dart';
 import 'financial_math.dart';
+import 'memo.dart';
+import 'portfolio_history_service.dart';
 
 /// Фильтр периода для статистики
 enum PeriodFilter { month1, month3, month6, year1, all }
@@ -188,6 +190,11 @@ class AnalyticsService {
   /// учитываются как денежные потоки, поэтому новые вложения не становятся
   /// прибылью сами по себе.
   static double profitForPeriod(PeriodFilter f, {DateTime? now}) {
+    if (now == null) return Memo.get('profit:${f.name}', () => _profitForPeriod(f, null));
+    return _profitForPeriod(f, now);
+  }
+
+  static double _profitForPeriod(PeriodFilter f, DateTime? now) {
     final end = now ?? DateTime.now();
     final start = periodStart(f, now: end);
     final startValue = start == null
@@ -250,15 +257,20 @@ class AnalyticsService {
     return map;
   }
 
-  static Map<String, HoldingInfo> currentHoldings() {
-    return holdingsAt();
-  }
+  /// Позиции по текущим ценам. Считаются один раз, пока не изменились
+  /// сделки или цены, — а нужны они на главной в десятке мест сразу.
+  static Map<String, HoldingInfo> currentHoldings() =>
+      Map.of(Memo.get('holdings', () => holdingsAt()));
+
+  /// Сделки по порядку — сортируются один раз, а не при каждом расчёте.
+  static List<Purchase> _sortedPurchases() =>
+      Memo.get('sortedPurchases', () => [...StorageService.purchases]..sort(compareTrades));
 
   /// Состояние позиций на конец [date]. Если дата не передана, используется
   /// текущая оценка, включая онлайн-котировку. Для исторического среза цена и
   /// валютный курс берутся не позднее указанной даты.
   static Map<String, HoldingInfo> holdingsAt({DateTime? date}) {
-    final purchases = [...StorageService.purchases]..sort(compareTrades);
+    final purchases = _sortedPurchases();
 
     final qty = <String, double>{};
     final costBasis = <String, double>{}; // в валюте бумаги — для отображения средней цены
@@ -303,8 +315,11 @@ class AnalyticsService {
       final manualPx = date == null
           ? ManualPriceService.get(ticker)
           : ManualPriceService.priceAt(ticker, date);
-      final displayPx =
-          date == null ? (priceFor(ticker) ?? manualPx ?? lastPx) : (manualPx ?? lastPx);
+      // На прошлую дату — цена закрытия биржи того дня, если история уже
+      // загружена; иначе, как раньше, цена последней сделки.
+      final displayPx = date == null
+          ? (priceFor(ticker) ?? manualPx ?? lastPx)
+          : (manualPx ?? PortfolioHistoryService.priceAt(ticker, date) ?? lastPx);
       result[ticker] = HoldingInfo(
         qty: q,
         avgCost: avgCost,
@@ -329,8 +344,10 @@ class AnalyticsService {
   /// лотам (это важно для корректного налогового учёта), поэтому число здесь
   /// может немного отличаться от "реализованного результата" в налоговом
   /// разделе — оба варианта корректны, это просто два разных метода учёта.
-  static double totalRealizedPnlRub() {
-    final purchases = [...StorageService.purchases]..sort(compareTrades);
+  static double totalRealizedPnlRub() => Memo.get('realizedPnl', _totalRealizedPnlRub);
+
+  static double _totalRealizedPnlRub() {
+    final purchases = _sortedPurchases();
 
     final qty = <String, double>{};
     final costBasisRub = <String, double>{};
@@ -385,7 +402,7 @@ class AnalyticsService {
   }
 
   static double currentPortfolioValueRub() =>
-      currentHoldings().values.fold(0.0, (s, h) => s + h.valueRub);
+      Memo.get('portfolioValue', () => currentHoldings().values.fold(0.0, (s, h) => s + h.valueRub));
 
   static double totalUnrealizedPnlRub() =>
       currentHoldings().values.fold(0.0, (s, h) => s + h.pnlRub);
@@ -419,8 +436,11 @@ class AnalyticsService {
   /// функция работает и когда портфель моложе выбранного интервала, и для
   /// «Всё время». Доходность считается методом Modified Dietz: каждый поток
   /// взвешивается по времени, которое деньги успели провести в портфеле.
-  static PeriodChange? portfolioChangeForPeriod(PeriodFilter f) {
-    final purchasesSorted = [...StorageService.purchases]..sort(compareTrades);
+  static PeriodChange? portfolioChangeForPeriod(PeriodFilter f) =>
+      Memo.get('change:${f.name}', () => _portfolioChangeForPeriod(f));
+
+  static PeriodChange? _portfolioChangeForPeriod(PeriodFilter f) {
+    final purchasesSorted = _sortedPurchases();
     if (purchasesSorted.isEmpty) return null;
     final end = DateTime.now();
     final requestedStart = periodStart(f, now: end);
@@ -471,7 +491,10 @@ class AnalyticsService {
     return PeriodChange(valueStart: valueStart, valueEnd: valueEnd, changeAbs: changeAbs, changePct: changePct);
   }
 
-  static List<MapEntry<DateTime, double>> portfolioValueTimeline() {
+  static List<MapEntry<DateTime, double>> portfolioValueTimeline() =>
+      List.of(Memo.get('valueTimeline', _portfolioValueTimeline));
+
+  static List<MapEntry<DateTime, double>> _portfolioValueTimeline() {
     if (StorageService.purchases.isEmpty) return [];
     final dates = <DateTime>{};
     for (final p in StorageService.purchases) {
@@ -519,7 +542,9 @@ class AnalyticsService {
     return list;
   }
 
-  static double? xirrPercent() {
+  static double? xirrPercent() => Memo.get('xirr', _xirrPercent);
+
+  static double? _xirrPercent() {
     final flows = <DatedCashFlow>[];
 
     for (final p in StorageService.purchases) {
@@ -544,7 +569,9 @@ class AnalyticsService {
   /// Time-weighted return: доходность самого портфеля без влияния размера и
   /// времени внешних пополнений/выводов. Денежный остаток входит в стоимость
   /// счёта; сделки и выплаты считаются внутренними движениями.
-  static double? twrPercent() {
+  static double? twrPercent() => Memo.get('twr', _twrPercent);
+
+  static double? _twrPercent() {
     final cash = CashService.summary();
     final dates = <DateTime>{
       ...StorageService.purchases.map((p) => p.date),
@@ -556,9 +583,34 @@ class AnalyticsService {
       ..sort();
     if (dates.length < 2) return null;
 
-    double cashAt(DateTime date) => cash.moves
-        .where((m) => !m.date.isAfter(date))
-        .fold(0.0, (sum, m) => sum + m.amountRub);
+    // Остаток на дату — по накопленным суммам и двоичному поиску, а не
+    // перебором всех движений для каждой даты.
+    final ascMoves = [...cash.moves]..sort((a, b) => a.date.compareTo(b.date));
+    final prefix = <double>[0];
+    final prefixExternal = <double>[0];
+    for (final m in ascMoves) {
+      prefix.add(prefix.last + m.amountRub);
+      final isExternal = m.kind == CashMoveKind.deposit ||
+          m.kind == CashMoveKind.withdrawal ||
+          m.kind == CashMoveKind.autoDeposit;
+      prefixExternal.add(prefixExternal.last + (isExternal ? m.amountRub : 0.0));
+    }
+    int countUpTo(DateTime date) {
+      var lo = 0;
+      var hi = ascMoves.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (ascMoves[mid].date.isAfter(date)) {
+          hi = mid;
+        } else {
+          lo = mid + 1;
+        }
+      }
+      return lo;
+    }
+
+    double cashAt(DateTime date) => prefix[countUpTo(date)];
+    double externalUpTo(DateTime date) => prefixExternal[countUpTo(date)];
     double accountAt(DateTime date) =>
         holdingsAt(date: date).values.fold(0.0, (sum, h) => sum + h.valueRub) +
         cashAt(date);
@@ -568,14 +620,7 @@ class AnalyticsService {
     var previousValue = accountAt(previousDate);
     for (final date in dates.skip(1)) {
       final endValue = accountAt(date);
-      final externalFlow = cash.moves
-          .where((m) =>
-              m.date.isAfter(previousDate) &&
-              !m.date.isAfter(date) &&
-              (m.kind == CashMoveKind.deposit ||
-                  m.kind == CashMoveKind.withdrawal ||
-                  m.kind == CashMoveKind.autoDeposit))
-          .fold(0.0, (sum, m) => sum + m.amountRub);
+      final externalFlow = externalUpTo(date) - externalUpTo(previousDate);
       if (previousValue > 1e-9) {
         periods.add(TwrPeriod(
           startValue: previousValue,
@@ -594,7 +639,10 @@ class AnalyticsService {
   /// сегодняшнему количеству бумаг в портфеле (а не к сумме, которая была
   /// выплачена тогда — количество бумаг могло меняться). Работает полностью
   /// офлайн: использует только уже введённые вручную дивиденды/купоны.
-  static Map<String, DividendForecast> dividendForecastByTicker() {
+  static Map<String, DividendForecast> dividendForecastByTicker() =>
+      Map.of(Memo.get('dividendForecast', _dividendForecastByTicker));
+
+  static Map<String, DividendForecast> _dividendForecastByTicker() {
     final holdings = currentHoldings();
     final cutoff = DateTime.now().subtract(const Duration(days: 365));
     final purchasesSorted = [...StorageService.purchases]..sort(compareTrades);

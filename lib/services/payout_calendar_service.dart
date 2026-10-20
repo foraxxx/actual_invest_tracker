@@ -1,5 +1,6 @@
 import 'analytics_service.dart';
 import 'currency_service.dart';
+import 'memo.dart';
 import 'payout_forecast_service.dart';
 import 'storage_service.dart';
 
@@ -75,6 +76,13 @@ class PayoutCalendarService {
   /// 12 месяцев года [year]. Прошедшие — полученное. Если [withForecast], то
   /// остаток текущего месяца и будущие месяцы дополняются прогнозом.
   static List<PayoutMonthCell> year(int year, {bool withForecast = true, DateTime? now}) {
+    if (now == null) {
+      return Memo.get('payoutYear:$year:$withForecast', () => _year(year, withForecast, null));
+    }
+    return _year(year, withForecast, now);
+  }
+
+  static List<PayoutMonthCell> _year(int year, bool withForecast, DateTime? now) {
     final today = now ?? DateTime.now();
     final received = _received();
     final forecast = withForecast
@@ -139,6 +147,11 @@ class PayoutCalendarService {
 
   /// Прогноз на 12 месяцев со следующего — для окна «Прогноз выплат».
   static List<PayoutMonthCell> next12({DateTime? now}) {
+    if (now == null) return Memo.get('payoutNext12', () => _next12(null));
+    return _next12(now);
+  }
+
+  static List<PayoutMonthCell> _next12(DateTime? now) {
     final today = now ?? DateTime.now();
     final forecast = PayoutForecastService.portfolioForecastByMonthDetailed(from: today);
     final first = DateTime(today.year, today.month + 1);
@@ -204,7 +217,9 @@ class PayoutCalendarService {
   }
 
   /// Полученные выплаты по месяцам — в рублях после налога, как в «Итогах».
-  static Map<String, List<PayoutItem>> _received() {
+  static Map<String, List<PayoutItem>> _received() => Memo.get('payoutsReceived', _receivedNow);
+
+  static Map<String, List<PayoutItem>> _receivedNow() {
     final map = <String, List<PayoutItem>>{};
     for (final i in StorageService.incomes) {
       final key = PayoutMonthCell.monthKey(i.date);
@@ -215,14 +230,21 @@ class PayoutCalendarService {
   }
 
   /// Название бумаги для списка: из сделок или выплат, иначе тикер.
-  static String nameOf(String ticker) {
-    final upper = ticker.toUpperCase();
-    for (final p in StorageService.purchases.reversed) {
-      if (p.ticker.toUpperCase() == upper && p.name.trim().isNotEmpty) return p.name.trim();
-    }
-    for (final i in StorageService.incomes) {
-      if (i.ticker.toUpperCase() == upper && i.name.trim().isNotEmpty) return i.name.trim();
-    }
-    return ticker;
-  }
+  static String nameOf(String ticker) => _names()[ticker.toUpperCase()] ?? ticker;
+
+  /// Названия всех бумаг одним словарём: раньше на каждую строку списка
+  /// перебирались все сделки и выплаты.
+  static Map<String, String> _names() => Memo.get('payoutNames', () {
+        final map = <String, String>{};
+        // Сначала выплаты, потом сделки по порядку: последняя сделка с
+        // непустым названием перезапишет остальное — как и раньше.
+        for (final i in StorageService.incomes) {
+          final upper = i.ticker.toUpperCase();
+          if (i.name.trim().isNotEmpty) map.putIfAbsent(upper, () => i.name.trim());
+        }
+        for (final p in StorageService.purchases) {
+          if (p.name.trim().isNotEmpty) map[p.ticker.toUpperCase()] = p.name.trim();
+        }
+        return map;
+      });
 }

@@ -1,5 +1,6 @@
 import '../models/deposit.dart';
 import 'currency_service.dart';
+import 'memo.dart';
 import 'storage_service.dart';
 
 /// Одно движение денег по счёту.
@@ -116,7 +117,11 @@ class CashService {
     );
   }
 
-  static CashSummary summary() {
+  /// Итог по счёту. Считается один раз, пока не изменились сделки,
+  /// пополнения или курсы, — на главной он нужен во многих местах.
+  static CashSummary summary() => Memo.get('cashSummary', _summary);
+
+  static CashSummary _summary() {
     final moves = <CashMove>[];
 
     for (final d in StorageService.deposits) {

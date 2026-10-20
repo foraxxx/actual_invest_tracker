@@ -64,14 +64,59 @@ class CurrencyService {
     }
   }
 
-  static List<RatePoint> _history(String currency) {
-    final raw = _box.get(currency);
-    if (raw == null) return [];
-    final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-    return list.map(RatePoint.fromJson).toList()..sort((a, b) => a.date.compareTo(b.date));
+  /// Разобранная история по валютам. Раньше JSON разбирался заново при
+  /// каждом пересчёте суммы в рубли — а их тысячи на одну перерисовку.
+  static final Map<String, List<RatePoint>> _parsed = {};
+
+  static List<RatePoint> _points(String currency) => _parsed[currency] ??= () {
+        final raw = _box.get(currency);
+        if (raw == null) return <RatePoint>[];
+        final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+        return list.map(RatePoint.fromJson).toList()..sort((a, b) => a.date.compareTo(b.date));
+      }();
+
+  static List<RatePoint> _history(String currency) => List.of(_points(currency));
+
+  /// Курс с биржи по дням — чтобы прошлые суммы считались по курсу той даты,
+  /// а не по ближайшему сохранённому вручную.
+  static final Map<String, List<MapEntry<DateTime, double>>> _market = {};
+
+  static void setMarketHistory(String currency, List<MapEntry<DateTime, double>> points) {
+    final clean = [
+      for (final p in points)
+        if (p.value >= minPlausibleRate) p,
+    ]..sort((a, b) => a.key.compareTo(b.key));
+    if (clean.isEmpty) return;
+    final old = _market[currency];
+    if (old != null && old.length == clean.length && old.last.key == clean.last.key && old.last.value == clean.last.value) {
+      return;
+    }
+    _market[currency] = clean;
+    version.value++;
+  }
+
+  /// Курс с биржи на дату: последнее закрытие не позже этой даты, если оно
+  /// не старше десяти дней.
+  static double? _marketRate(String currency, DateTime date) {
+    final points = _market[currency];
+    if (points == null || points.isEmpty) return null;
+    var lo = 0;
+    var hi = points.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (points[mid].key.isAfter(date)) {
+        hi = mid;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    if (lo == 0) return null;
+    final p = points[lo - 1];
+    return date.difference(p.key).inDays <= 10 ? p.value : null;
   }
 
   static Future<void> _saveHistory(String currency, List<RatePoint> points) async {
+    _parsed.remove(currency);
     points.sort((a, b) => a.date.compareTo(b.date));
     await _box.put(currency, jsonEncode(points.map((p) => p.toJson()).toList()));
   }
@@ -101,9 +146,19 @@ class CurrencyService {
   /// или раньше; если такой нет — самая ранняя известная точка.
   static double rateFor(String currency, {DateTime? date}) {
     if (currency == 'RUB') return 1.0;
-    final points = _history(currency);
+    final points = _points(currency);
     if (points.isEmpty) return _defaults[currency] ?? 1.0;
     final target = date ?? DateTime.now();
+
+    // На прошлую дату: курс, записанный ровно на этот день, важнее всего —
+    // его могли ввести вручную. Иначе — курс биржи на ту дату.
+    if (date != null) {
+      for (final p in points) {
+        if (p.date.year == date.year && p.date.month == date.month && p.date.day == date.day) return p.rate;
+      }
+      final market = _marketRate(currency, date);
+      if (market != null) return market;
+    }
 
     RatePoint? best;
     for (final p in points) {

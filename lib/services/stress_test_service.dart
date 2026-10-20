@@ -8,6 +8,7 @@ import 'analytics_service.dart';
 import 'appearance_service.dart';
 import 'beta_service.dart';
 import 'cash_service.dart';
+import 'memo.dart';
 import 'moex_sync_service.dart';
 import 'payout_forecast_service.dart';
 import 'sector_service.dart';
@@ -424,7 +425,14 @@ class StressTestService {
   /// облигации требуют большей доходности сверх ОФЗ.
   static double _spread(StressScenario s) => (-s.market * 0.04).clamp(-0.5, 2.0).toDouble();
 
+  /// Итог сценария. Запоминается, пока не изменились позиции, цены или
+  /// беты: на главной он нужен при каждой перерисовке.
   static StressResult run(StressScenario s, {DateTime? now}) {
+    if (now != null) return _run(s, now);
+    return Memo.get('stress:${s.market}:${s.rate}:${s.ruble}', () => _run(s, null));
+  }
+
+  static StressResult _run(StressScenario s, DateTime? now) {
     final today = now ?? DateTime.now();
     final snapshot = MoexSyncService.marketSnapshot.value;
     final impacts = <StressImpact>[];

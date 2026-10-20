@@ -116,7 +116,7 @@ class _Account {
     return _Account(moves, timeline);
   }
 
-  static bool external(CashMove m) =>
+  static bool isExternal(CashMove m) =>
       m.kind == CashMoveKind.deposit || m.kind == CashMoveKind.autoDeposit || m.kind == CashMoveKind.withdrawal;
 
   DateTime? get start => moves.isEmpty ? null : moves.first.date;
@@ -151,7 +151,7 @@ class _Account {
   /// Пополнения и выводы в промежутке (from, to].
   List<(DateTime, double)> flows(DateTime from, DateTime to, {bool includeFrom = false}) => [
         for (final m in moves)
-          if (external(m) &&
+          if (isExternal(m) &&
               (includeFrom ? !m.date.isBefore(from) : m.date.isAfter(from)) &&
               !m.date.isAfter(to))
             (m.date, m.amountRub),
@@ -185,7 +185,6 @@ class RealReturnService {
     return (endValue - startValue - sum) / base;
   }
 
-  static DateTime _monthEnd(int year, int month) => DateTime(year, month + 1, 0, 23, 59, 59);
 
   /// Доходность портфеля на отрезке, %. Отрезок может начинаться до первой
   /// операции — тогда счёт на начало пуст.

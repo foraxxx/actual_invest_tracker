@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:invest_tracker/services/beta_service.dart';
 import 'package:invest_tracker/services/cbr_service.dart';
+import 'package:invest_tracker/services/currency_service.dart';
 import 'package:invest_tracker/services/price_history_cache.dart';
 import 'package:invest_tracker/services/real_return_service.dart';
 import 'package:invest_tracker/services/stress_test_service.dart';
@@ -17,6 +19,7 @@ void main() {
     hiveDir = await Directory.systemTemp.createTemp('invest_tracker_cbr_test_');
     Hive.init(hiveDir.path);
     await CbrService.init();
+    await CurrencyService.init();
   });
 
   Future<void> flat({double key = 10, double infl = 10}) => CbrService.saveMonths([
@@ -158,5 +161,53 @@ void main() {
     final merged = PriceHistoryCache.merge(old, fresh);
     expect(merged.map((e) => e.value), [100.0, 101.5, 102.0]);
     expect(merged.last.key, DateTime(2026, 1, 14));
+  });
+
+  test('ключевая ставка из веб-сервиса Банка России: только дни изменений', () {
+    const xml = '''<?xml version="1.0" encoding="utf-8"?><soap:Envelope><soap:Body>
+<KeyRateXMLResult><KeyRate xmlns="">
+<KR><DT>2024-12-19T00:00:00+03:00</DT><Rate>21.00</Rate></KR>
+<KR><DT>2024-12-20T00:00:00+03:00</DT><Rate>21.00</Rate></KR>
+<KR><DT>2025-06-09T00:00:00+03:00</DT><Rate>20.00</Rate></KR>
+<KR><DT>2025-06-10T00:00:00+03:00</DT><Rate>20.00</Rate></KR>
+</KeyRate></KeyRateXMLResult></soap:Body></soap:Envelope>''';
+    final changes = CbrService.parseKeyRateXml(xml);
+    expect(changes, hasLength(2));
+    expect(changes.first.$1, DateTime(2024, 12, 19));
+    expect(changes.last.$2, 20);
+  });
+
+  test('ставка по дням точнее помесячной', () async {
+    await CbrService.saveMonths(const [CbrMonth(year: 2025, month: 6, keyRate: 21, inflation: 9)]);
+    await CbrService.saveDailyKeyRates([(DateTime(2025, 1, 1), 21), (DateTime(2025, 6, 9), 20)]);
+    expect(CbrService.keyRateAt(DateTime(2025, 6, 8)), 21);
+    expect(CbrService.keyRateAt(DateTime(2025, 6, 9)), 20);
+    final f = CbrService.keyRateFactor(DateTime(2025, 6, 1), DateTime(2025, 6, 17))!;
+    // 8 дней по 21% и 8 дней по 20%.
+    final want = math.pow(1.21, 8 / 365) * math.pow(1.20, 8 / 365);
+    expect(f, closeTo(want, 1e-9));
+    await CbrService.saveDailyKeyRates(const []);
+  });
+
+  test('инфляция вручную — если с сайта её нет', () async {
+    await CbrService.saveMonths(const [CbrMonth(year: 2025, month: 6, keyRate: 21)]);
+    expect(CbrService.hasInflation, isFalse);
+    expect(CbrService.inflationFactor(DateTime(2025, 1, 1), DateTime(2026, 1, 1)), isNull);
+    await CbrService.setManualInflation(10);
+    expect(CbrService.hasInflation, isTrue);
+    expect(CbrService.inflationFactor(DateTime(2025, 1, 1), DateTime(2026, 1, 1)), closeTo(1.10, 0.002));
+    await CbrService.setManualInflation(null);
+  });
+
+  test('прошлые суммы — по курсу биржи той даты, введённый вручную курс важнее', () async {
+    CurrencyService.setMarketHistory('USD', [
+      MapEntry(DateTime(2025, 3, 3), 88.0),
+      MapEntry(DateTime(2025, 3, 4), 89.0),
+    ]);
+    expect(CurrencyService.rateFor('USD', date: DateTime(2025, 3, 4, 15)), 89.0);
+    // Выходные — последний торговый день.
+    expect(CurrencyService.rateFor('USD', date: DateTime(2025, 3, 8)), 89.0);
+    await CurrencyService.setRateAt('USD', DateTime(2025, 3, 4), 95);
+    expect(CurrencyService.rateFor('USD', date: DateTime(2025, 3, 4, 15)), 95.0);
   });
 }

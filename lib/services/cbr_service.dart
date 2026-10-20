@@ -70,7 +70,99 @@ class CbrService {
     return _cache = result;
   }
 
-  static bool get hasData => _months.isNotEmpty;
+  /// Есть ли хоть что-то для расчётов: таблица по месяцам, ставка по дням
+  /// или инфляция, указанная вручную.
+  static bool get hasData => _months.isNotEmpty || _daily.isNotEmpty || manualInflation != null;
+
+  /// Есть ли инфляция — с сайта или указанная вручную.
+  static bool get hasInflation => _infl.values.isNotEmpty || manualInflation != null;
+
+  /// Инфляция, указанная вручную, % за год. Используется, только если с
+  /// сайта Банка России её получить не удалось.
+  static double? get manualInflation => double.tryParse(_box.get('manualInflation') ?? '');
+
+  static Future<void> setManualInflation(double? value) async {
+    if (value == null) {
+      await _box.delete('manualInflation');
+    } else {
+      await _box.put('manualInflation', '$value');
+    }
+    _inflSeries = null;
+    version.value++;
+  }
+
+  // --- Ключевая ставка по дням (веб-сервис Банка России) ---
+
+  static List<(DateTime, double)>? _dailyCache;
+
+  /// Даты изменения ключевой ставки и её новые значения, по возрастанию.
+  static List<(DateTime, double)> get _daily => _dailyCache ??= () {
+        final raw = _box.get('keyDaily');
+        if (raw == null) return <(DateTime, double)>[];
+        try {
+          return [
+            for (final p in jsonDecode(raw) as List)
+              (_dayFromInt((p as List)[0] as int), (p[1] as num).toDouble()),
+          ];
+        } catch (_) {
+          return <(DateTime, double)>[];
+        }
+      }();
+
+  static int _dayToInt(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
+
+  static DateTime _dayFromInt(int v) => DateTime(v ~/ 10000, v ~/ 100 % 100, v % 100);
+
+  static Future<void> saveDailyKeyRates(List<(DateTime, double)> changes) async {
+    await _box.put('keyDaily', jsonEncode([
+      for (final c in changes) [_dayToInt(c.$1), c.$2],
+    ]));
+    _dailyCache = null;
+    version.value++;
+  }
+
+  /// Разбирает ответ веб-сервиса Банка России «KeyRateXML»: записи вида
+  /// `<DT>2024-12-20T00:00:00+03:00</DT><Rate>21.00</Rate>`. Возвращает
+  /// только дни, когда ставка менялась.
+  static List<(DateTime, double)> parseKeyRateXml(String xml) {
+    final pattern = RegExp(r'<DT>\s*(\d{4})-(\d{2})-(\d{2})[^<]*</DT>\s*<Rate>\s*([\d.,]+)\s*</Rate>');
+    final points = <(DateTime, double)>[];
+    for (final m in pattern.allMatches(xml)) {
+      final rate = double.tryParse(m.group(4)!.replaceAll(',', '.'));
+      if (rate == null) continue;
+      points.add((DateTime(int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!)), rate));
+    }
+    points.sort((a, b) => a.$1.compareTo(b.$1));
+    final changes = <(DateTime, double)>[];
+    for (final p in points) {
+      if (changes.isEmpty || changes.last.$2 != p.$2) changes.add(p);
+    }
+    return changes;
+  }
+
+  static Future<List<(DateTime, double)>> _fetchDailyKeyRates(DateTime to) async {
+    String iso(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}T00:00:00';
+    final body = '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        'xmlns:xsd="http://www.w3.org/2001/XMLSchema" '
+        'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+        '<soap:Body><KeyRateXML xmlns="http://web.cbr.ru/">'
+        '<fromDate>2013-09-13T00:00:00</fromDate><ToDate>${iso(to)}</ToDate>'
+        '</KeyRateXML></soap:Body></soap:Envelope>';
+    final response = await http
+        .post(
+          Uri.parse('https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx'),
+          headers: {
+            'Content-Type': 'text/xml; charset=utf-8',
+            'SOAPAction': '"http://web.cbr.ru/KeyRateXML"',
+          },
+          body: body,
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}');
+    return parseKeyRateXml(utf8.decode(response.bodyBytes, allowMalformed: true));
+  }
 
   static DateTime? get fetchedAt => DateTime.tryParse(_box.get('at') ?? '');
 
@@ -104,8 +196,18 @@ class CbrService {
     final at = fetchedAt;
     if (!force && at != null && DateTime.now().difference(at) < const Duration(days: 7)) return;
     _loading = true;
+    final now = DateTime.now();
+    // Ключевая ставка по дням — из официального веб-сервиса. Он не зависит
+    // от вёрстки сайта, поэтому работает, даже если страница поменяется.
+    var dailyOk = false;
     try {
-      final now = DateTime.now();
+      final changes = await _fetchDailyKeyRates(now);
+      if (changes.isNotEmpty) {
+        await saveDailyKeyRates(changes);
+        dailyOk = true;
+      }
+    } catch (_) {}
+    try {
       String d(DateTime x) =>
           '${x.day.toString().padLeft(2, '0')}.${x.month.toString().padLeft(2, '0')}.${x.year}';
       final uri = Uri.parse('https://www.cbr.ru/hd_base/infl/').replace(queryParameters: {
@@ -120,9 +222,12 @@ class CbrService {
       await saveMonths(months);
       error.value = null;
     } catch (_) {
-      error.value = hasData
-          ? 'Не удалось обновить данные Банка России — считаем по сохранённым'
-          : 'Не удалось загрузить данные Банка России';
+      if (dailyOk) await _box.put('at', DateTime.now().toIso8601String());
+      error.value = _months.isNotEmpty
+          ? 'Не удалось обновить инфляцию с сайта Банка России — считаем по сохранённой'
+          : (manualInflation != null
+              ? null
+              : 'Не удалось загрузить инфляцию с сайта Банка России. Её можно указать вручную');
     } finally {
       _loading = false;
     }
@@ -179,15 +284,45 @@ class CbrService {
 
   /// Значение за месяц или ближайший известный до него (а если раньше ничего
   /// нет — первый известный после).
-  static double? _valueAt(int ord, bool inflation) => (inflation ? _infl : _key).at(ord);
+  static double? _valueAt(int ord, bool inflation) =>
+      (inflation ? _infl : _key).at(ord) ?? (inflation ? manualInflation : null);
 
   /// Ключевая ставка в месяце даты [d]. После последнего известного месяца
   /// действует последняя ставка — она не меняется, пока её не пересмотрят.
-  static double? keyRateAt(DateTime d) => _valueAt(_ord(d), false);
+  static double? keyRateAt(DateTime d) {
+    final daily = _daily;
+    if (daily.isNotEmpty) {
+      var lo = 0;
+      var hi = daily.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (daily[mid].$1.isAfter(d)) {
+          hi = mid;
+        } else {
+          lo = mid + 1;
+        }
+      }
+      return lo == 0 ? daily.first.$2 : daily[lo - 1].$2;
+    }
+    return _valueAt(_ord(d), false);
+  }
+
+  /// Ближайшая дата после [cursor], когда ставка могла поменяться: день
+  /// решения Банка России, а без дневных данных — начало следующего месяца.
+  static DateTime _nextKeyChange(DateTime cursor) {
+    final nextMonth = DateTime(cursor.year, cursor.month + 1);
+    final daily = _daily;
+    if (daily.isEmpty) return nextMonth;
+    for (final c in daily) {
+      if (c.$1.isAfter(cursor)) return c.$1;
+    }
+    return DateTime(9999);
+  }
 
   /// Инфляция за 12 месяцев по данным за месяц даты [d] — только если Банк
   /// России её уже опубликовал. Будущее не дорисовываем.
-  static double? inflationIn(DateTime d) => _months[_ord(d)]?.inflation;
+  static double? inflationIn(DateTime d) =>
+      _months[_ord(d)]?.inflation ?? (_infl.values.isEmpty ? manualInflation : null);
 
   /// Средняя ключевая ставка за период, по дням.
   static double? averageKeyRate(DateTime from, DateTime to) {
@@ -196,7 +331,7 @@ class CbrService {
     double days = 0;
     var cursor = from;
     while (cursor.isBefore(to)) {
-      final next = DateTime(cursor.year, cursor.month + 1);
+      final next = _nextKeyChange(cursor);
       final end = next.isBefore(to) ? next : to;
       final rate = keyRateAt(cursor);
       if (rate == null) return null;
@@ -236,9 +371,9 @@ class CbrService {
     var factor = 1.0;
     var cursor = from;
     while (cursor.isBefore(to)) {
-      final nextMonth = DateTime(cursor.year, cursor.month + 1);
-      final end = nextMonth.isBefore(to) ? nextMonth : to;
-      final rate = _valueAt(_ord(cursor), false);
+      final next = _nextKeyChange(cursor);
+      final end = next.isBefore(to) ? next : to;
+      final rate = keyRateAt(cursor);
       if (rate == null) return null;
       final days = end.difference(cursor).inMilliseconds / Duration.millisecondsPerDay;
       factor *= math.pow(1 + rate / 100, days / 365).toDouble();
