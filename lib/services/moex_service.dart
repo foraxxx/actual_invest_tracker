@@ -52,6 +52,11 @@ class MoexQuote {
 
   final DateTime fetchedAt;
 
+  /// Тип бумаги по бирже (SECTYPE): 1 — обыкновенная акция, 2 —
+  /// привилегированная, 9 — пай закрытого ПИФ, A — интервального, B —
+  /// открытого, J — биржевого ПИФ, N — ETF. Пусто, если биржа не прислала.
+  final String secType;
+
   /// Цена закрытия прошлого торгового дня, в тех же единицах, что [price]
   /// (у облигаций — уже в рублях). По ней считается изменение «за сегодня».
   final double? prevClose;
@@ -74,7 +79,42 @@ class MoexQuote {
     this.couponPercent,
     this.couponPeriodDays,
     this.prevClose,
+    this.secType = '',
   });
+
+  /// Вид бумаги для подписи: «Акция», «БПИФ», «ЗПИФ», «ПИФ», «ETF»,
+  /// «Облигация», «ОФЗ». Паи фондов торгуются и в основном режиме акций
+  /// (TQBR), поэтому одного режима торгов мало — смотрим тип с биржи и
+  /// название.
+  String get kindLabel {
+    if (board == 'TQOB') return 'ОФЗ';
+    if (isBond || board == 'TQCB') return 'Облигация';
+    final name = shortName.toUpperCase();
+    switch (secType.toUpperCase()) {
+      case 'J':
+        return 'БПИФ';
+      case '9':
+        return 'ЗПИФ';
+      case 'A':
+      case 'B':
+        return 'ПИФ';
+      case 'N':
+        return 'ETF';
+    }
+    if (name.contains('ЗПИФ')) return 'ЗПИФ';
+    if (name.contains('БПИФ')) return 'БПИФ';
+    if (name.contains('ПИФ')) return 'ПИФ';
+    if (board == 'TQTF') return 'БПИФ';
+    if (board == 'TQIF') return 'ЗПИФ';
+    if (board == 'TQBR') return 'Акция';
+    return 'Бумага';
+  }
+
+  /// Пай фонда (БПИФ, ЗПИФ, ПИФ, ETF), а не акция.
+  bool get isFund => const {'БПИФ', 'ЗПИФ', 'ПИФ', 'ETF'}.contains(kindLabel);
+
+  /// Акция компании.
+  bool get isShare => kindLabel == 'Акция';
 
   /// Выпуск в валюте: номинал не в рублях.
   bool get isForeignCurrency {
@@ -178,6 +218,7 @@ class MoexService {
   static const List<({String market, String board})> boards = [
     (market: 'shares', board: 'TQBR'), // акции
     (market: 'shares', board: 'TQTF'), // биржевые фонды
+    (market: 'shares', board: 'TQIF'), // паи закрытых и интервальных ПИФ
     (market: 'bonds', board: 'TQCB'), // корпоративные облигации
     (market: 'bonds', board: 'TQOB'), // ОФЗ
   ];
@@ -186,7 +227,7 @@ class MoexService {
   /// килобайт, а на мобильном интернете это заметно.
   static const _securitiesColumns =
       'SECID,SHORTNAME,ISIN,PREVPRICE,PREVLEGALCLOSEPRICE,FACEVALUE,FACEUNIT,MATDATE,LOTSIZE,'
-      'COUPONPERCENT,COUPONVALUE,COUPONPERIOD';
+      'COUPONPERCENT,COUPONVALUE,COUPONPERIOD,SECTYPE';
   static const _marketdataColumns =
       'SECID,LAST,LCURRENTPRICE,MARKETPRICE,UPDATETIME,VALTODAY,YIELD';
 
@@ -205,7 +246,7 @@ class MoexService {
       for (final ticker in tickers) {
         final upper = ticker.toUpperCase();
         final orderedBoards = upper.startsWith('SU') || upper.startsWith('RU')
-            ? [...boards.skip(2), ...boards.take(2)]
+            ? [...boards.where((b) => b.market == 'bonds'), ...boards.where((b) => b.market != 'bonds')]
             : boards;
         for (final board in orderedBoards) {
           try {
@@ -350,6 +391,7 @@ class MoexService {
         couponPeriodDays: _toDouble(sec['COUPONPERIOD'])?.round(),
         fetchedAt: now,
         prevClose: prevClose,
+        secType: '${sec['SECTYPE'] ?? ''}',
       ));
     }
 

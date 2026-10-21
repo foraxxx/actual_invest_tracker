@@ -378,7 +378,7 @@ class DividendHistoryService {
   static List<String> marketStocks() {
     final list = <String>{
       for (final q in MoexSyncService.marketSnapshot.value.values)
-        if (q.board == 'TQBR') _key(q.ticker),
+        if (q.board == 'TQBR' && q.isShare) _key(q.ticker),
     }.toList()
       ..sort();
     return list;

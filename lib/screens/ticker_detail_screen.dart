@@ -204,6 +204,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     for (final p in StorageService.purchases) {
       if (p.ticker == widget.ticker) return p.type == AssetType.stock;
     }
+    if (MoexSyncService.marketSnapshot.value[widget.ticker.toUpperCase()]?.isFund == true) return false;
     return !_isBond;
   }
 
@@ -1794,9 +1795,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         return purchase.type;
       }
     }
-    return MoexSyncService.marketSnapshot.value[ticker.toUpperCase()]?.isBond == true
-        ? AssetType.bond
-        : AssetType.stock;
+    final quote = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()];
+    if (quote?.isBond == true) return AssetType.bond;
+    // Паи фондов из основного режима торгов — фонд, а не акция.
+    if (quote?.isFund == true) return AssetType.etf;
+    return AssetType.stock;
   }
 
 }

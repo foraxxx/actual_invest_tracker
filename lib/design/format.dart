@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import '../models/purchase.dart';
 
 /// Форматирование чисел и дат в одном месте — чтобы «1 234 567 ₽» выглядело
@@ -119,6 +120,20 @@ class Fmt {
   }
 
   /// Короткая дата для подписей над столбиками: «9 дек», «6 мая».
+  /// Сумма на одну бумагу с тем же числом знаков, что у дивиденда [like]
+  /// (по умолчанию — у самой суммы): 0,85 → два знака, 0,0296 → четыре.
+  /// Не меньше двух и не больше четырёх.
+  static String perShare(double v, {double? like}) => group(v, decimals: decimalsOf(like ?? v));
+
+  /// Сколько знаков после запятой у числа на самом деле: от 2 до 4.
+  static int decimalsOf(double v) {
+    for (var d = 2; d < 4; d++) {
+      final scaled = v.abs() * math.pow(10, d);
+      if ((scaled - scaled.round()).abs() < 1e-6) return d;
+    }
+    return 4;
+  }
+
   static String dayShort(DateTime d) => '${d.day} ${d.month == 5 ? 'мая' : _months[d.month - 1]}';
 
   static String dateLong(DateTime d) => '${d.day} ${_monthsFull[d.month - 1]} ${d.year}';

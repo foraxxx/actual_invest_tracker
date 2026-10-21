@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Обновление по расписанию системы выключено (updatePeriodMillis = 0):
      цены подтягивает WidgetUpdateWorker раз в полчаса и только в торговые
-     часы, а приложение присылает свежий снимок само. -->
+     часы, а приложение присылает свежий снимок само.
+     Наибольший размер — 4×2 ячейки: больше виджет не растягивается
+     (maxResizeWidth/Height, Android 12 и новее). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
     android:minHeight="40dp"
@@ -9,8 +11,8 @@
     android:minResizeHeight="40dp"
     android:targetCellWidth="4"
     android:targetCellHeight="2"
-    android:maxResizeWidth="600dp"
-    android:maxResizeHeight="400dp"
+    android:maxResizeWidth="350dp"
+    android:maxResizeHeight="210dp"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:initialLayout="@layout/widget_small"

@@ -40,5 +40,12 @@ void main() {
       expect(Fmt.dayShort(DateTime(2026, 12, 9)), '9 дек');
       expect(Fmt.dayShort(DateTime(2024, 5, 6)), '6 мая');
     });
+
+    test('per-share amounts keep 4 digits below one ruble', () {
+      expect(Fmt.perShare(0.0296), '0,0296');
+      expect(Fmt.perShare(535), '535,00');
+      expect(Fmt.perShare(0.7395, like: 0.85), '0,74');
+      expect(Fmt.perShare(0.025752, like: 0.0296), '0,0258');
+    });
   });
 }

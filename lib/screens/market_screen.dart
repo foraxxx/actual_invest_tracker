@@ -240,19 +240,12 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
-  static String _typeOf(String board) => switch (board) {
-        'TQBR' => 'Акция',
-        'TQTF' => 'Фонд',
-        'TQCB' => 'Облигация',
-        'TQOB' => 'ОФЗ',
-        _ => 'Бумага',
-      };
-
-  static Color _typeColor(String board) => switch (board) {
-        'TQBR' => AppColors.info,
-        'TQTF' => AppColors.violet,
-        'TQCB' => AppColors.gold,
-        'TQOB' => AppColors.cyan,
+  static Color _typeColor(String label) => switch (label) {
+        'Акция' => AppColors.info,
+        'БПИФ' || 'ETF' => AppColors.violet,
+        'ЗПИФ' || 'ПИФ' => AppColors.positive,
+        'Облигация' => AppColors.gold,
+        'ОФЗ' => AppColors.cyan,
         _ => AppColors.neutral,
       };
 
@@ -260,7 +253,8 @@ class _MarketScreenState extends State<MarketScreen> {
   /// Пустой фильтр пропускает всё.
   bool _matchesFilter(MoexQuote q, Set<String> owned) {
     if (_filter.kinds.isNotEmpty) {
-      final kind = MarketKindX.fromBoard(q.board);
+      // Паи фондов из основного режима — в «Фонды», а не в «Акции».
+      final kind = q.isFund ? MarketKind.funds : MarketKindX.fromBoard(q.board);
       if (kind == null || !_filter.kinds.contains(kind)) return false;
     }
     if (_filter.ownedOnly && !owned.contains(q.ticker)) return false;
@@ -1333,7 +1327,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
               const SizedBox(height: 3),
-              TagChip(text: _typeOf(q.board), color: _typeColor(q.board), fontSize: 9),
+              TagChip(text: q.kindLabel, color: _typeColor(q.kindLabel), fontSize: 9),
             ],
           ),
           ValueListenableBuilder<int>(

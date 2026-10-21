@@ -82,7 +82,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
     AppearanceService.setUi(_modeKey, growth ? 'growth' : 'yield');
   }
 
-  String _amount(double v) => Fmt.group(v, decimals: 2);
+  String _amount(double v) => Fmt.perShare(v);
 
   @override
   Widget build(BuildContext context) {
@@ -421,13 +421,13 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
   }
 
   Widget _incomeRow(BuildContext context, Income i, bool hidden) {
-    // На акцию — дивиденд из истории выплат. Если его там нет — сумма до
-    // налога, делённая на число акций на дату выплаты.
+    // На акцию — то, что пришло на счёт (после налога), делённое на число
+    // акций на дату отсечки. Если отсечки нет в истории — на дату выплаты.
     final info = DividendTaxService.infoFor(i);
     final qty = info != null
         ? info.shares
         : AnalyticsService.holdingsAt(date: DateTime(i.date.year, i.date.month, i.date.day, 23, 59, 59))[i.ticker]?.qty ?? 0;
-    final perShare = info != null ? info.record.amount : (qty > 0 ? i.amountGross / qty : null);
+    final perShare = qty > 0 ? i.amountNet / qty : null;
     return Dismissible(
       key: Key('div-${i.id}'),
       direction: DismissDirection.endToStart,
@@ -452,7 +452,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
                   style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: AppColors.positive),
                 ),
                 if (perShare != null)
-                  Text('${_amount(perShare)} ₽ на акцию', style: TextStyle(fontSize: 11, color: context.dim)),
+                  Text('${Fmt.perShare(perShare, like: info?.record.amount)} ₽ на акцию', style: TextStyle(fontSize: 11, color: context.dim)),
               ],
             ),
           ],

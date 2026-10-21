@@ -684,20 +684,16 @@ class BudgetService {
     await _save((existing ?? BudgetMonthData(year: y, month: m)).copyWith(filled: true));
   }
 
-  /// При смене месяца: если новый месяц ещё не заполнен, он копируется из
-  /// прошлого. Срабатывает один раз на месяц — после сброса месяц остаётся
-  /// пустым.
+  /// При смене месяца экран бюджета переключается на новый месяц. Ничего не
+  /// копируется: создать месяц или скопировать прошлый решает пользователь.
   static Future<void> checkMonthChange() async {
     final now = _currentOrd;
     final seen = int.tryParse(_box.get('meta:seen') ?? '');
     if (seen == now) return;
     await _box.put('meta:seen', '$now');
     if (seen == null) return;
-    final (y, m) = _fromOrd(now);
-    if (!isFilled(y, m)) {
-      final prev = previousFilled(y, m);
-      if (prev != null) await copyMonth(prev, (y, m));
-    }
+    // Новый месяц только открывается. Создать его заново или скопировать
+    // прошлый — решает пользователь.
     version.value++;
   }
 

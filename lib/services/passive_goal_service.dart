@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'analytics_service.dart';
+import 'memo.dart';
 import 'goal_service.dart';
 import 'iis_service.dart';
 import 'payout_forecast_service.dart';
@@ -183,13 +184,19 @@ class PassiveGoalService {
   PassiveGoalService._();
 
   static String? _cacheKey;
+
+  /// Забыть посчитанное — после импорта бэкапа.
+  static void resetCache() {
+    _cacheKey = null;
+    _cache = null;
+  }
   static PassivePlan? _cache;
 
   static PassivePlan plan(PassiveGoal goal) {
     final value = AnalyticsService.currentPortfolioValueRub();
     final today = DateTime.now();
     final market = marketYield;
-    final key = '${jsonEncode(goal.toJson())}|${(value / 1000).round()}|${PayoutForecastService.version.value}|'
+    final key = '${Memo.stamp}|${jsonEncode(goal.toJson())}|${(value / 1000).round()}|${PayoutForecastService.version.value}|'
         '$market|${today.year}-${today.month}-${today.day}';
     if (key == _cacheKey && _cache != null) return _cache!;
     final saving = goal.monthlySaving ?? GoalService.suggestedMonthlySaving();

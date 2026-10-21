@@ -13,7 +13,6 @@ import '../services/backup_service.dart';
 import '../services/backup_settings_service.dart';
 import '../services/budget_service.dart';
 import '../services/currency_service.dart';
-import '../services/dividend_history_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_settings_service.dart';
 import '../services/portfolio_service.dart';
@@ -659,8 +658,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           AppPageRoute(builder: (_) => const BrokerImportScreen()),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      const _DividendLoadRow(),
                       const SizedBox(height: 18),
                       const _BackupCryptoSection(),
                       const SizedBox(height: 18),
@@ -1412,102 +1409,6 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
               ),
             ],
           ],
-        );
-      },
-    );
-  }
-}
-
-/// Временная кнопка: загрузить историю дивидендов всех акций биржи, чтобы
-/// потом встроить её в приложение. Загрузка идёт в фоне и не прерывается,
-/// если уйти с экрана.
-class _DividendLoadRow extends StatelessWidget {
-  const _DividendLoadRow();
-
-  /// Пройдено, не удалось, всего, текущая бумага.
-  static final ValueNotifier<(int, int, int, String)?> _progress = ValueNotifier(null);
-
-  Future<void> _start(BuildContext context) async {
-    if (_progress.value != null) return;
-    if (!OnlineSettingsService.enabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Включите загрузку данных с биржи в настройках')),
-      );
-      return;
-    }
-    final tickers = DividendHistoryService.marketStocks();
-    if (tickers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Список акций биржи ещё не загрузился. Откройте вкладку «Биржа» и попробуйте снова')),
-      );
-      return;
-    }
-    final messenger = ScaffoldMessenger.of(context);
-    _progress.value = (0, 0, tickers.length, '');
-    try {
-      await DividendHistoryService.refreshAll(
-        tickers,
-        parallel: 4,
-        onProgress: (d, f, t, c) => _progress.value = (d, f, t, c),
-      );
-      messenger.showSnackBar(SnackBar(
-        content: Text('Готово. Акций с историей дивидендов: ${DividendHistoryService.storedCount}. '
-            'Теперь сохраните бэкап без шифрования'),
-      ));
-    } finally {
-      _progress.value = null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<(int, int, int, String)?>(
-      valueListenable: _progress,
-      builder: (context, p, _) {
-        return Pressable(
-          onTap: () => _start(context),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-            decoration: BoxDecoration(
-              color: context.isDark ? Colors.white.withOpacity(0.035) : AppColors.lightSurfaceHigh,
-              borderRadius: AppRadius.all(AppRadius.sm),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.history_rounded, size: 19, color: context.accent),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Загрузить историю дивидендов всех акций',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  p == null
-                      ? 'Временная кнопка. Займёт несколько минут. Потом сохраните бэкап без шифрования и пришлите его — история войдёт в приложение'
-                      : 'Пройдено ${p.$1} из ${p.$3}${p.$2 > 0 ? ', не загрузилось ${p.$2}' : ''}. '
-                          '${p.$4.isEmpty ? '' : 'Сейчас: ${p.$4}. '}Можно уйти с экрана — загрузка продолжится',
-                  style: TextStyle(fontSize: 11.3, height: 1.35, color: context.dim),
-                ),
-                if (p != null) ...[
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: LinearProgressIndicator(
-                      value: p.$3 == 0 ? null : p.$1 / p.$3,
-                      minHeight: 4,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
         );
       },
     );

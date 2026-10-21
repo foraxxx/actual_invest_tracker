@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'analytics_service.dart';
+import 'memo.dart';
 import 'cash_service.dart';
 import 'portfolio_service.dart';
 import 'value_forecast_service.dart';
@@ -254,6 +255,13 @@ class GoalService {
   }
 
   static String? _cacheKey;
+
+  /// Забыть посчитанное — после импорта бэкапа.
+  static void resetCache() {
+    _cacheKey = null;
+    _cache = null;
+    version.value++;
+  }
   static GoalPlan? _cache;
 
   /// Расчёт по цели. Главная перерисовывается при каждом обновлении цен,
@@ -262,7 +270,9 @@ class GoalService {
   static GoalPlan plan(FinancialGoal goal, {double? currentValue}) {
     final current = currentValue ?? AnalyticsService.currentPortfolioValueRub();
     final today = DateTime.now();
-    final key = '${goal.amount}|${goal.deadline}|${goal.monthlySaving}|${(current / 1000).round()}|'
+    // Memo.stamp — любые изменения исходных данных (сделки, выплаты, прогноз,
+    // импорт бэкапа): тогда темп роста считается заново.
+    final key = '${Memo.stamp}|${goal.amount}|${goal.deadline}|${goal.monthlySaving}|${(current / 1000).round()}|'
         '${today.year}-${today.month}-${today.day}';
     if (key == _cacheKey && _cache != null && _cache!.goal.name == goal.name) return _cache!;
     final result = _plan(goal, current);

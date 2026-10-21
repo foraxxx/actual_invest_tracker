@@ -39,11 +39,12 @@ class TickerAvatar extends StatelessWidget {
   /// тикера: у облигаций он начинается с RU000, у ОФЗ — с SU.
   IconData? get _kindIcon {
     final upper = ticker.toUpperCase();
-    final board = MoexSyncService.marketSnapshot.value[upper]?.board;
+    final quote = MoexSyncService.marketSnapshot.value[upper];
+    final board = quote?.board;
 
     if (board == 'TQOB' || upper.startsWith('SU')) return Icons.account_balance_rounded;
     if (board == 'TQCB' || upper.startsWith('RU000')) return Icons.receipt_long_rounded;
-    if (board == 'TQTF') return Icons.pie_chart_rounded;
+    if (board == 'TQTF' || quote?.isFund == true) return Icons.pie_chart_rounded;
     return null;
   }
 

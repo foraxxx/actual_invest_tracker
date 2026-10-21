@@ -156,7 +156,7 @@ class ValueForecastService {
             kind: ForecastAssetKind.equity,
             qty: holding.qty,
             price: price,
-            dividendsLastYear: _dividendsLastYear(ticker, today),
+            dividendsLastYear: _dividendBase(ticker, today),
           ));
       }
     }
@@ -212,6 +212,34 @@ class ValueForecastService {
       coupons: coupons,
       amortizations: amortizations,
     );
+  }
+
+  /// База дивидендов для прогноза стоимости — то же, что в прогнозе выплат
+  /// на 12 месяцев: объявленные дивиденды и прогноз Доход.ру. Движок
+  /// повторяет базу каждый год, начиная со следующего, поэтому даты
+  /// сдвигаются на год назад. Если прогноза нет — собственные выплаты за
+  /// последние 12 месяцев, как раньше.
+  static List<CashEvent> _dividendBase(String ticker, DateTime today) {
+    final own = _dividendsLastYear(ticker, today);
+    final dividends = PayoutForecastService.payoutsFor(ticker).where((p) => p.kind == 'Дивиденд').toList();
+    if (dividends.isEmpty) return own;
+    final annual = PayoutForecastService.dividendPerUnit(dividends).value;
+    if (annual <= 0) return own;
+    final currency = dividends.first.currency;
+    final perYear = CurrencyService.toRub(annual, currency);
+    final end = DateTime(today.year + 1, today.month, today.day);
+    final upcoming = dividends.where((p) => p.date.isAfter(today) && !p.date.isAfter(end)).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    DateTime back(DateTime d) => DateTime(d.year - 1, d.month, d.day);
+    // Даты — от будущих выплат, если они известны, иначе от своих.
+    final dates = upcoming.isNotEmpty
+        ? [for (final p in upcoming) (back(p.date), p.amount)]
+        : own.isNotEmpty
+            ? [for (final e in own) (e.date, e.perUnit)]
+            : [(today, 1.0)];
+    final weight = dates.fold<double>(0, (s, d) => s + d.$2);
+    if (weight <= 0) return own;
+    return [for (final d in dates) CashEvent(d.$1, perYear * d.$2 / weight)];
   }
 
   /// Дивиденды на одну бумагу за последние 12 месяцев — по собственным

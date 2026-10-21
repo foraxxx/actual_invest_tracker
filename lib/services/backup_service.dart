@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -19,6 +20,10 @@ import 'online_settings_service.dart';
 import 'tax_service.dart';
 import 'theme_service.dart';
 import 'logo_service.dart';
+import 'portfolio_history_service.dart';
+import 'payout_forecast_service.dart';
+import 'passive_goal_service.dart';
+import 'memo.dart';
 import 'favorites_service.dart';
 import 'goal_service.dart';
 import 'iis_service.dart';
@@ -321,6 +326,21 @@ class BackupService {
   /// тогда папка 'logos' рядом с этой копией не находится, даже если она
   /// реально лежит рядом с оригиналом. См. ImportResult.missingLogos и
   /// retryMissingLogos ниже для ручного восстановления в этом случае.
+  /// После импорта всё, что было посчитано и запомнено, считается заново, а
+  /// открытые экраны перерисовываются — без перезапуска приложения.
+  static void _afterImport() {
+    Memo.clear();
+    GoalService.resetCache();
+    PassiveGoalService.resetCache();
+    StorageService.notifyReplaced();
+    PortfolioService.version.value++;
+    IisService.version.value++;
+    BudgetService.version.value++;
+    // Выплаты и история стоимости — для бумаг из бэкапа, которых раньше не было.
+    unawaited(PayoutForecastService.refresh(force: true));
+    unawaited(PortfolioHistoryService.refresh());
+  }
+
   static Future<ImportResult> importFromJson(
     String jsonStr, {
     String? logosBaseDir,
@@ -584,7 +604,7 @@ class BackupService {
       }
     }
 
-
+    _afterImport();
     return ImportResult(count: count, missingLogos: missingLogos, portfolios: portfolioCount);
   }
 

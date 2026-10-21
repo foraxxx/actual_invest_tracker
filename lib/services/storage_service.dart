@@ -224,6 +224,9 @@ class StorageService {
 
   static void _bump() => dataVersion.value++;
 
+  /// Сообщить всем экранам, что данные заменены целиком (после импорта).
+  static void notifyReplaced() => _bump();
+
   // --- Deposits ---
   static List<Deposit> get deposits => depositsBox.values.toList();
   static Future<void> addDeposit(Deposit d) async {
