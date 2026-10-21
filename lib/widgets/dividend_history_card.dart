@@ -115,11 +115,13 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
               child: Text(
-                _loading
+                // Если бумагу уже проверяли и выплат не было — сразу так и
+                // пишем, не показывая «загружаем» при каждом открытии.
+                _loading && h == null
                     ? 'Загружаем историю дивидендов…'
-                    : !OnlineSettingsService.enabled
+                    : h == null && !OnlineSettingsService.enabled
                         ? 'История дивидендов загружается с сайтов, когда включена загрузка с биржи'
-                        : 'История дивидендов не нашлась: компания не платила или сайт не ответил',
+                        : 'Дивидендные выплаты не найдены',
                 style: TextStyle(fontSize: 12, color: context.dim, height: 1.35),
               ),
             )
