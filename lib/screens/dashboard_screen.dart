@@ -444,8 +444,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             sub: 'из них выплаты ${Fmt.money(periodCash.payouts)}',
             onTap: () => showProfitSheet(context, _period),
           ),
-          if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
           if (hasHoldings) _forecastMetric(context, hasPayouts, payoutForecast, payoutYield),
+          if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
           if (hasHoldings) _inflationMetric(context),
           if (hasHoldings) _stressMetric(context),
         ]),
@@ -1858,130 +1858,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    // Плитки: две главные — «Вложено» и «Прибыль» — крупно, остальные
-    // компактными плашками по две в ряд.
-    Widget bigTile(_Metric m) => spot(
+    // Плитки: одинаковые маленькие, по три в ряд, без значков — только
+    // подпись и число. Нажатие открывает подробности; у показателей с
+    // переключателем способа расчёта рядом с подписью маленький значок ⇄.
+    Widget tile(_Metric m) => spot(
           m,
           AppCard(
-            padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+            padding: const EdgeInsets.fromLTRB(10, 9, 8, 10),
             radius: AppRadius.sm,
-            border: Border.all(color: m.color.withOpacity(0.4)),
             onTap: m.onTap,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(m.icon, size: 13, color: m.color),
-                    const SizedBox(width: 4),
                     Expanded(
-                      child: Text(m.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: m.color)),
+                      child: Text(
+                        m.listLabel ?? m.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11.5, color: context.dim),
+                      ),
                     ),
+                    if (m.onSwitch != null)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: m.onSwitch,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 2),
+                          child: Icon(Icons.swap_horiz_rounded, size: 14, color: context.dim),
+                        ),
+                      ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 19)),
-                const SizedBox(height: 2),
-                Text(m.sub,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10.5, height: 1.3, color: context.dim)),
+                const SizedBox(height: 3),
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 15)),
               ],
             ),
           ),
         );
 
-    // Кнопка переключения — кружок ⇄ на значке: рядом с названием в узкой
-    // плашке ей нет места.
-    Widget plaque(_Metric m) {
-      final icon = Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(color: m.color.withOpacity(0.16), borderRadius: BorderRadius.circular(9)),
-        child: Icon(m.icon, size: 15, color: m.color),
-      );
-      return spot(
-        m,
-        AppCard(
-          padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
-          radius: AppRadius.sm,
-          onTap: m.onTap,
-          child: Row(
-            children: [
-              if (m.onSwitch == null)
-                icon
-              else
-                Pressable(
-                  onTap: m.onSwitch,
-                  child: SizedBox(
-                    width: 34,
-                    height: 34,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned(left: 0, top: 0, child: icon),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            width: 15,
-                            height: 15,
-                            decoration: BoxDecoration(
-                              color: context.accent,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: const Icon(Icons.swap_horiz_rounded, size: 10, color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(m.listLabel ?? m.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: context.dim)),
-                    const SizedBox(height: 1),
-                    FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 14)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    Widget pairRow(List<_Metric> pair, Widget Function(_Metric) build) => IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: build(pair[0])),
-              const SizedBox(width: 8),
-              Expanded(child: pair.length > 1 ? build(pair[1]) : const SizedBox.shrink()),
-            ],
-          ),
-        );
-
     final rows = <Widget>[];
-    final big = metrics.take(2).toList();
-    final rest = metrics.skip(2).toList();
-    if (big.isNotEmpty) rows.add(pairRow(big, bigTile));
-    for (int i = 0; i < rest.length; i += 2) {
-      rows.add(const SizedBox(height: 8));
-      rows.add(pairRow(rest.sublist(i, math.min(i + 2, rest.length)), plaque));
+    for (int i = 0; i < metrics.length; i += 3) {
+      if (i > 0) rows.add(const SizedBox(height: 6));
+      final chunk = metrics.sublist(i, math.min(i + 3, metrics.length));
+      rows.add(IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int j = 0; j < 3; j++) ...[
+              if (j > 0) const SizedBox(width: 6),
+              Expanded(child: j < chunk.length ? tile(chunk[j]) : const SizedBox.shrink()),
+            ],
+          ],
+        ),
+      ));
     }
     return Column(children: rows);
   }

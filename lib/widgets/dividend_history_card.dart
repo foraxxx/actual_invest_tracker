@@ -11,6 +11,7 @@ import '../services/dividend_history_service.dart';
 import '../services/dividend_tax_service.dart';
 import '../services/moex_service.dart';
 import '../services/online_settings_service.dart';
+import 'expected_payout_tile.dart';
 import 'payout_yield_sheet.dart' show yieldPct;
 import 'year_bars.dart';
 
@@ -19,6 +20,9 @@ import 'year_bars.dart';
 /// пришло вам.
 class DividendHistoryCard extends StatefulWidget {
   final String ticker;
+
+  /// Название бумаги — для записи выплаты.
+  final String name;
   final HoldingInfo? holding;
 
   /// Текущая цена акции, ₽.
@@ -32,6 +36,7 @@ class DividendHistoryCard extends StatefulWidget {
   const DividendHistoryCard({
     super.key,
     required this.ticker,
+    this.name = '',
     required this.holding,
     required this.price,
     required this.incomes,
@@ -129,7 +134,17 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
             YearBars(bars: _bars(h, avg), format: _amount, selectable: true),
             _legend(context),
             ..._yields(context, h, avg, price),
-            if (h.nextAnnounced != null) _expected(context, h.nextAnnounced!, hidden),
+            // Ближайшая выплата, а после отсечки — «Выплата пришла?».
+            if (ExpectedPayoutTile.forStock(widget.ticker) case final e?)
+              ExpectedPayoutTile(
+                ticker: widget.ticker,
+                name: widget.name.isEmpty ? widget.ticker : widget.name,
+                payout: e.$1,
+                confirm: e.$2,
+                onChanged: () {
+                  if (mounted) setState(() {});
+                },
+              ),
           ],
           const SizedBox(height: 12),
           Divider(height: 1, color: context.dim.withOpacity(0.15)),
@@ -277,67 +292,6 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
         ],
       ),
     ];
-  }
-
-  Widget _expected(BuildContext context, DividendRecord r, bool hidden) {
-    final qty = widget.holding?.qty ?? 0;
-    final you = qty * r.amount * 0.87;
-    final month = Fmt.dateLong(r.date).split(' ')[1];
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: AppColors.info.withOpacity(0.08),
-        borderRadius: AppRadius.all(AppRadius.sm),
-        border: Border.all(color: AppColors.info.withOpacity(0.25)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 58,
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.info.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              children: [
-                Text('${r.date.day}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700, height: 1.05)),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(month, style: TextStyle(fontSize: 10, color: context.dim)),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  r.date.year == DateTime.now().year ? 'Ожидается · отсечка' : 'Ожидается · отсечка в ${r.date.year} году',
-                  style: TextStyle(fontSize: 11, color: context.dim),
-                ),
-                const SizedBox(height: 1),
-                Text('${_amount(r.amount)} ₽ на акцию', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
-                if (qty > 0)
-                  Text.rich(
-                    TextSpan(children: [
-                      const TextSpan(text: 'получено после налога '),
-                      TextSpan(
-                        text: hidden ? '••• ₽' : '≈ ${Fmt.money(you)}',
-                        style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.positive),
-                      ),
-                    ]),
-                    style: TextStyle(fontSize: 12, color: context.dim),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _received(BuildContext context, bool hidden) {

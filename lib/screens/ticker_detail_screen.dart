@@ -30,6 +30,7 @@ import '../services/sector_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../widgets/plan_picker.dart';
+import '../widgets/expected_payout_tile.dart';
 import '../widgets/income_sheet.dart';
 import '../widgets/dividend_history_card.dart';
 import '../widgets/trade_edit_sheet.dart';
@@ -554,65 +555,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 if (holding != null) ...[
-                  FadeSlideIn(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: StatTile(
-                            label: 'В портфеле',
-                            icon: Icons.inventory_2_outlined,
-                            text: '${Fmt.qty(holding.qty)} шт',
-                            color: AppColors.info,
-                            compact: true,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: StatTile(
-                            label: 'Средняя цена',
-                            icon: Icons.straighten_rounded,
-                            text: Fmt.price(holding.avgCost, type: assetType),
-                            color: AppColors.violet,
-                            compact: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  FadeSlideIn(
-                    delay: const Duration(milliseconds: 60),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: StatTile(
-                            // Цена больше не редактируется вручную: раньше
-                            // отсюда можно было записать произвольное число,
-                            // и оно становилось рыночной оценкой всей позиции
-                            // в истории портфеля.
-                            label: holding.hasManualPrice ? 'Текущая цена' : 'Последняя цена',
-                            icon: Icons.sell_rounded,
-                            text: Fmt.price(holding.displayPrice, type: assetType),
-                            hint: holding.hasManualPrice ? 'по последней сделке' : 'по данным биржи',
-                            color: context.accent,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: StatTile(
-                            label: 'Прибыль / убыток',
-                            icon: holding.pnlRub >= 0 ? Icons.trending_up_rounded : Icons.trending_down_rounded,
-                            text: Fmt.signedMoney(holding.pnlRub),
-                            hint: Fmt.pct(holding.pnlPct),
-                            hintColor: pnlColor,
-                            color: pnlColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  FadeSlideIn(child: _positionStrip(holding, assetType, quote)),
                   const SizedBox(height: 14),
                 ],
 
@@ -628,6 +571,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 if (assetType == AssetType.stock)
                   DividendHistoryCard(
                     ticker: ticker,
+                    name: name,
                     holding: holding,
                     price: holding?.displayPrice ?? quote?.price,
                     incomes: incomes,
@@ -638,6 +582,20 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     onDelete: _deleteIncome,
                   )
                 else ...[
+                // Ближайший купон, а после его даты — «Выплата пришла?».
+                if (assetType == AssetType.bond)
+                  if (ExpectedPayoutTile.forBond(ticker) case final e?) ...[
+                    ExpectedPayoutTile(
+                      ticker: ticker,
+                      name: name,
+                      payout: e.$1,
+                      confirm: e.$2,
+                      onChanged: () {
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 _payoutsCard(),
 
                 // Свои выплаты по бумаге. Раздел есть всегда — с кнопкой
@@ -768,6 +726,47 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     );
   }
 
+  /// Позиция одной полосой: количество, средняя цена и цена сейчас. Цена
+  /// сейчас зелёная, если выше закрытия прошлого дня (то есть утренней), и
+  /// красная, если ниже.
+  Widget _positionStrip(HoldingInfo holding, AssetType type, MoexQuote? quote) {
+    final prev = quote?.prevClose;
+    final now = quote?.price ?? holding.displayPrice;
+    final Color? nowColor = prev == null || prev <= 0 || (now - prev).abs() < 1e-9
+        ? null
+        : (now > prev ? AppColors.positive : AppColors.negative);
+    Widget cell(String label, String value, {Color? color, bool first = false}) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: first ? null : Border(left: BorderSide(color: context.hairline)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(fontSize: 12, color: context.dim)),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: color)),
+                ),
+              ],
+            ),
+          ),
+        );
+    return AppCard(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          cell('Количество', Fmt.qty(holding.qty), first: true),
+          cell('Средняя', Fmt.price(holding.avgCost, type: type)),
+          cell('Сейчас', Fmt.price(now, type: type), color: nowColor),
+        ],
+      ),
+    );
+  }
+
   /// Шапка-«обложка»: аватарка бумаги, название, сектор и крупная текущая
   /// цена. При прокрутке сжимается в обычный компактный заголовок.
   Widget _appBar(
@@ -868,22 +867,11 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: 7),
-                          SizedBox(
-                            width: double.infinity,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: TagChip(
-                                  text: '${Fmt.pct(holding.pnlPct)} · ${Fmt.signedMoney(holding.pnlRub)}',
-                                  color: pnlColor,
-                                  icon: holding.pnlRub >= 0
-                                      ? Icons.trending_up_rounded
-                                      : Icons.trending_down_rounded,
-                                ),
-                              ),
-                            ),
+                          Text(
+                            '${Fmt.signedMoney(holding.pnlRub)} · ${Fmt.pct(holding.pnlPct)} за всё время',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: pnlColor),
                           ),
                         ],
                       )

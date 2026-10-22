@@ -187,17 +187,21 @@ class _PlansScreenState extends State<PlansScreen> {
     return d.isBefore(DateTime(now.year, now.month, now.day));
   }
 
-  /// Группы по месяцу срока. Просроченные — отдельной группой в конце,
+  /// Группы по сроку: планы «к дате» — по дате, «на месяц» — по месяцу.
+  /// Просроченные — отдельной группой в конце,
   /// планы без срока — последними.
   List<_PlanGroup> _groupByMonth(List<Plan> plans) {
     final map = <String, List<Plan>>{};
     for (final p in plans) {
       final d = p.targetDate;
+      // Планы «к дате» — по своей дате, планы «на месяц» — по месяцу.
       final key = _planOverdue(p)
           ? _overdueKey
           : d == null
               ? _PlanGroup.noDateKey
-              : '${d.year}-${d.month.toString().padLeft(2, '0')}';
+              : p.isMonthPlan
+                  ? '${d.year}-${d.month.toString().padLeft(2, '0')}-m'
+                  : '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
       map.putIfAbsent(key, () => []).add(p);
     }
     int order(String k) => k == _overdueKey ? 2 : (k == _PlanGroup.noDateKey ? 3 : 1);
@@ -211,7 +215,9 @@ class _PlansScreenState extends State<PlansScreen> {
         ),
     ]..sort((a, b) {
         final o = order(a.key).compareTo(order(b.key));
-        return o != 0 ? o : a.key.compareTo(b.key);
+        if (o != 0) return o;
+        // По сроку: группа «на месяц» — после всех дат этого месяца.
+        return (a.date ?? DateTime(9999)).compareTo(b.date ?? DateTime(9999));
       });
     return groups;
   }
@@ -896,7 +902,7 @@ class _PlansScreenState extends State<PlansScreen> {
         ? 'Просрочено'
         : g.key == _PlanGroup.noDateKey
             ? 'Без срока'
-            : Fmt.monthTitle(g.key);
+            : _groupTitle(g);
     final sum = g.totalEstimated;
     return Padding(
       padding: const EdgeInsets.only(top: 18),
@@ -956,6 +962,18 @@ class _PlansScreenState extends State<PlansScreen> {
         ],
       ),
     );
+  }
+
+  /// «До 15 декабря» или «На декабрь 2026». Год пишется, если он не текущий.
+  String _groupTitle(_PlanGroup g) {
+    final d = g.date!;
+    final month = Fmt.monthTitle('${d.year}-${d.month}');
+    if (g.key.endsWith('-m')) {
+      final m = month.split(' ').first.toLowerCase();
+      return d.year == DateTime.now().year ? 'На $m' : 'На $m ${d.year}';
+    }
+    final long = Fmt.dateLong(d);
+    return 'До ${d.year == DateTime.now().year ? long.substring(0, long.lastIndexOf(' ')) : long}';
   }
 
   Widget _planRow(Plan p) {
@@ -1148,7 +1166,7 @@ class _PlansScreenState extends State<PlansScreen> {
         ? 'из просроченных'
         : g.key == _PlanGroup.noDateKey
             ? 'без срока'
-            : 'на ${Fmt.monthTitle(g.key).toLowerCase()}';
+            : '«${_groupTitle(g)}»';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
