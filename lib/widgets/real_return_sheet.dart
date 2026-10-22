@@ -290,7 +290,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
               ),
               if (value.isNotEmpty) ...[
                 const SizedBox(width: 10),
-                Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color)),
+                Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: color)),
               ],
             ],
           ),
@@ -301,7 +301,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
           child: Row(
             children: [
               Expanded(child: Text(label, style: TextStyle(fontSize: 12.5, color: ctx.dim))),
-              Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+              Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
             ],
           ),
         );
@@ -398,7 +398,7 @@ class _RealReturnSheetState extends State<_RealReturnSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(dateLabel!, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                        Text(dateLabel!, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 2),
                         Wrap(
                           spacing: 10,

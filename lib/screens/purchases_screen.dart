@@ -151,7 +151,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                             if (bought > 0)
                               Text(
                                 '− ${Fmt.money(bought)}',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                               ),
                             if (sold > 0)
                               Padding(
@@ -160,7 +160,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                                   '+ ${Fmt.money(sold)}',
                                   style: const TextStyle(
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w800,
+                                    fontWeight: FontWeight.w700,
                                     color: AppColors.negative,
                                   ),
                                 ),
@@ -306,7 +306,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                     '$active',
                     style: const TextStyle(
                       fontSize: 9,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       color: Colors.white,
                     ),
                   ),
@@ -343,7 +343,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                 const SizedBox(height: 20),
                 Text(
                   'Год',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -366,7 +366,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                 const SizedBox(height: 20),
                 Text(
                   'Операция',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -388,7 +388,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                 const SizedBox(height: 20),
                 Text(
                   'Тип бумаги',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -462,7 +462,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
           label,
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
             color: selected ? context.accent : null,
           ),
         ),
@@ -473,24 +473,36 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
   /// Список сделок с разделителями по месяцам — так проще искать глазами
   /// «что я делал в марте», чем в сплошной ленте.
   Widget _buildList(List<Purchase> purchases, Map<String, SaleTaxResult> tax) {
-    final items = <Widget>[];
-    String? lastMonth;
-    for (int i = 0; i < purchases.length; i++) {
-      final p = purchases[i];
+    // Сделки по месяцам: заголовок месяца и одна карточка, где сделки
+    // разделены тонкой линией.
+    final months = <String, List<Purchase>>{};
+    for (final p in purchases) {
       final key = '${p.date.year}-${p.date.month.toString().padLeft(2, '0')}';
-      if (key != lastMonth) {
-        lastMonth = key;
-        items.add(Padding(
-          padding: EdgeInsets.only(top: items.isEmpty ? 0 : 18, bottom: 10, left: 4),
-          child: Text(
-            Fmt.monthTitle(key),
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.3, color: context.dim),
-          ),
-        ));
-      }
+      months.putIfAbsent(key, () => []).add(p);
+    }
+    final items = <Widget>[];
+    var index = 0;
+    for (final e in months.entries) {
       items.add(Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: FadeSlideIn.staggered(index: i, child: _tradeCard(p, tax[p.id])),
+        padding: EdgeInsets.only(top: items.isEmpty ? 0 : 18, bottom: 8, left: 4),
+        child: Text(
+          Fmt.monthTitle(e.key).toUpperCase(),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4, color: context.dim),
+        ),
+      ));
+      items.add(FadeSlideIn.staggered(
+        index: index++,
+        child: AppCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (int i = 0; i < e.value.length; i++) ...[
+                if (i > 0) Divider(height: 1, thickness: 1, indent: 64, color: context.hairline),
+                _tradeCard(e.value[i], tax[e.value[i].id]),
+              ],
+            ],
+          ),
+        ),
       ));
     }
     items.add(const SizedBox(height: kListBottomPadding));
@@ -504,17 +516,13 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
 
   Widget _tradeCard(Purchase p, SaleTaxResult? tax) {
     final color = p.isSell ? AppColors.negative : AppColors.positive;
+    final taxLabel = tax == null ? null : _taxLabel(tax);
     return Dismissible(
       key: Key(p.id),
       direction: DismissDirection.endToStart,
       confirmDismiss: (_) => _confirmDelete(context),
       background: Container(
-        decoration: BoxDecoration(
-          borderRadius: AppRadius.all(AppRadius.md),
-          gradient: LinearGradient(
-            colors: [AppColors.negative.withOpacity(0.15), AppColors.negative],
-          ),
-        ),
+        color: AppColors.negative,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 22),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
@@ -523,113 +531,98 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
         StorageService.deletePurchase(p.id);
         setState(() {});
       },
-      child: AppCard(
-        padding: const EdgeInsets.all(13),
-        // Нажатие открывает правку сделки; из неё есть переход в карточку
-        // бумаги.
+      // Нажатие открывает правку сделки; из неё есть переход в карточку бумаги.
+      child: InkWell(
         onTap: () async {
           await showEditTradeSheet(context, p, withTickerLink: true);
           if (mounted) setState(() {});
         },
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                TickerAvatar(ticker: p.ticker, size: 42),
-                Positioned(
-                  right: -3,
-                  bottom: -3,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: context.isDark ? AppColors.darkSurface : Colors.white,
-                      shape: BoxShape.circle,
-                    ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+          child: Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  TickerAvatar(ticker: p.ticker, size: 38, glow: false),
+                  Positioned(
+                    right: -3,
+                    bottom: -3,
                     child: Container(
                       padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                      child: Icon(
-                        p.isSell ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                        size: 9,
-                        color: Colors.white,
+                      decoration: BoxDecoration(
+                        color: context.isDark ? AppColors.darkSurface : Colors.white,
+                        shape: BoxShape.circle,
                       ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          p.name.trim().isEmpty ? p.ticker : p.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                        child: Icon(
+                          p.isSell ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                          size: 8,
+                          color: Colors.white,
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      TagChip(
-                        text: p.isSell ? 'Продажа' : 'Покупка',
-                        color: color,
-                        fontSize: 9.5,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    p.ticker,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: context.dim, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${Fmt.date(p.date)} · ${Fmt.qty(p.quantity)} шт × ${Fmt.price(p.pricePerUnit, type: p.type)}'
-                    '${p.fee > 0 ? ' · комиссия ${Fmt.qty(p.fee)}' : ''}',
-                    style: TextStyle(fontSize: 11.3, color: context.dim, fontWeight: FontWeight.w600),
-                  ),
-                  if (p.sector != null && p.sector!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: Text(
-                        '${Fmt.assetType(p.type)} · ${p.sector}',
-                        style: TextStyle(fontSize: 11, color: context.dim),
-                      ),
                     ),
-                  if (tax != null && _taxLabel(tax) != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: TagChip(text: _taxLabel(tax)!, color: AppColors.warning, fontSize: 9.5),
-                    ),
-                  if (p.note != null && p.note!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        p.note!,
-                        style: TextStyle(fontSize: 11.3, fontStyle: FontStyle.italic, color: context.dim),
-                      ),
-                    ),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '${p.isSell ? '+' : '−'}${Fmt.group(p.settlementAmount)} ${p.currency == 'RUB' ? '₽' : p.currency}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: p.isSell ? AppColors.negative : null,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.ticker,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      '${p.isSell ? 'Продажа' : 'Покупка'} · ${Fmt.qty(p.quantity)} шт × '
+                      '${Fmt.price(p.pricePerUnit, type: p.type)}'
+                      '${p.fee > 0 ? ' · комиссия ${Fmt.qty(p.fee)}' : ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, color: context.dim),
+                    ),
+                    if (taxLabel != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(taxLabel, style: const TextStyle(fontSize: 11.5, color: AppColors.warning)),
+                      ),
+                    if (p.note != null && p.note!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          p.note!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: context.dim),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${p.isSell ? '+' : '−'}${Fmt.group(p.settlementAmount)} ${p.currency == 'RUB' ? '₽' : p.currency}',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: p.isSell ? AppColors.positive : null,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(Fmt.dayShort(p.date), style: TextStyle(fontSize: 12, color: context.dim)),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -931,7 +924,7 @@ class _PositionCard extends StatelessWidget {
                   ),
                   child: Text(
                     '${index + 1}',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: accentColor),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: accentColor),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -942,13 +935,13 @@ class _PositionCard extends StatelessWidget {
                         : draft.nameCtrl.text.trim().isEmpty
                             ? draft.tickerCtrl.text.toUpperCase()
                             : '${draft.nameCtrl.text.trim()} · ${draft.tickerCtrl.text.toUpperCase()}',
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800),
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                   ),
                 ),
                 if (draft.total > 0)
                   Text(
                     Fmt.money(draft.total),
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
                   ),
                 if (onRemove != null)
                   IconButton(

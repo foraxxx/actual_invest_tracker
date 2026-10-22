@@ -239,7 +239,7 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
                       Expanded(
                         child: Text(
                           'Через ${_yearsLabel(_years)}',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                         ),
                       ),
                       Column(
@@ -249,7 +249,7 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
                             '≈${Fmt.money(b.end)}',
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w700,
                               color: _scenarioColor(_scenario),
                             ),
                           ),

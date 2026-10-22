@@ -56,14 +56,11 @@ class _AppTextFieldState extends State<AppTextField> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.accent;
     return AnimatedContainer(
       duration: AppDuration.fast,
       decoration: BoxDecoration(
         borderRadius: AppRadius.all(AppRadius.sm),
-        boxShadow: _focused
-            ? [BoxShadow(color: accent.withOpacity(0.22), blurRadius: 18, spreadRadius: -4)]
-            : const [],
+        boxShadow: const [],
       ),
       child: TextField(
         controller: widget.controller,
@@ -243,15 +240,19 @@ class SegmentedToggle<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final index = values.indexOf(selected);
-    final activeColor = colorOf?.call(selected) ?? context.accent;
+    // Выбранный сегмент — спокойная плашка; цветной только если цвет несёт
+    // смысл (покупка / продажа).
+    final colored = colorOf != null;
+    final activeColor = colorOf?.call(selected) ??
+        (context.isDark ? AppColors.darkSurfaceTop : Colors.white);
+    final activeText = colored ? Colors.white : (context.isDark ? Colors.white : const Color(0xFF111318));
 
     return Container(
       height: height,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
+        color: context.isDark ? AppColors.darkSurface : AppColors.lightSurfaceHigh,
         borderRadius: AppRadius.all(AppRadius.sm),
-        border: Border.all(color: context.hairline),
       ),
       child: LayoutBuilder(
         builder: (context, box) {
@@ -268,14 +269,7 @@ class SegmentedToggle<T> extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(AppRadius.xs),
-                    gradient: LinearGradient(
-                      colors: [activeColor, AppGradient.lighten(activeColor, 0.1)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(color: activeColor.withOpacity(0.30), blurRadius: 8, offset: const Offset(0, 2)),
-                    ],
+                    color: activeColor,
                   ),
                 ),
               ),
@@ -298,7 +292,7 @@ class SegmentedToggle<T> extends StatelessWidget {
                                 Icon(
                                   iconOf!.call(v),
                                   size: 16,
-                                  color: v == selected ? Colors.white : context.dim,
+                                  color: v == selected ? activeText : context.dim,
                                 ),
                                 const SizedBox(width: 6),
                               ],
@@ -315,8 +309,8 @@ class SegmentedToggle<T> extends StatelessWidget {
                                       maxLines: 1,
                                       style: TextStyle(
                                         fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: v == selected ? Colors.white : context.dim,
+                                        fontWeight: FontWeight.w600,
+                                        color: v == selected ? activeText : context.dim,
                                       ),
                                     ),
                                   ),

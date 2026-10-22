@@ -701,7 +701,7 @@ class _HintPill extends StatelessWidget {
         overflow: TextOverflow.visible,
         style: TextStyle(
           fontSize: strong ? 11.5 : 10.5,
-          fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+          fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
           color: strong ? color : context.dim,
         ),
       ),
@@ -743,7 +743,7 @@ class _Tooltip extends StatelessWidget {
               style: TextStyle(
                 // Первая строка — когда, остальные — сколько.
                 fontSize: i == 0 ? 10.5 : 12.5,
-                fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w800,
+                fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w700,
                 color: i == 0 ? context.dim : null,
               ),
             ),
@@ -962,7 +962,7 @@ class _SparklinePainter extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
           text: text,
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: labelText),
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: labelText),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -1192,7 +1192,7 @@ class _DonutChartState extends State<DonutChart> with TickerProviderStateMixin {
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.5),
                         ),
                         if (sel != null && total > 0)
                           Padding(
@@ -1253,7 +1253,7 @@ class _DonutChartState extends State<DonutChart> with TickerProviderStateMixin {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 11.5,
-                            fontWeight: _selected == i ? FontWeight.w800 : FontWeight.w600,
+                            fontWeight: _selected == i ? FontWeight.w700 : FontWeight.w600,
                           ),
                         ),
                       ),
@@ -1440,7 +1440,7 @@ class _BarsChartState extends State<BarsChart> with SingleTickerProviderStateMix
             _selected >= 0 ? widget.valueFormatter(widget.values[_selected]) : '';
         final selectedStyle = TextStyle(
           fontSize: 11,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w700,
           color: widget.color,
         );
         final textPainter = TextPainter(
@@ -1597,7 +1597,7 @@ class _Bar extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 10,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     color: selected ? color : context.dim,
                   ),
                 ),

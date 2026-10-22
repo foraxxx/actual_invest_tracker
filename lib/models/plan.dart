@@ -60,6 +60,14 @@ class Plan extends HiveObject {
   @HiveField(11)
   double purchasedAvgPrice;
 
+  /// План «на месяц»: купить в течение месяца, а не к конкретному числу.
+  /// Тогда [targetDate] — последний день этого месяца. null у старых планов
+  /// значит «к дате».
+  @HiveField(12)
+  bool? wholeMonth;
+
+  bool get isMonthPlan => wholeMonth == true;
+
   Plan({
     required this.id,
     required this.ticker,
@@ -73,6 +81,7 @@ class Plan extends HiveObject {
     required this.createdAt,
     this.purchasedQuantity = 0.0,
     this.purchasedAvgPrice = 0.0,
+    this.wholeMonth,
   });
 
   double? get estimatedTotal =>

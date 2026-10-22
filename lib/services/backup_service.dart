@@ -207,6 +207,7 @@ class BackupService {
         'targetQuantity': p.targetQuantity,
         'targetPrice': p.targetPrice,
         'targetDate': p.targetDate?.toIso8601String(),
+        if (p.isMonthPlan) 'wholeMonth': true,
         'status': p.status.index,
         'note': p.note,
         'createdAt': p.createdAt.toIso8601String(),
@@ -702,6 +703,7 @@ class BackupService {
             (p['purchasedQuantity'] as num?)?.toDouble() ?? 0,
         purchasedAvgPrice:
             (p['purchasedAvgPrice'] as num?)?.toDouble() ?? 0,
+        wholeMonth: p['wholeMonth'] == true ? true : null,
       ));
     }
 

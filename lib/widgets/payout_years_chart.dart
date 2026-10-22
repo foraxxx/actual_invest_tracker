@@ -239,7 +239,7 @@ class _YearsPainter extends CustomPainter {
           Offset(p.dx, p.dy - 15),
           TextStyle(
             fontSize: isSel ? 11 : 9.5,
-            fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+            fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
             color: isSel ? text : dim,
           ),
           maxRight: size.width,
@@ -249,7 +249,7 @@ class _YearsPainter extends CustomPainter {
       // Подпись года; выбранный — в «таблетке».
       final yearStyle = TextStyle(
         fontSize: 11.5,
-        fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+        fontWeight: isSel ? FontWeight.w700 : FontWeight.w600,
         color: isSel ? color : dim,
       );
       final labelCenter = Offset(p.dx, bottom + 17);

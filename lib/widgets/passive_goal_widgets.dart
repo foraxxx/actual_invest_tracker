@@ -99,7 +99,7 @@ class PassiveGoalCard extends StatelessWidget {
                 HiddenAmount.forText(
                   title,
                   fontSize: 15,
-                  child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                  child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 ),
                 const SizedBox(height: 1),
                 HiddenAmount.forText(
@@ -114,7 +114,7 @@ class PassiveGoalCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(percent, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _green)),
+          Text(percent, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _green)),
           const SizedBox(width: 2),
           AnimatedRotation(
             turns: collapsed ? 0 : 0.5,
@@ -205,7 +205,7 @@ class PassiveGoalCard extends StatelessWidget {
               now,
               fontSize: 12.5,
               child: Text.rich(TextSpan(children: [
-                TextSpan(text: now, style: const TextStyle(fontWeight: FontWeight.w800)),
+                TextSpan(text: now, style: const TextStyle(fontWeight: FontWeight.w700)),
                 TextSpan(
                   text: everyMonth ? ' /мес в среднем' : ' /мес сейчас',
                   style: TextStyle(color: context.dim),
@@ -234,7 +234,7 @@ class PassiveGoalCard extends StatelessWidget {
                   fontSize: 13.5,
                   child: Text(
                     'Докупить ≈${goalShortRub(p.toBuy)} под ${_pctText(p.newYieldPct)}',
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: _green),
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _green),
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -442,7 +442,7 @@ Widget _capitalBar(BuildContext ctx, PassivePlan p, _Open open, void Function(_O
             HiddenAmount.forText(
               goalShortRub(need),
               fontSize: 13.5,
-              child: Text('≈${goalShortRub(need)}', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+              child: Text('≈${goalShortRub(need)}', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -498,7 +498,7 @@ Widget _capitalBar(BuildContext ctx, PassivePlan p, _Open open, void Function(_O
               goalShortRub(p.value),
               fontSize: 11.5,
               child: Text.rich(TextSpan(children: [
-                TextSpan(text: goalShortRub(p.value).replaceAll(' ₽', ''), style: const TextStyle(fontWeight: FontWeight.w800)),
+                TextSpan(text: goalShortRub(p.value).replaceAll(' ₽', ''), style: const TextStyle(fontWeight: FontWeight.w700)),
                 TextSpan(text: ' есть', style: TextStyle(color: ctx.dim)),
               ]), style: const TextStyle(fontSize: 11.5)),
             ),
@@ -509,7 +509,7 @@ Widget _capitalBar(BuildContext ctx, PassivePlan p, _Open open, void Function(_O
               child: Text.rich(TextSpan(children: [
                 TextSpan(
                   text: '+${goalShortRub(p.toBuy).replaceAll(' ₽', '')}',
-                  style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.info),
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.info),
                 ),
                 TextSpan(text: ' докупить', style: TextStyle(color: ctx.dim)),
               ]), style: const TextStyle(fontSize: 11.5)),
@@ -568,7 +568,7 @@ Widget _havePanel(BuildContext ctx, PassivePlan p) {
   final paying = p.payingValue;
   final idle = math.max(0.0, p.value - paying);
   return _panel(ctx, _green, [
-    Text('Из ${goalShortRub(p.value)} в портфеле', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+    Text('Из ${goalShortRub(p.value)} в портфеле', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
     const SizedBox(height: 8),
     _row(ctx, 'Платят выплаты', '${goalShortRub(paying)} · ${_pctText(p.payingYieldPct)}'),
     Text('облигации и акции с дивидендами', style: TextStyle(fontSize: 11, color: ctx.dim)),
@@ -588,7 +588,7 @@ Widget _buyPanel(BuildContext outer, BuildContext ctx, PassivePlan p) {
       fontSize: 13,
       child: Text(
         'Докупить ≈${goalShortRub(p.toBuy)} под ${_pctText(p.newYieldPct)}',
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       ),
     ),
     const SizedBox(height: 4),
@@ -651,7 +651,7 @@ Widget _paceRow(BuildContext ctx, PassivePlan p, bool selected, VoidCallback onT
               fontSize: 13.5,
               child: AdaptiveSingleLineText(
                 title,
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color),
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: color),
               ),
             ),
           ),
@@ -721,9 +721,9 @@ Widget _milestonesPanel(BuildContext ctx, PassivePlan p) {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(items[i].$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+                          child: Text(items[i].$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                         ),
-                        Text(items[i].$3, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+                        Text(items[i].$3, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                       ],
                     ),
                     HiddenAmount.forText(
@@ -759,7 +759,7 @@ Widget _monthReadout(BuildContext ctx, PassivePlan p, int? index, bool open, Voi
             child: Text.rich(TextSpan(children: [
               TextSpan(text: '$label · '),
               TextSpan(text: amount, style: TextStyle(color: m.total <= 0.5 ? ctx.dim : _green)),
-            ]), style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+            ]), style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
           ),
         ),
         Text('выплаты', style: TextStyle(fontSize: 12, color: ctx.dim)),
@@ -851,7 +851,7 @@ Future<void> _showHowSheet(BuildContext context, PassivePlan p) {
         padding: const EdgeInsets.only(bottom: 12),
         child: Text.rich(
           TextSpan(children: [
-            TextSpan(text: '$title — ', style: const TextStyle(fontWeight: FontWeight.w800)),
+            TextSpan(text: '$title — ', style: const TextStyle(fontWeight: FontWeight.w700)),
             TextSpan(text: text),
           ]),
           style: const TextStyle(fontSize: 13, height: 1.45),
@@ -975,7 +975,7 @@ class _MonthGrid extends StatelessWidget {
                 const SizedBox(width: 4),
                 Text(
                   '${(share * 100).floor()}%',
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: color),
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: color),
                 ),
               ],
             ),
@@ -983,7 +983,7 @@ class _MonthGrid extends StatelessWidget {
             HiddenAmount.forText(
               amount,
               fontSize: 13,
-              child: AdaptiveSingleLineText(amount, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+              child: AdaptiveSingleLineText(amount, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
             ),
             const SizedBox(height: 6),
             ClipRRect(
@@ -1011,7 +1011,7 @@ Widget _row(BuildContext ctx, String label, String value, {Color? color}) => Pad
           HiddenAmount.forText(
             value,
             fontSize: 13.5,
-            child: Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color)),
+            child: Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: color)),
           ),
         ],
       ),
@@ -1044,12 +1044,12 @@ List<Widget> _monthPayouts(BuildContext outer, BuildContext ctx, PassivePlan p, 
           if (withTitle) ...[
             Row(
               children: [
-                Expanded(child: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800))),
+                Expanded(child: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700))),
                 HiddenAmount.forText(
                   Fmt.money(m.total),
                   fontSize: 13.5,
                   child: Text.rich(TextSpan(children: [
-                    TextSpan(text: Fmt.group(m.total), style: const TextStyle(fontWeight: FontWeight.w800)),
+                    TextSpan(text: Fmt.group(m.total), style: const TextStyle(fontWeight: FontWeight.w700)),
                     TextSpan(text: ' из ${Fmt.money(target)}', style: TextStyle(color: ctx.dim)),
                   ]), style: const TextStyle(fontSize: 13.5)),
                 ),

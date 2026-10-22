@@ -197,7 +197,7 @@ class HomeWidgetPreview extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(d.hidden ? '••• ••• ₽' : _money(d.value),
-              style: TextStyle(fontSize: fs, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+              style: TextStyle(fontSize: fs, fontWeight: FontWeight.w700, letterSpacing: -0.3)),
         ),
       );
 
@@ -306,7 +306,7 @@ class HomeWidgetPreview extends StatelessWidget {
               TextSpan(text: d.hidden ? 'отложено ' : 'осталось ', style: TextStyle(color: _dim, fontSize: 10.5)),
               TextSpan(
                 text: d.hidden ? '${(done * 100).round()}%' : _money(left),
-                style: TextStyle(fontSize: fs, fontWeight: FontWeight.w800),
+                style: TextStyle(fontSize: fs, fontWeight: FontWeight.w700),
               ),
             ]),
             maxLines: 1,
@@ -327,7 +327,7 @@ class HomeWidgetPreview extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 3),
             child: Text('Всё отложено ✓',
-                maxLines: 1, style: TextStyle(fontSize: fs, fontWeight: FontWeight.w800, color: _up)),
+                maxLines: 1, style: TextStyle(fontSize: fs, fontWeight: FontWeight.w700, color: _up)),
           ),
           if (next != null)
             Text('дальше ${_lowerFirst('${next['n']}')} ${_date(next['d'] as int)}',
@@ -486,7 +486,7 @@ class HomeWidgetPreview extends StatelessWidget {
       Row(children: [
         Expanded(child: _payTitle(p)),
         Text(d.hidden ? 'отложено ' : 'осталось ', style: TextStyle(color: _dim, fontSize: 10.5)),
-        Text(d.hidden ? '${(done * 100).round()}%' : _money(left), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+        Text(d.hidden ? '${(done * 100).round()}%' : _money(left), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
       ]),
       _bar(done),
     ]);

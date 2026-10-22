@@ -221,7 +221,7 @@ class _StressSheetState extends State<_StressSheet> {
             child: Text(
               _signed(value, unit),
               textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -259,7 +259,7 @@ class _StressSheetState extends State<_StressSheet> {
             HiddenAmount.forText(
               deltaText,
               fontSize: 15,
-              child: Text(deltaText, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color)),
+              child: Text(deltaText, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
             ),
             Text(Fmt.pct(r.pct), style: TextStyle(fontSize: 13, color: color)),
           ],
@@ -308,7 +308,7 @@ class _StressSheetState extends State<_StressSheet> {
               HiddenAmount.forText(
                 text,
                 fontSize: 13,
-                child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+                child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
               ),
             ],
           ),
@@ -360,7 +360,7 @@ class _StressSheetState extends State<_StressSheet> {
         padding: const EdgeInsets.only(top: 12, bottom: 4),
         child: Text(
           text,
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim),
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: context.dim),
         ),
       );
 
@@ -392,7 +392,7 @@ class _StressSheetState extends State<_StressSheet> {
             label: const Text('Стресс-тест'),
           ),
         ),
-        Text('$title · все бумаги', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+        Text('$title · все бумаги', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         Wrap(
           children: [
@@ -416,7 +416,7 @@ class _StressSheetState extends State<_StressSheet> {
               fontSize: 15,
               child: Text(
                 totalText,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.pnl(r.delta)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.pnl(r.delta)),
               ),
             ),
           ],
@@ -461,13 +461,13 @@ class _StressSheetState extends State<_StressSheet> {
           Expanded(
             child: Text(
               '${g.title.toUpperCase()} · $share%',
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim),
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: context.dim),
             ),
           ),
           HiddenAmount.forText(
             deltaText,
             fontSize: 12.5,
-            child: Text(deltaText, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: color)),
+            child: Text(deltaText, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: color)),
           ),
           SizedBox(
             width: 56,
@@ -516,7 +516,7 @@ class _StressSheetState extends State<_StressSheet> {
                 HiddenAmount.forText(
                   deltaText,
                   fontSize: 13,
-                  child: Text(deltaText, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+                  child: Text(deltaText, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
                 ),
                 Text(zero ? '0%' : Fmt.pct(i.pct), style: TextStyle(fontSize: 11, color: color)),
               ],

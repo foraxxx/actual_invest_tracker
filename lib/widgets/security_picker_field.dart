@@ -92,7 +92,7 @@ class SecurityPickerField extends StatelessWidget {
                     return ListTile(
                       dense: true,
                       leading: TickerAvatar(ticker: s.ticker, size: 34, glow: false),
-                      title: Text(s.ticker, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                      title: Text(s.ticker, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                       subtitle: Text(
                         '${s.name} · ${s.sector.isEmpty ? "Без сектора" : s.sector}',
                         maxLines: 1,

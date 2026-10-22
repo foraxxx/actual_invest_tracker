@@ -141,7 +141,7 @@ class GoalCard extends StatelessWidget {
                 HiddenAmount.forText(
                   title,
                   fontSize: 15,
-                  child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                  child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 ),
                 const SizedBox(height: 1),
                 // Названия месяцев не обрезаются: если строка длинная, текст
@@ -164,7 +164,7 @@ class GoalCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(percent, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color)),
+          Text(percent, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
           const SizedBox(width: 2),
           AnimatedRotation(
             turns: collapsed ? 0 : 0.5,
@@ -179,7 +179,7 @@ class GoalCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: collapsed ? context.hairline : color.withOpacity(0.35), width: 1.1),
+        border: collapsed ? null : Border.all(color: color.withOpacity(0.3), width: 1),
         // Свёрнутая — залита цветом на долю пройденного пути.
         gradient: collapsed
             ? LinearGradient(
@@ -266,7 +266,7 @@ class GoalCard extends StatelessWidget {
 
 /// Совет в развёрнутой карточке: хватает ли того, что человек откладывает.
 Widget _advice(BuildContext context, GoalPlan p, Color color) {
-  final title = TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color);
+  final title = TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: color);
   final dim = TextStyle(fontSize: 11.5, height: 1.35, color: context.dim);
   final growth = 'с ростом по прогнозу ≈${p.annualGrowthPct.toStringAsFixed(0)}% годовых';
 
@@ -737,7 +737,7 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
             HiddenAmount.forText(
               value,
               fontSize: 14,
-              child: Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: color)),
+              child: Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
             ),
           ],
         ),
@@ -878,7 +878,7 @@ Widget _savingScale(BuildContext context, GoalPlan p, double needed) {
                     style: TextStyle(color: context.dim, fontWeight: FontWeight.w600),
                   ),
                 ]),
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ),
           ],
@@ -1029,7 +1029,7 @@ class _GoalChartPainter extends CustomPainter {
         TextPainter(
           text: TextSpan(
             text: hidden ? '•••' : l.text,
-            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: l.color),
+            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: l.color),
           ),
           textDirection: TextDirection.ltr,
         )..layout(maxWidth: _labelSpace - 6),

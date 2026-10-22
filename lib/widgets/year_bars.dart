@@ -177,7 +177,7 @@ class _YearBarsState extends State<YearBars> {
             softWrap: false,
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               color: selectedHere != null ? _gold : (future ? dim : null),
             ),
           ),

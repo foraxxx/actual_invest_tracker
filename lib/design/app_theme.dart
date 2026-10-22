@@ -69,10 +69,10 @@ class AppTheme {
         .apply(bodyColor: onSurface, displayColor: onSurface);
 
     final textTheme = baseTheme.copyWith(
-          displaySmall: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -1.2, color: onSurface),
-          headlineMedium: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.8, color: onSurface),
-          headlineSmall: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: onSurface),
-          titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.3, color: onSurface),
+          displaySmall: TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -1.2, color: onSurface),
+          headlineMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: onSurface),
+          headlineSmall: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: onSurface),
+          titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: -0.2, color: onSurface),
           titleMedium: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, letterSpacing: -0.1, color: onSurface),
           bodyLarge: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: onSurface),
           bodyMedium: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, color: onSurface),
@@ -88,12 +88,14 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      // Inter: ровные современные цифры и кириллица.
+      fontFamily: 'Inter',
       brightness: brightness,
       colorScheme: scheme,
       textTheme: textTheme,
       scaffoldBackgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       canvasColor: isDark ? AppColors.darkBg : AppColors.lightBg,
-      splashFactory: InkSparkle.splashFactory,
+      splashFactory: InkRipple.splashFactory,
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: FadeUpPageTransitionsBuilder(),
@@ -181,8 +183,9 @@ class AppTheme {
         focusElevation: 0,
         hoverElevation: 0,
         highlightElevation: 0,
-        backgroundColor: scheme.primary,
-        foregroundColor: Colors.white,
+        // Кнопка действия — светлая, как главная кнопка форм.
+        backgroundColor: isDark ? const Color(0xFFEEF1F6) : const Color(0xFF111318),
+        foregroundColor: isDark ? AppColors.darkBg : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: AppRadius.all(AppRadius.md)),
       ),
       bottomSheetTheme: BottomSheetThemeData(

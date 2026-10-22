@@ -95,7 +95,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
                   const SizedBox(height: 4),
                   Text(
                     s.toCost == null ? '—' : yieldPct(s.toCost!),
-                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.positive),
+                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, color: AppColors.positive),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -210,7 +210,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
 
   Widget _caption(BuildContext context, String t) => Padding(
         padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
-        child: Text(t, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim)),
+        child: Text(t, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: context.dim)),
       );
 
   Widget _mini(BuildContext context, String label, String value, {Color? color}) => Container(
@@ -224,7 +224,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
           children: [
             Text(label, style: TextStyle(fontSize: 11, color: context.dim)),
             const SizedBox(height: 2),
-            Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: color)),
+            Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: color)),
           ],
         ),
       );
@@ -267,7 +267,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
             children: [
               Text(
                 yieldPct(r.toCost),
-                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: AppColors.positive),
+                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.positive),
               ),
               Text(
                 'к текущей ${yieldPct(r.toValue)}',

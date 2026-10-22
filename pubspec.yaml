@@ -60,6 +60,20 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # Шрифт интерфейса (латиница и кириллица, обрезан до нужных символов).
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.ttf
+          weight: 800
+
   # Шрифт для PDF: встроенные шрифты библиотеки pdf не знают кириллицу, и
   # русский текст в отчёте выходил бы пустыми квадратами.
   assets:

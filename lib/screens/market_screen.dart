@@ -240,14 +240,6 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
-  static Color _typeColor(String label) => switch (label) {
-        'Акция' => AppColors.info,
-        'БПИФ' || 'ETF' => AppColors.violet,
-        'ЗПИФ' || 'ПИФ' => AppColors.positive,
-        'Облигация' => AppColors.gold,
-        'ОФЗ' => AppColors.cyan,
-        _ => AppColors.neutral,
-      };
 
   /// Бумага проходит отбор, если удовлетворяет всем включённым условиям.
   /// Пустой фильтр пропускает всё.
@@ -469,7 +461,7 @@ class _MarketScreenState extends State<MarketScreen> {
               }
               final i = index - _headerCount;
               return Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, i == list.length - 1 ? 0 : 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _row(list[i], owned.contains(list[i].ticker)),
               );
             },
@@ -509,7 +501,7 @@ class _MarketScreenState extends State<MarketScreen> {
                         const SizedBox(width: 6),
                         Text(
                           (online[c] ?? CurrencyService.currentRate(c)).toStringAsFixed(2),
-                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                         ),
                       ],
                     ),
@@ -677,7 +669,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           fit: BoxFit.scaleDown,
                           child: Text(
                             center,
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: centerColor),
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: centerColor),
                           ),
                         ),
                       ),
@@ -749,7 +741,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             AdaptiveSingleLineText(
                               t.toUpperCase(),
                               textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                             ),
                           ],
                         ),
@@ -826,7 +818,7 @@ class _MarketScreenState extends State<MarketScreen> {
                               '$active',
                               style: const TextStyle(
                                 fontSize: 9,
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w700,
                                 color: Colors.white,
                               ),
                             ),
@@ -953,7 +945,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           'Сохранённые',
                           style: TextStyle(
                             fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                             color: context.dim,
                           ),
                         ),
@@ -1004,7 +996,7 @@ class _MarketScreenState extends State<MarketScreen> {
               const SizedBox(height: 20),
               Text(
                 'Тип бумаги',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -1039,7 +1031,7 @@ class _MarketScreenState extends State<MarketScreen> {
               const SizedBox(height: 18),
               Text(
                 'Валюта выпуска',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -1058,7 +1050,7 @@ class _MarketScreenState extends State<MarketScreen> {
               const SizedBox(height: 18),
               Text(
                 'Купон облигаций',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -1099,7 +1091,7 @@ class _MarketScreenState extends State<MarketScreen> {
               const SizedBox(height: 18),
               Text(
                 'Доходность и оборот',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               const SizedBox(height: 8),
               Row(
@@ -1137,7 +1129,7 @@ class _MarketScreenState extends State<MarketScreen> {
               const SizedBox(height: 18),
               Text(
                 'Сортировка',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -1212,7 +1204,7 @@ class _MarketScreenState extends State<MarketScreen> {
           label,
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
             color: selected ? context.accent : null,
           ),
         ),
@@ -1244,12 +1236,16 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _row(MoexQuote q, bool isOwned) {
     final referenceName = SecuritiesDatabase.byTicker(q.ticker)?.name.trim() ?? '';
     final displayName = referenceName.isNotEmpty ? referenceName : q.shortName;
-    return AppCard(
-      padding: const EdgeInsets.all(12),
+    // Строка списка без отдельной карточки: бумаги разделены тонкой линией.
+    final change = (q.prevClose != null && q.prevClose! > 0) ? (q.price / q.prevClose! - 1) * 100 : null;
+    return InkWell(
       onTap: () => Navigator.push(
         context,
         AppPageRoute(builder: (_) => TickerDetailScreen(ticker: q.ticker)),
       ),
+      child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.hairline))),
       child: Row(
         children: [
           TickerAvatar(ticker: q.ticker, size: 38, glow: false),
@@ -1265,7 +1261,7 @@ class _MarketScreenState extends State<MarketScreen> {
                         displayName.isNotEmpty ? displayName : q.ticker,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                       ),
                     ),
                     if (isOwned) ...[
@@ -1276,10 +1272,10 @@ class _MarketScreenState extends State<MarketScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  q.ticker,
+                  '${q.ticker} · ${q.kindLabel}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: context.dim),
+                  style: TextStyle(fontSize: 12.5, color: context.dim),
                 ),
                 if (q.yieldPct != null) ...[
                   const SizedBox(height: 6),
@@ -1297,7 +1293,7 @@ class _MarketScreenState extends State<MarketScreen> {
                         maxLines: 1,
                         style: const TextStyle(
                           fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           color: AppColors.positive,
                         ),
                       ),
@@ -1324,10 +1320,22 @@ class _MarketScreenState extends State<MarketScreen> {
             children: [
               Text(
                 Fmt.price(q.price, currency: '₽', isBond: q.isBond),
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
-              const SizedBox(height: 3),
-              TagChip(text: q.kindLabel, color: _typeColor(q.kindLabel), fontSize: 9),
+              if (change != null) ...[
+                const SizedBox(height: 3),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.pnl(change).withOpacity(0.13),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    '${change >= 0 ? '+' : '−'}${change.abs().toStringAsFixed(1).replaceAll('.', ',')}%',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.pnl(change)),
+                  ),
+                ),
+              ],
             ],
           ),
           ValueListenableBuilder<int>(
@@ -1346,6 +1354,7 @@ class _MarketScreenState extends State<MarketScreen> {
             },
           ),
         ],
+      ),
       ),
     );
   }

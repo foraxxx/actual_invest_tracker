@@ -241,13 +241,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               height: 30,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(9),
-                color: context.accent.withOpacity(0.14),
+                color: context.isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.05),
               ),
-              child: Icon(icon, size: 17, color: context.accent),
+              child: Icon(icon, size: 17),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+              child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
             ),
             if (value.isNotEmpty)
               Flexible(
@@ -326,7 +326,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 10.5,
-                                        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                                         color: selected ? null : context.dim,
                                       ),
                                     ),
@@ -360,7 +360,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 22),
               Text(
                 'Отображение',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               const SizedBox(height: 10),
               ValueListenableBuilder<int>(
@@ -500,7 +500,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     const SizedBox(height: 4),
                                     Text(
                                       CurrencyService.currentRate(c).toStringAsFixed(2),
-                                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
@@ -687,7 +687,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
             child: Text(
               title.toUpperCase(),
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: context.dim),
             ),
           ),
         AppCard(padding: const EdgeInsets.all(14), child: child),
@@ -1010,7 +1010,7 @@ class _AutoBackupSectionState extends State<_AutoBackupSection> {
           children: [
             Text(
               'Автосохранение бэкапа',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
             ),
             const SizedBox(height: 6),
             Text(
@@ -1178,7 +1178,7 @@ class _OnlineDataSection extends StatelessWidget {
               const SizedBox(height: 14),
               Text(
                 'Как часто обновлять',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               const SizedBox(height: 8),
               SegmentedToggle<int>(
@@ -1326,7 +1326,7 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
           children: [
             Text(
               'Шифрование копий',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
             ),
             const SizedBox(height: 6),
             Text(

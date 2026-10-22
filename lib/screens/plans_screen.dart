@@ -9,6 +9,7 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
+import '../services/appearance_service.dart';
 import '../services/storage_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/online_price_service.dart';
@@ -91,7 +92,6 @@ class PlansScreen extends StatefulWidget {
 }
 
 class _PlansScreenState extends State<PlansScreen> {
-  final Set<String> _expanded = {};
   bool _summaryExpanded = false;
   _DatePreset _preset = _DatePreset.all;
   _StatusFilter _status = _StatusFilter.all;
@@ -177,35 +177,42 @@ class _PlansScreenState extends State<PlansScreen> {
     if (mounted) setState(() {});
   }
 
-  Color _statusColor(PlanStatus s) {
-    switch (s) {
-      case PlanStatus.active:
-        return context.accent;
-      case PlanStatus.done:
-        return AppColors.positive;
-      case PlanStatus.cancelled:
-        return AppColors.neutral;
-    }
+
+
+  /// Активный план, срок которого прошёл.
+  bool _planOverdue(Plan p) {
+    final d = p.targetDate;
+    if (d == null || p.status != PlanStatus.active) return false;
+    final now = DateTime.now();
+    return d.isBefore(DateTime(now.year, now.month, now.day));
   }
 
-  List<_PlanGroup> _groupPlans(List<Plan> plans) {
+  /// Группы по месяцу срока. Просроченные — отдельной группой в конце,
+  /// планы без срока — последними.
+  List<_PlanGroup> _groupByMonth(List<Plan> plans) {
     final map = <String, List<Plan>>{};
-    final dateOf = <String, DateTime?>{};
     for (final p in plans) {
       final d = p.targetDate;
-      final key = d == null
-          ? _PlanGroup.noDateKey
-          : '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final key = _planOverdue(p)
+          ? _overdueKey
+          : d == null
+              ? _PlanGroup.noDateKey
+              : '${d.year}-${d.month.toString().padLeft(2, '0')}';
       map.putIfAbsent(key, () => []).add(p);
-      dateOf[key] = d == null ? null : DateTime(d.year, d.month, d.day);
     }
-    final groups = map.entries.map((e) => _PlanGroup(e.key, dateOf[e.key], e.value)).toList();
-    groups.sort((a, b) {
-      if (a.date == null && b.date == null) return 0;
-      if (a.date == null) return 1;
-      if (b.date == null) return -1;
-      return a.date!.compareTo(b.date!);
-    });
+    int order(String k) => k == _overdueKey ? 2 : (k == _PlanGroup.noDateKey ? 3 : 1);
+    final groups = [
+      for (final e in map.entries)
+        _PlanGroup(
+          e.key,
+          e.value.map((p) => p.targetDate).whereType<DateTime>().fold<DateTime?>(
+              null, (a, b) => a == null || b.isAfter(a) ? b : a),
+          e.value..sort((a, b) => (a.targetDate ?? DateTime(9999)).compareTo(b.targetDate ?? DateTime(9999))),
+        ),
+    ]..sort((a, b) {
+        final o = order(a.key).compareTo(order(b.key));
+        return o != 0 ? o : a.key.compareTo(b.key);
+      });
     return groups;
   }
 
@@ -310,25 +317,23 @@ class _PlansScreenState extends State<PlansScreen> {
   @override
   Widget build(BuildContext context) {
     final all = StorageService.plans;
-    final groups = _groupPlans(all).where(_matchesFilter).toList();
+    // Отбор — по каждому плану, а уже потом группировка по месяцам: в одном
+    // месяце бывают планы с разными сроками и состояниями.
+    final visible = all.where((p) => _matchesFilter(_PlanGroup('', p.targetDate, [p]))).toList();
+    final groups = _groupByMonth(visible);
 
-    final active = groups.where((g) => g.status == PlanStatus.active).toList();
-    final done = groups.where((g) => g.status == PlanStatus.done).toList();
-    final cancelled = groups.where((g) => g.status == PlanStatus.cancelled).toList();
-
-    // Итог по периоду: все планы из видимых групп, кроме отменённых — они
-    // больше не считаются планом.
-    final periodPlans =
-        groups.expand((g) => g.plans).where((p) => p.status != PlanStatus.cancelled).toList();
+    // Итог по периоду: все видимые планы, кроме отменённых — они больше не
+    // считаются планом.
+    final periodPlans = visible.where((p) => p.status != PlanStatus.cancelled).toList();
     final periodTotal = periodPlans.fold(0.0, (s, p) => s + (p.estimatedTotal ?? 0));
     final allHavePrice = periodPlans.isNotEmpty && periodPlans.every((p) => p.targetPrice != null);
     final byTicker = _summarizeByTicker(periodPlans);
     // Прогресс считается по деньгам, а не по числу завершённых планов: план
     // на 100 акций, из которых куплено 99, при подсчёте «по планам» давал
-    // ровно 0% и выглядел как несделанный. Сумма берётся по средней цене
-    // засчитанных сделок, то есть это факт, а не оценка.
+    // ровно 0%. Сумма берётся по средней цене засчитанных сделок — это факт.
     final purchasedMoney =
         periodPlans.fold(0.0, (s, p) => s + p.purchasedQuantity * p.purchasedAvgPrice);
+    final overdueCount = periodPlans.where(_planOverdue).length;
 
     return PageTour(
       pageId: 'plans',
@@ -363,14 +368,8 @@ class _PlansScreenState extends State<PlansScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Планы покупок', style: Theme.of(context).textTheme.headlineMedium),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${all.length} ${Fmt.plural(all.length, "план", "плана", "планов")} · '
-                          '${groups.length} ${Fmt.plural(groups.length, "срок", "срока", "сроков")}',
-                          style: TextStyle(fontSize: 12, color: context.dim),
-                        ),
-                        const SizedBox(height: 14),
+                        const Text('Планы', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
+                        const SizedBox(height: 10),
                         _filterBar(),
                       ],
                     ),
@@ -395,32 +394,11 @@ class _PlansScreenState extends State<PlansScreen> {
                                     allHavePrice: allHavePrice,
                                     byTicker: byTicker,
                                     purchasedMoney: purchasedMoney,
+                                    count: periodPlans.length,
+                                    overdue: overdueCount,
                                   ),
                                 ),
-                              if (active.isNotEmpty) ...[
-                                const SizedBox(height: 18),
-                                _sectionHeader('Ожидают', active.length),
-                                ...active.map((g) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
-                                      child: _groupCard(g),
-                                    )),
-                              ],
-                              if (done.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                _sectionHeader('Выполнено', done.length),
-                                ...done.map((g) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
-                                      child: _groupCard(g),
-                                    )),
-                              ],
-                              if (cancelled.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                _sectionHeader('Отменено', cancelled.length),
-                                ...cancelled.map((g) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
-                                      child: _groupCard(g),
-                                    )),
-                              ],
+                              for (final g in groups) _monthGroup(g),
                               const SizedBox(height: kListBottomPadding),
                             ],
                           ),
@@ -502,7 +480,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         '$active',
                         style: const TextStyle(
                           fontSize: 9,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
@@ -551,7 +529,7 @@ class _PlansScreenState extends State<PlansScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text('Срок', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim)),
+              Text('Срок', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -634,7 +612,7 @@ class _PlansScreenState extends State<PlansScreen> {
                 ),
               ],
               const SizedBox(height: 18),
-              Text('Статус', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: context.dim)),
+              Text('Статус', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -755,117 +733,71 @@ class _PlansScreenState extends State<PlansScreen> {
     return list;
   }
 
-  Widget _sectionHeader(String title, int count) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10, left: 2),
-      child: Row(
-        children: [
-          Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: context.isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text('$count', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: context.dim)),
-          ),
-        ],
-      ),
-    );
-  }
-
+  /// Сводка по всем планам выбранного периода: сколько нужно денег, общий
+  /// прогресс, сколько куплено, сколько планов и сколько просрочено. По
+  /// нажатию раскрывается разбивка по бумагам.
   Widget _summaryCard({
     required double total,
     required bool allHavePrice,
     required List<_TickerPlanSummary> byTicker,
     required double purchasedMoney,
+    required int count,
+    required int overdue,
   }) {
     final accent = context.accent;
-    // Ограничение сверху — на случай, когда куплено больше запланированного:
-    // полоса не должна уезжать за край.
-    final moneyProgress = total <= 0 ? 0.0 : (purchasedMoney / total).clamp(0.0, 1.0);
-
+    final hidden = AppearanceService.amountsHidden;
+    final progress = total <= 0 ? 0.0 : (purchasedMoney / total).clamp(0.0, 1.0);
+    Widget stat(String label, String value, Color? color) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: TextStyle(fontSize: 12, color: context.dim)),
+              const SizedBox(height: 2),
+              Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: color)),
+            ],
+          ),
+        );
     return AppCard(
       padding: EdgeInsets.zero,
-      glow: accent,
-      color: accent.withOpacity(context.isDark ? 0.10 : 0.07),
-      border: Border.all(color: accent.withOpacity(0.32), width: 1.3),
       child: Column(
         children: [
           Pressable(
             onTap: () => setState(() => _summaryExpanded = !_summaryExpanded),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Заголовок занимает всю ширину карточки. Раньше он делил
-                  // строку с кольцом и суммой и переносился уже на третьем
-                  // слове — «Итого по плану / на год» в две строки.
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          'Итого по плану ${_periodPhrase()}',
-                          style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: accent),
-                        ),
+                        child: Text('Нужно ${_periodPhrase()}', style: TextStyle(fontSize: 13, color: context.dim)),
                       ),
+                      Text('${(progress * 100).round()}%', style: TextStyle(fontSize: 13, color: context.dim)),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    total <= 0 ? '—' : (hidden ? '••• ₽' : '≈ ${Fmt.money(total)}'),
+                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.6),
+                  ),
+                  if (total > 0 && !allHavePrice)
+                    Text('цена указана не у всех', style: TextStyle(fontSize: 11.5, color: context.dim)),
+                  const SizedBox(height: 10),
+                  MiniProgressBar(value: progress, color: AppColors.positive),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      stat('Куплено', hidden ? '••• ₽' : Fmt.money(purchasedMoney), AppColors.positive),
+                      stat('Планов', '$count', null),
+                      stat('Просрочено', '$overdue', overdue > 0 ? AppColors.negative : null),
                       AnimatedRotation(
                         turns: _summaryExpanded ? 0.5 : 0,
                         duration: AppDuration.fast,
-                        child: Icon(Icons.expand_more_rounded, color: accent),
+                        child: Icon(Icons.expand_more_rounded, color: context.dim),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        total > 0 ? '≈${Fmt.money(total)}' : '—',
-                        style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: accent),
-                      ),
-                      const Spacer(),
-                      if (total > 0 && purchasedMoney > 0)
-                        Text(
-                          '${(moneyProgress * 100).round()}%',
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
-                        ),
-                    ],
-                  ),
-                  if (total > 0 && purchasedMoney > 0) ...[
-                    const SizedBox(height: 10),
-                    // Процент считается по деньгам, а не по количеству бумаг:
-                    // рядом стоят рублёвые суммы, и процент должен сходиться
-                    // именно с ними. Бумаги в плане разной цены, поэтому доля
-                    // штук и доля денег заметно расходятся.
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(3),
-                      child: LinearProgressIndicator(
-                        value: moneyProgress,
-                        minHeight: 6,
-                        backgroundColor: accent.withOpacity(0.15),
-                        valueColor: const AlwaysStoppedAnimation(AppColors.positive),
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    // Потраченное считается по средней цене засчитанных
-                    // сделок, поэтому это факт, а не оценка — в отличие от
-                    // суммы плана выше.
-                    Text(
-                      'внесено ${Fmt.money(purchasedMoney)}',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.positive,
-                      ),
-                    ),
-                  ] else if (total > 0 && !allHavePrice) ...[
-                    const SizedBox(height: 6),
-                    Text('цена не у всех', style: TextStyle(fontSize: 11, color: context.dim)),
-                  ],
                 ],
               ),
             ),
@@ -873,11 +805,11 @@ class _PlansScreenState extends State<PlansScreen> {
           AnimatedCrossFade(
             firstChild: const SizedBox(width: double.infinity, height: 0),
             secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Column(
                 children: [
-                  Divider(color: accent.withOpacity(0.2), height: 1),
-                  const SizedBox(height: 8),
+                  Divider(color: context.hairline, height: 1),
+                  const SizedBox(height: 6),
                   ...byTicker.map((t) => _summaryRow(t, accent)),
                 ],
               ),
@@ -937,14 +869,14 @@ class _PlansScreenState extends State<PlansScreen> {
             children: [
               Text(
                 t.totalEstimated > 0 ? '≈${Fmt.money(t.totalEstimated)}' : '—',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: accent),
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: accent),
               ),
               if (t.purchasedQty > 0)
                 Text(
                   '${(t.progress * 100).round()}%',
                   style: const TextStyle(
                     fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     color: AppColors.positive,
                   ),
                 ),
@@ -955,89 +887,46 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
-  Widget _groupCard(_PlanGroup g) {
-    final expanded = _expanded.contains(g.key);
-    final color = _statusColor(g.status);
-    final now = DateTime.now();
-    final isOverdue = g.date != null &&
-        g.date!.isBefore(DateTime(now.year, now.month, now.day)) &&
-        g.status == PlanStatus.active;
-
-    return AppCard(
-      padding: EdgeInsets.zero,
+  /// Месяц (или «Просрочено», «Без срока»): заголовок с числом планов и
+  /// суммой, ниже — один блок, где планы разделены полосой фона.
+  Widget _monthGroup(_PlanGroup g) {
+    final hidden = AppearanceService.amountsHidden;
+    final overdue = g.key == _overdueKey;
+    final title = overdue
+        ? 'Просрочено'
+        : g.key == _PlanGroup.noDateKey
+            ? 'Без срока'
+            : Fmt.monthTitle(g.key);
+    final sum = g.totalEstimated;
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Pressable(
-            onTap: () => setState(() {
-              if (expanded) {
-                _expanded.remove(g.key);
-              } else {
-                _expanded.add(g.key);
-              }
-            }),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(13),
-                      gradient: LinearGradient(
-                        colors: [color.withOpacity(0.28), color.withOpacity(0.08)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                    ),
-                    child: Icon(
-                      g.date == null ? Icons.all_inbox_rounded : Icons.event_rounded,
-                      color: color,
-                      size: 20,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: overdue ? AppColors.negative : null,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                g.date == null ? 'Без срока' : 'к ${Fmt.dateLong(g.date!)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
-                              ),
-                            ),
-                            if (isOverdue) ...[
-                              const SizedBox(width: 6),
-                              const TagChip(text: 'просрочен', color: AppColors.warning, fontSize: 9.5),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${g.plans.length} ${Fmt.papers(g.plans.length)}'
-                          '${g.totalEstimated > 0 ? ' · ≈${Fmt.money(g.totalEstimated)}' : ''}'
-                          '${g.totalEstimated > 0 && !g.allHavePrice ? ' (цена не у всех)' : ''}',
-                          style: TextStyle(fontSize: 11.5, color: context.dim),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TagChip(
-                    text: g.status == PlanStatus.done
-                        ? 'Выполнено'
-                        : g.status == PlanStatus.cancelled
-                            ? 'Отменено'
-                            : '${g.doneCount}/${g.plans.length}',
-                    color: color,
-                    fontSize: 10,
-                  ),
-                  PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert_rounded, size: 19, color: context.dim),
+                ),
+                Text(
+                  '${g.plans.length}${sum > 0 ? ' · ${hidden ? '•••' : '≈ ${Fmt.money(sum)}'}' : ''}',
+                  style: TextStyle(fontSize: 12.5, color: context.dim),
+                ),
+                SizedBox(
+                  width: 34,
+                  height: 26,
+                  child: PopupMenuButton<String>(
+                    padding: EdgeInsets.zero,
+                    icon: Icon(Icons.more_horiz_rounded, size: 18, color: context.dim),
                     onSelected: (v) {
                       if (v == 'delete_group') _confirmDeleteGroup(g);
                     },
@@ -1045,24 +934,24 @@ class _PlansScreenState extends State<PlansScreen> {
                       PopupMenuItem(value: 'delete_group', child: Text('Удалить группу')),
                     ],
                   ),
-                  AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: AppDuration.fast,
-                    child: Icon(Icons.expand_more_rounded, color: context.dim),
-                  ),
+                ),
+              ],
+            ),
+          ),
+          ClipRRect(
+            borderRadius: AppRadius.all(AppRadius.md),
+            child: Container(
+              color: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
+              child: Column(
+                children: [
+                  for (int i = 0; i < g.plans.length; i++) ...[
+                    // Полоса фона между планами — каждый план читается отдельно.
+                    if (i > 0) Container(height: 6, color: context.isDark ? AppColors.darkBg : AppColors.lightBg),
+                    _planRow(g.plans[i]),
+                  ],
                 ],
               ),
             ),
-          ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox(width: double.infinity, height: 0),
-            secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(children: g.plans.map(_planRow).toList()),
-            ),
-            crossFadeState: expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            duration: AppDuration.normal,
-            sizeCurve: Curves.easeInOut,
           ),
         ],
       ),
@@ -1072,17 +961,18 @@ class _PlansScreenState extends State<PlansScreen> {
   Widget _planRow(Plan p) {
     final isDone = p.status == PlanStatus.done;
     final isCancelled = p.status == PlanStatus.cancelled;
+    final overdue = _planOverdue(p);
     final progress = p.targetQuantity <= 0 ? 0.0 : (p.purchasedQuantity / p.targetQuantity).clamp(0.0, 1.0);
-    final color = _statusColor(p.status);
+    final barColor = overdue
+        ? AppColors.negative
+        : isDone
+            ? AppColors.positive
+            : context.accent;
 
-    // Прогресс по деньгам может обогнать прогресс по штукам, если цена
-    // выросла с момента постановки плана — тогда на тот же бюджет купится
-    // меньше бумаг, чем задумывалось. Оба числа показываем рядом, а решение
-    // "хватит ли этого" оставляем пользователю — авто-порог тут был бы
-    // произвольным.
+    // На оставшиеся по плану деньги лот уже не купить — подсказываем, что
+    // план можно закрыть вручную.
     final spent = p.purchasedQuantity * p.purchasedAvgPrice;
     final budget = p.estimatedTotal;
-    final moneyProgress = (budget != null && budget > 0) ? (spent / budget).clamp(0.0, 1.0) : null;
     final remainingBudget = budget != null ? (budget - spent) : null;
     final quote = MoexSyncService.marketSnapshot.value[p.ticker.toUpperCase()];
     final cached = OnlinePriceService.get(p.ticker);
@@ -1096,16 +986,19 @@ class _PlansScreenState extends State<PlansScreen> {
         currentPrice > 0 &&
         remainingBudget < currentPrice * lotSize;
 
+    final d = p.targetDate;
+    final when = d == null
+        ? 'без срока'
+        : p.isMonthPlan
+            ? 'на ${Fmt.monthTitle('${d.year}-${d.month}').split(' ').first.toLowerCase()}'
+            : 'до ${Fmt.dayShort(d)}';
+
     return Dismissible(
       key: Key(p.id),
       direction: DismissDirection.endToStart,
       confirmDismiss: (_) => _confirmDelete(context),
       background: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          borderRadius: AppRadius.all(AppRadius.sm),
-          gradient: LinearGradient(colors: [AppColors.negative.withOpacity(0.15), AppColors.negative]),
-        ),
+        color: AppColors.negative,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
@@ -1114,135 +1007,121 @@ class _PlansScreenState extends State<PlansScreen> {
         StorageService.deletePlan(p.id);
         setState(() {});
       },
-      child: Pressable(
+      child: InkWell(
         onTap: () => _showAddSheet(context, existing: p),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: context.isDark ? Colors.white.withOpacity(0.035) : AppColors.lightSurfaceHigh,
-            borderRadius: AppRadius.all(AppRadius.sm),
-          ),
-          child: Opacity(
-            opacity: isCancelled ? 0.5 : 1,
+        onLongPress: () => _showStatusMenu(p),
+        child: Opacity(
+          opacity: isCancelled ? 0.5 : 1,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Column(
-            children: [
-              Row(
-                children: [
-                  TickerAvatar(ticker: p.ticker, size: 34, glow: false),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          p.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                            decoration: isDone || isCancelled ? TextDecoration.lineThrough : null,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        MarqueeText(
-                          'Цель: ${Fmt.qty(p.targetQuantity)} шт. × '
-                          '${p.targetPrice != null ? Fmt.price(p.targetPrice!, type: p.type) : 'цена не указана'}',
-                          alwaysScroll: true,
-                          style: TextStyle(fontSize: 11.2, color: context.dim),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Checkbox(
-                    value: isDone,
-                    visualDensity: VisualDensity.compact,
-                    onChanged: (v) {
-                      p.status = v == true ? PlanStatus.done : PlanStatus.active;
-                      StorageService.updatePlan(p);
-                      setState(() {});
-                    },
-                  ),
-                  PopupMenuButton<PlanStatus>(
-                    icon: Icon(Icons.flag_rounded, size: 17, color: color),
-                    onSelected: (s) {
-                      p.status = s;
-                      StorageService.updatePlan(p);
-                      setState(() {});
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: PlanStatus.active, child: Text('Активный')),
-                      PopupMenuItem(value: PlanStatus.done, child: Text('Выполнен')),
-                      PopupMenuItem(value: PlanStatus.cancelled, child: Text('Отменён')),
-                    ],
-                  ),
-                ],
-              ),
-              if (p.purchasedQuantity > 0) ...[
-                const SizedBox(height: 10),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Row(
                   children: [
-                    Expanded(child: MiniProgressBar(value: progress, color: AppColors.positive)),
+                    TickerAvatar(ticker: p.ticker, size: 36, glow: false),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                              decoration: isDone || isCancelled ? TextDecoration.lineThrough : null,
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            '${Fmt.qty(p.purchasedQuantity)} из ${Fmt.qty(p.targetQuantity)} шт'
+                            '${p.targetPrice != null ? ' · до ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12.5, color: context.dim),
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Text(
-                      'куплено ${Fmt.qty(p.purchasedQuantity)} по ${Fmt.price(p.purchasedAvgPrice, type: p.type)}',
-                      style: TextStyle(fontSize: 10.3, fontWeight: FontWeight.w700, color: context.dim),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          isDone ? 'готово' : isCancelled ? 'отменён' : '${(progress * 100).round()}%',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: isDone ? AppColors.positive : null,
+                          ),
+                        ),
+                        Text(when, style: TextStyle(fontSize: 12, color: overdue ? AppColors.negative : context.dim)),
+                      ],
                     ),
                   ],
                 ),
-                // budget проверяется здесь же, чтобы анализатор увидел его
-                // не-null: moneyProgress считается из него, но вывести это
-                // сам он не может.
-                if (moneyProgress != null && budget != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'по деньгам: ${Fmt.money(spent)} из ~${Fmt.money(budget)} (${(moneyProgress * 100).round()}%)',
-                    style: TextStyle(fontSize: 10.3, color: context.dim),
-                  ),
-                ],
+                const SizedBox(height: 10),
+                MiniProgressBar(value: isDone ? 1 : progress, color: barColor),
                 if (cantAffordMore) ...[
                   const SizedBox(height: 6),
-                  InfoBanner(
-                    icon: Icons.info_outline_rounded,
-                    color: AppColors.warning,
-                    text: 'По текущей цене (${Fmt.price(currentPrice!, type: p.type)}) на оставшийся '
-                        'бюджет плана лот уже не купить — если это устраивает, отметьте план '
-                        'выполненным вручную',
+                  Text(
+                    'На остаток плана лот по ${Fmt.price(currentPrice!, type: p.type)} уже не купить — '
+                    'можно отметить выполненным',
+                    style: const TextStyle(fontSize: 11.5, color: AppColors.warning),
                   ),
                 ],
               ],
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    // Без комментария место остаётся пустым: заглушка на
-                    // каждом плане только добавляла шума. Сама строка нужна
-                    // ради суммы справа, поэтому не убирается.
-                    Expanded(
-                      child: p.note?.trim().isNotEmpty == true
-                          ? Text(
-                              p.note!.trim(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11.2, fontStyle: FontStyle.italic, color: context.dim),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      p.estimatedTotal != null ? Fmt.money(p.estimatedTotal!) : '—',
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                ),
-              ),
-            ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Долгое нажатие на план: сменить состояние или удалить.
+  Future<void> _showStatusMenu(Plan p) async {
+    final choice = await showAppSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetHeader(title: p.name),
+              for (final (value, label) in const [
+                ('active', 'Активный'),
+                ('done', 'Выполнен'),
+                ('cancelled', 'Отменён'),
+              ])
+                ListTile(
+                  title: Text(label),
+                  trailing: p.status.name == value ? Icon(Icons.check_rounded, color: ctx.accent) : null,
+                  onTap: () => Navigator.pop(ctx, value),
+                ),
+              ListTile(
+                title: const Text('Удалить план', style: TextStyle(color: AppColors.negative)),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'delete') {
+      if (await _confirmDelete(context)) {
+        await StorageService.deletePlan(p.id);
+      }
+    } else {
+      p.status = PlanStatus.values.byName(choice);
+      await StorageService.updatePlan(p);
+    }
+    if (mounted) setState(() {});
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
@@ -1265,7 +1144,11 @@ class _PlansScreenState extends State<PlansScreen> {
   }
 
   Future<void> _confirmDeleteGroup(_PlanGroup g) async {
-    final label = g.date == null ? 'без срока' : 'на ${Fmt.date(g.date!)}';
+    final label = g.key == _overdueKey
+        ? 'из просроченных'
+        : g.key == _PlanGroup.noDateKey
+            ? 'без срока'
+            : 'на ${Fmt.monthTitle(g.key).toLowerCase()}';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1287,7 +1170,6 @@ class _PlansScreenState extends State<PlansScreen> {
       for (final p in g.plans) {
         await StorageService.deletePlan(p.id);
       }
-      _expanded.remove(g.key);
       if (mounted) setState(() {});
     }
   }
@@ -1322,6 +1204,11 @@ class _PlansScreenState extends State<PlansScreen> {
     String selectedTicker = existing?.ticker.toUpperCase() ?? '';
     bool priceEdited = existing != null;
     DateTime? targetDate = existing?.targetDate;
+    // Тип плана: «к дате» или «на месяц». У нового плана — тот, что выбирали
+    // в прошлый раз.
+    bool monthPlan = existing != null
+        ? existing.isMonthPlan
+        : AppearanceService.ui(_planTypeKey) == 'month';
 
     showAppSheet(
       context: context,
@@ -1464,16 +1351,34 @@ class _PlansScreenState extends State<PlansScreen> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                AppDateField(
-                  value: targetDate,
-                  label: 'Срок (необязательно)',
-                  emptyLabel: 'Без срока',
-                  firstDate: existing?.targetDate != null && existing!.targetDate!.isBefore(DateTime.now())
-                      ? existing.targetDate
-                      : DateTime.now(),
-                  lastDate: DateTime(2100),
-                  onPicked: (d) => setSheetState(() => targetDate = d),
+                SegmentedToggle<bool>(
+                  values: const [false, true],
+                  selected: monthPlan,
+                  labelOf: (m) => m ? 'На месяц' : 'К дате',
+                  onChanged: (m) => setSheetState(() {
+                    monthPlan = m;
+                    // Дата превращается в конец своего месяца и обратно —
+                    // выбранный срок не теряется при переключении.
+                    if (m && targetDate != null) targetDate = _monthEnd(targetDate!);
+                  }),
                 ),
+                const SizedBox(height: 10),
+                if (monthPlan)
+                  _MonthField(
+                    value: targetDate,
+                    onPicked: (d) => setSheetState(() => targetDate = d == null ? null : _monthEnd(d)),
+                  )
+                else
+                  AppDateField(
+                    value: targetDate,
+                    label: 'Срок (необязательно)',
+                    emptyLabel: 'Без срока',
+                    firstDate: existing?.targetDate != null && existing!.targetDate!.isBefore(DateTime.now())
+                        ? existing.targetDate
+                        : DateTime.now(),
+                    lastDate: DateTime(2100),
+                    onPicked: (d) => setSheetState(() => targetDate = d),
+                  ),
                 const SizedBox(height: 12),
                 AppTextField(controller: noteCtrl, label: 'Заметка (необязательно)'),
                 const SizedBox(height: 22),
@@ -1482,6 +1387,8 @@ class _PlansScreenState extends State<PlansScreen> {
                   icon: editing ? Icons.save_outlined : Icons.flag_rounded,
                   onPressed: () async {
                     final enteredLots = int.tryParse(qtyCtrl.text);
+                    // Запоминаем тип — в следующий раз подставится он же.
+                    AppearanceService.setUi(_planTypeKey, monthPlan ? 'month' : 'date');
                     final p = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
                     if (tickerCtrl.text.isEmpty || enteredLots == null || enteredLots <= 0) return;
                     if (existing == null) {
@@ -1495,6 +1402,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         targetDate: targetDate,
                         note: noteCtrl.text.isEmpty ? null : noteCtrl.text,
                         createdAt: DateTime.now(),
+                        wholeMonth: monthPlan && targetDate != null ? true : null,
                       ));
                     } else {
                       existing
@@ -1504,6 +1412,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         ..targetQuantity = enteredLots * lotSize.toDouble()
                         ..targetPrice = p
                         ..targetDate = targetDate
+                        ..wholeMonth = monthPlan && targetDate != null ? true : null
                         ..note = noteCtrl.text.isEmpty ? null : noteCtrl.text;
                       await StorageService.updatePlan(existing);
                     }
@@ -1516,6 +1425,142 @@ class _PlansScreenState extends State<PlansScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Ключ группы просроченных планов.
+const _overdueKey = '_overdue';
+
+/// Ключ, под которым запоминается последний выбранный тип плана.
+const _planTypeKey = 'planType';
+
+/// Последний день месяца даты [d].
+DateTime _monthEnd(DateTime d) => DateTime(d.year, d.month + 1, 0);
+
+/// Срок плана «на месяц»: месяц и год. Нажатие открывает сетку месяцев.
+class _MonthField extends StatelessWidget {
+  final DateTime? value;
+  final ValueChanged<DateTime?> onPicked;
+
+  const _MonthField({required this.value, required this.onPicked});
+
+  @override
+  Widget build(BuildContext context) {
+    final v = value;
+    return Pressable(
+      onTap: () async {
+        final picked = await showDialog<DateTime>(
+          context: context,
+          builder: (_) => _MonthPickerDialog(initial: v ?? DateTime.now()),
+        );
+        if (picked != null) onPicked(picked);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
+          borderRadius: AppRadius.all(AppRadius.sm),
+          border: Border.all(color: context.hairline),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_month_outlined, size: 19, color: context.dim),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                v == null ? 'Месяц (необязательно)' : Fmt.monthTitle('${v.year}-${v.month}'),
+                style: TextStyle(fontSize: 15, color: v == null ? context.dim : null),
+              ),
+            ),
+            if (v != null)
+              GestureDetector(
+                onTap: () => onPicked(null),
+                child: Icon(Icons.close_rounded, size: 18, color: context.dim),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Год стрелками, месяц — одним нажатием. Прошедшие месяцы бледнее.
+class _MonthPickerDialog extends StatefulWidget {
+  final DateTime initial;
+  const _MonthPickerDialog({required this.initial});
+
+  @override
+  State<_MonthPickerDialog> createState() => _MonthPickerDialogState();
+}
+
+class _MonthPickerDialogState extends State<_MonthPickerDialog> {
+  late int _year = widget.initial.year;
+  static const _names = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final selected = widget.initial;
+    return Dialog(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  onPressed: _year > now.year ? () => setState(() => _year--) : null,
+                ),
+                Text('$_year', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  onPressed: () => setState(() => _year++),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            GridView.count(
+              crossAxisCount: 4,
+              shrinkWrap: true,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+              childAspectRatio: 1.6,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                for (int m = 1; m <= 12; m++)
+                  Builder(builder: (context) {
+                    final past = _year < now.year || (_year == now.year && m < now.month);
+                    final on = selected.year == _year && selected.month == m;
+                    return Pressable(
+                      onTap: past ? null : () => Navigator.pop(context, DateTime(_year, m, 1)),
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: on
+                              ? context.accent
+                              : (context.isDark ? Colors.white.withOpacity(0.05) : AppColors.lightSurfaceHigh),
+                          borderRadius: AppRadius.all(AppRadius.sm),
+                        ),
+                        child: Text(
+                          _names[m - 1],
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                            color: on ? Colors.white : (past ? context.dim.withOpacity(0.5) : null),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

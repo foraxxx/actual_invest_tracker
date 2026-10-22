@@ -7,7 +7,6 @@ import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/page_tour.dart';
 import '../design/surfaces.dart';
-import '../design/tilt_shine_card.dart';
 import '../design/tokens.dart';
 import '../services/analytics_service.dart';
 import '../services/appearance_service.dart';
@@ -287,10 +286,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         delay: Duration(milliseconds: 40 * step++),
         child: TourSpot(
           id: 'hero',
-          child: TiltShineCard(
-          child: GlassCard(
-            glow: accent,
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+          // Стоимость и график — без карточки, прямо на фоне: главное число
+          // экрана не нужно ни во что заворачивать.
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -322,8 +321,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Row(
                           children: [
                             Text(
-                              'Стоимость портфеля',
-                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: context.dim),
+                              'Стоимость',
+                              style: TextStyle(fontSize: 13, color: context.dim),
                             ),
                             if (showPeriodChip) ...[
                               const SizedBox(width: 8),
@@ -349,11 +348,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(height: 8),
                         HiddenAmount.forText(
                           Fmt.money(currentValue),
-                          fontSize: 36,
+                          fontSize: 40,
                           child: RollingNumber(
                             value: currentValue,
                             formatter: (v) => Fmt.money(v),
-                            style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -1.5),
+                            style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w700, letterSpacing: -1.6),
                           ),
                         ),
                         if (summary != null) ...[
@@ -398,10 +397,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ),
-        ),
       ),
 
-      const SizedBox(height: 18),
+      const SizedBox(height: 14),
 
       // --- Период статистики ---
       FadeSlideIn(
@@ -644,7 +642,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             if (years.length > 1) ...[
               _payoutYears(context, years),
               const SizedBox(height: 14),
-              Text('$_incomeYear по месяцам', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+              Text('$_incomeYear по месяцам', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
             ],
             PayoutCalendar(cells: cells),
@@ -707,15 +705,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'МОЙ ПОРТФЕЛЬ',
-                style: TextStyle(fontSize: 10, letterSpacing: 1.6, fontWeight: FontWeight.w700, color: context.dim),
-              ),
-              const SizedBox(height: 2),
-              Text(
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.headlineSmall,
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
               if (OnlineSettingsService.enabled) ...[
                 const SizedBox(height: 2),
@@ -746,18 +739,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final button = Pressable(
       onTap: onTap,
       child: Container(
-        width: 42,
-        height: 42,
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: highlight ? AppGradient.accent(accent) : null,
-          color: highlight ? null : (context.isDark ? Colors.white.withOpacity(0.06) : Colors.white),
-          border: Border.all(color: highlight ? Colors.transparent : context.hairline),
-          boxShadow: highlight
-              ? [BoxShadow(color: accent.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))]
-              : null,
+          color: highlight ? accent.withOpacity(0.16) : (context.isDark ? Colors.white.withOpacity(0.06) : Colors.white),
         ),
-        child: Icon(icon, size: 20, color: highlight ? Colors.white : context.dim),
+        child: Icon(icon, size: 20, color: highlight ? accent : context.dim),
       ),
     );
     return tooltip == null ? button : Tooltip(message: tooltip, child: button);
@@ -877,7 +865,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   x ? '${Fmt.pct(value)} годовых' : Fmt.pct(value),
                                   style: TextStyle(
                                     fontSize: 24,
-                                    fontWeight: FontWeight.w800,
+                                    fontWeight: FontWeight.w700,
                                     color: AppColors.pnl(value),
                                   ),
                                 ),
@@ -895,7 +883,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       children: [
                         Text(intro, style: const TextStyle(height: 1.4)),
                         const SizedBox(height: 16),
-                        const Text('Как считается', style: TextStyle(fontWeight: FontWeight.w800)),
+                        const Text('Как считается', style: TextStyle(fontWeight: FontWeight.w700)),
                         const SizedBox(height: 6),
                         Text(calculation, style: const TextStyle(height: 1.4)),
                         const SizedBox(height: 14),
@@ -1087,12 +1075,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                 ),
               ),
               Text(
                 Fmt.money(total),
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color),
               ),
             ],
           ),
@@ -1159,7 +1147,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Fmt.signedMoney(m.amountRub),
             style: TextStyle(
               fontSize: 13,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               color: AppColors.pnl(m.amountRub),
             ),
           ),
@@ -1314,7 +1302,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(width: 8),
         Text(
           Fmt.pct(pct, decimals: 2),
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.pnl(diff)),
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.pnl(diff)),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -1360,7 +1348,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             maxLines: 1,
             style: TextStyle(
               fontSize: 36,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               letterSpacing: -1.5,
               color: bigColor,
             ),
@@ -1414,7 +1402,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Text(
             text,
             maxLines: 1,
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.pnl(rub)),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.pnl(rub)),
           ),
         );
       }
@@ -1478,7 +1466,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Text(
           text,
           maxLines: 1,
-          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color),
+          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: color),
         ),
       );
 
@@ -1504,10 +1492,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: context.accent.withOpacity(0.12),
+            color: context.isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.05),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, size: 17, color: context.accent),
+          child: Icon(icon, size: 17),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -1518,14 +1506,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 1),
               Text(
                 subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.dim),
+                style: TextStyle(fontSize: 12, color: context.dim),
               ),
             ],
           ),
@@ -1640,7 +1628,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 2),
                     Text(
                       '${yieldPct(toCost)} в год',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.positive),
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.positive),
                     ),
                   ],
                 ),
@@ -1763,7 +1751,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final text = Text(
       m.value,
       maxLines: 1,
-      style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800, color: m.valueColor),
+      style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w700, color: m.valueColor),
     );
     return m.money ? HiddenAmount.forText(m.value, fontSize: fontSize, child: text) : text;
   }
@@ -1796,7 +1784,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(m.switchLabel!, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: context.accent)),
+            Text(m.switchLabel!, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: context.accent)),
             const SizedBox(width: 2),
             Icon(Icons.swap_horiz_rounded, size: 11, color: context.accent),
           ],
@@ -2184,7 +2172,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 '${_groupTitle(type)} · $count',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 1),
               HiddenAmount.forText(
@@ -2204,7 +2192,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         HiddenAmount.forText(
           money,
           fontSize: 13.5,
-          child: Text(money, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+          child: Text(money, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
         ),
         if (collapsible) ...[
           const SizedBox(width: 2),
@@ -2278,7 +2266,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _holdingName(ticker),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                      style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 2),
                     // Количество и цена. Изменение за сегодня — под мини-графиком.
@@ -2346,7 +2334,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: Text(
                               Fmt.money(h.valueRub),
                               maxLines: 1,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                             ),
                           ),
                         ),

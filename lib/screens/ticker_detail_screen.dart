@@ -273,7 +273,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 onTap: _loadPayouts,
                 child: Text(
                   'Повторить',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: context.accent),
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.accent),
                 ),
               ),
             ],
@@ -293,7 +293,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         children: [
           Text(
             isBond ? 'Купоны' : 'Дивиденды',
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
           ),
           const SizedBox(height: 2),
           Text(
@@ -357,7 +357,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             children: [
               Text(
                 title,
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: context.dim),
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: context.dim),
               ),
               // У акций счётчик и сумма на одну бумагу ничего не говорят —
               // показываем их только по облигациям, где важен весь график.
@@ -430,7 +430,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           ),
           Text(
             Fmt.price(p.amount, currency: p.currency == 'SUR' ? '₽' : p.currency),
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: color),
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: color),
           ),
         ],
       ),
@@ -749,19 +749,16 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             children: [
               Expanded(
                 child: GradientButton(
-                  label: 'Продать',
-                  icon: Icons.arrow_upward_rounded,
-                  colors: const [Color(0xFFE23A5B), Color(0xFFFF6B85)],
-                  onPressed: () => _quickTradeSheet(context, ticker, name, true),
+                  label: 'Купить',
+                  onPressed: () => _quickTradeSheet(context, ticker, name, false),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: GradientButton(
-                  label: 'Купить',
-                  icon: Icons.arrow_downward_rounded,
-                  colors: const [Color(0xFF0FA97E), Color(0xFF16D796)],
-                  onPressed: () => _quickTradeSheet(context, ticker, name, false),
+                  label: 'Продать',
+                  colors: [context.isDark ? AppColors.darkSurfaceHigh : const Color(0xFF3A3F4B)],
+                  onPressed: () => _quickTradeSheet(context, ticker, name, true),
                 ),
               ),
             ],
@@ -790,7 +787,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
       expandedHeight: 244,
       backgroundColor: context.isDark ? AppColors.darkBg : AppColors.lightBg,
       surfaceTintColor: Colors.transparent,
-      title: Text(ticker, style: const TextStyle(fontWeight: FontWeight.w800)),
+      title: Text(ticker, style: const TextStyle(fontWeight: FontWeight.w700)),
       actions: [
         IconButton(
           tooltip: isFav ? 'Убрать из избранного' : 'В избранное',
@@ -813,18 +810,6 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    accent.withOpacity(context.isDark ? 0.34 : 0.20),
-                    (context.isDark ? AppColors.darkBg : AppColors.lightBg).withOpacity(0.1),
-                  ],
-                ),
-              ),
-            ),
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 56, 20, 16),
@@ -837,7 +822,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                         GestureDetector(
                           onTap: () => _pickLogo(context, ticker),
                           onLongPress: () => _showLogoOptions(context, ticker),
-                          child: Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 56)),
+                          child: Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 48)),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -879,7 +864,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             child: RollingNumber(
                               value: holding.valueRub,
                               formatter: (v) => Fmt.money(v),
-                              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -1),
+                              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: -1.1),
                             ),
                           ),
                           const SizedBox(height: 7),
@@ -916,9 +901,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                                 isBond: quote.isBond,
                               ),
                               style: const TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -1,
+                                fontSize: 32,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -1.1,
                               ),
                             ),
                           ),
@@ -994,7 +979,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             sector,
                             style: TextStyle(
                               fontSize: 14,
-                              fontWeight: sector == current ? FontWeight.w800 : FontWeight.w600,
+                              fontWeight: sector == current ? FontWeight.w700 : FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1055,7 +1040,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       const SizedBox(height: 3),
                       Text(
                         matDate == null ? 'бессрочная' : Fmt.date(matDate),
-                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                       ),
                       if (daysLeft != null && daysLeft > 0)
                         Text(_timeLeft(daysLeft), style: TextStyle(fontSize: 10.5, color: context.dim)),
@@ -1076,7 +1061,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                           currency: currency == 'RUB' ? '₽' : currency,
                           isBond: true,
                         ),
-                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                       ),
                       if (currency != 'RUB')
                         Text(
@@ -1195,7 +1180,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Цена на бирже',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
@@ -1414,7 +1399,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
             ),
             Text(
               '+${Fmt.price(i.amountNet, currency: i.currency == 'RUB' ? '₽' : i.currency)}',
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: AppColors.positive),
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: AppColors.positive),
             ),
           ],
         ),
@@ -1466,7 +1451,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           ),
           Text(
             '${p.isSell ? '+' : '−'}${Fmt.group(p.settlementAmount)} ${p.currency == 'RUB' ? '₽' : p.currency}',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: p.isSell ? color : null),
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: p.isSell ? color : null),
           ),
         ],
       ),

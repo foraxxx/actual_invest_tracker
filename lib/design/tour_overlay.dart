@@ -427,7 +427,7 @@ class _Spotlight extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(step.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              Text(step.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               Text(step.text, style: TextStyle(fontSize: 13, height: 1.45, color: context.dim)),
               const SizedBox(height: 12),

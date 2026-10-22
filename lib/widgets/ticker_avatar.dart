@@ -76,15 +76,7 @@ class TickerAvatar extends StatelessWidget {
           height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            boxShadow: glow
-                ? [
-                    BoxShadow(
-                      color: colors.first.withOpacity(0.38),
-                      blurRadius: size * 0.32,
-                      offset: Offset(0, size * 0.12),
-                    ),
-                  ]
-                : null,
+            // Без цветного свечения под логотипом — спокойнее.
           ),
           child: logoPath != null
               ? ClipOval(
@@ -136,7 +128,7 @@ class TickerAvatar extends StatelessWidget {
               _initials,
               style: TextStyle(
                 color: Colors.white,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 fontSize: size * 0.35,
                 letterSpacing: -0.6,
               ),

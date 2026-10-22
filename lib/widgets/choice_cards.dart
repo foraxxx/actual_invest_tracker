@@ -52,7 +52,7 @@ class ChoiceCards extends StatelessWidget {
     final valueText = Text(
       c.value,
       maxLines: 1,
-      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
     );
     return Pressable(
       onTap: onTap,

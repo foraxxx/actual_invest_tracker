@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Единая палитра редизайна "Aurora".
+/// Единая палитра. Тёмный минимализм: ровный фон, мягкие карточки без
+/// рамок и свечения, один акцентный цвет.
 ///
 /// Здесь только сырые токены — цвета, радиусы, отступы, длительности.
 /// Сборка темы из них — в app_theme.dart, готовые виджеты — в surfaces.dart,
@@ -9,12 +10,12 @@ class AppColors {
   AppColors._();
 
   // --- Тёмная тема: почти чёрный космос с холодным подтоном ---
-  static const darkBg = Color(0xFF05070C);
-  static const darkSurface = Color(0xFF0D111A);
-  static const darkSurfaceHigh = Color(0xFF151B28);
-  static const darkSurfaceTop = Color(0xFF1D2434);
-  static const darkBorder = Color(0x1AFFFFFF);
-  static const darkTextDim = Color(0xFF8A93A6);
+  static const darkBg = Color(0xFF0B0D12);
+  static const darkSurface = Color(0xFF14171E);
+  static const darkSurfaceHigh = Color(0xFF1D212B);
+  static const darkSurfaceTop = Color(0xFF262B37);
+  static const darkBorder = Color(0x12FFFFFF);
+  static const darkTextDim = Color(0xFF7D8597);
 
   // --- Светлая тема: тёплый фарфор, без «больничной» белизны ---
   static const lightBg = Color(0xFFF3F5FA);
@@ -25,8 +26,8 @@ class AppColors {
   static const lightTextDim = Color(0xFF6B7688);
 
   // --- Смысловые цвета (одинаковые в обеих темах, читаются везде) ---
-  static const positive = Color(0xFF16D796);
-  static const negative = Color(0xFFFF4D6D);
+  static const positive = Color(0xFF2FD18B);
+  static const negative = Color(0xFFFF6B6B);
   static const warning = Color(0xFFFFB020);
   static const info = Color(0xFF3DA9FC);
   static const violet = Color(0xFF8B7CFF);
@@ -66,7 +67,7 @@ class AppRadius {
   AppRadius._();
   static const double xs = 10;
   static const double sm = 14;
-  static const double md = 20;
+  static const double md = 18;
   static const double lg = 26;
   static const double xl = 34;
 

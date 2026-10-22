@@ -381,7 +381,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700))),
           TextButton(
             onPressed: onAction,
             child: Text(action, style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -415,7 +415,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
           const SizedBox(height: 2),
           AdaptiveSingleLineText(
             _num(v.data.income[i]),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           Text(
             '${date.day} ${_monthsGen[date.month - 1]} · '
@@ -503,7 +503,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
             children: [
               Expanded(child: Text('Отложено за месяц', style: TextStyle(fontSize: 12.5, color: context.dim))),
               Text.rich(TextSpan(children: [
-                TextSpan(text: _num(v.doneTotal), style: const TextStyle(fontWeight: FontWeight.w800)),
+                TextSpan(text: _num(v.doneTotal), style: const TextStyle(fontWeight: FontWeight.w700)),
                 TextSpan(text: ' из ${_rub(v.plannedTotal)}', style: TextStyle(color: context.dim)),
               ]), style: const TextStyle(fontSize: 15)),
             ],
@@ -603,13 +603,13 @@ class _BudgetScreenState extends State<BudgetScreen> {
               child: Text(label,
                   style: TextStyle(
                     fontSize: 12.5,
-                    fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+                    fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
                     color: bold ? null : context.dim,
                   )),
             ),
-            _numCell(fmt(a), color: colorOf(a), weight: bold || rest ? FontWeight.w800 : FontWeight.w600),
+            _numCell(fmt(a), color: colorOf(a), weight: bold || rest ? FontWeight.w700 : FontWeight.w600),
             const SizedBox(width: 6),
-            _numCell(fmt(b), color: colorOf(b), weight: bold || rest ? FontWeight.w800 : FontWeight.w600),
+            _numCell(fmt(b), color: colorOf(b), weight: bold || rest ? FontWeight.w700 : FontWeight.w600),
           ],
         ),
       );
@@ -747,7 +747,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                             borderRadius: BorderRadius.circular(5),
                           ),
                           child: Text(tag,
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.info)),
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.info)),
                         ),
                       ],
                     ],
@@ -809,7 +809,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
         ),
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text(text, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: color)),
+          child: Text(text, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: color)),
         ),
       ),
     );
@@ -1530,7 +1530,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                             ],
                           ),
                         ),
-                        Text(_num(extras[k].amount), style: const TextStyle(fontWeight: FontWeight.w800)),
+                        Text(_num(extras[k].amount), style: const TextStyle(fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),
@@ -1830,7 +1830,7 @@ Future<(int, int)?> showMonthPicker(BuildContext context, int year, int month) {
                   Expanded(
                     child: Text('$y',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
                   ),
                   arrow(Icons.chevron_right_rounded, 1),
                 ],
@@ -2018,11 +2018,11 @@ class BudgetSummaryCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text('Бюджет · ${_monthsNom[now.month - 1]}',
-                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                       ),
                       Text.rich(
                         TextSpan(children: [
-                          TextSpan(text: _num(v.doneTotal), style: const TextStyle(fontWeight: FontWeight.w800)),
+                          TextSpan(text: _num(v.doneTotal), style: const TextStyle(fontWeight: FontWeight.w700)),
                           TextSpan(text: ' из ${_rub(v.plannedTotal)}', style: TextStyle(color: context.dim)),
                         ]),
                         style: const TextStyle(fontSize: 12.5),

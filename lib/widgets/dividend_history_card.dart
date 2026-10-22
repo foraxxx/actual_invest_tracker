@@ -102,7 +102,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Дивидендная история', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    const Text('Дивидендная история', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
                     Text('На одну акцию, ₽', style: TextStyle(fontSize: 11, color: context.dim)),
                   ],
                 ),
@@ -260,7 +260,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
     Widget part(String label, double v, Color? color) => Text.rich(
           TextSpan(children: [
             TextSpan(text: '$label '),
-            TextSpan(text: yieldPct(v), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: color)),
+            TextSpan(text: yieldPct(v), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color)),
           ]),
           style: TextStyle(fontSize: 12, color: context.dim),
         );
@@ -302,7 +302,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
             ),
             child: Column(
               children: [
-                Text('${r.date.day}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, height: 1.05)),
+                Text('${r.date.day}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700, height: 1.05)),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(month, style: TextStyle(fontSize: 10, color: context.dim)),
@@ -320,14 +320,14 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
                   style: TextStyle(fontSize: 11, color: context.dim),
                 ),
                 const SizedBox(height: 1),
-                Text('${_amount(r.amount)} ₽ на акцию', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800)),
+                Text('${_amount(r.amount)} ₽ на акцию', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
                 if (qty > 0)
                   Text.rich(
                     TextSpan(children: [
                       const TextSpan(text: 'получено после налога '),
                       TextSpan(
                         text: hidden ? '••• ₽' : '≈ ${Fmt.money(you)}',
-                        style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.positive),
+                        style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.positive),
                       ),
                     ]),
                     style: TextStyle(fontSize: 12, color: context.dim),
@@ -383,7 +383,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(hidden ? '••• ₽' : Fmt.money(net), style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                  Text(hidden ? '••• ₽' : Fmt.money(net), style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
                   Text(
                     hidden
                         ? 'до налога ••• ₽'
@@ -411,7 +411,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
         OutlinedButton.icon(
           onPressed: widget.onAdd,
           icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('Добавить выплату', style: TextStyle(fontWeight: FontWeight.w800)),
+          label: const Text('Добавить выплату', style: TextStyle(fontWeight: FontWeight.w700)),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 11),
             side: BorderSide(color: context.accent.withOpacity(0.45)),
@@ -451,7 +451,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
               children: [
                 Text(
                   hidden ? '+••• ₽' : '+${Fmt.money(CurrencyService.toRub(i.amountNet, i.currency, date: i.date))}',
-                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: AppColors.positive),
+                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.positive),
                 ),
                 if (perShare != null)
                   Text('${Fmt.perShare(perShare, like: info?.record.amount)} ₽ на акцию', style: TextStyle(fontSize: 11, color: context.dim)),

@@ -292,7 +292,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
             formatter: (v) => Fmt.signedMoney(v),
             style: TextStyle(
               fontSize: 32,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               letterSpacing: -1.3,
               color: AppColors.pnl(result),
             ),
@@ -325,7 +325,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
           style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: context.dim),
         ),
         const SizedBox(height: 3),
-        Text(value, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800)),
+        Text(value, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -354,7 +354,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                             r.name.trim().isEmpty ? r.ticker : r.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                           ),
                         ),
                         if (r.isClosed) ...[
@@ -379,7 +379,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                 children: [
                   Text(
                     r.valueRub > 0 ? Fmt.money(r.valueRub) : '—',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                   const SizedBox(height: 3),
                   TagChip(

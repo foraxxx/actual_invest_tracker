@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/appearance_service.dart';
@@ -35,7 +33,8 @@ class AppCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Плоский стиль: без свечения и теней — спокойнее и чуть дешевле в
     // отрисовке. Форма и отступы те же, чтобы вёрстка не менялась.
-    final flat = AppearanceService.cardStyle == CardStyle.flat;
+    // Мягкая карточка без рамки и свечения: блоки отделяются фоном и
+    // отступами. В светлой теме — тонкая тень, иначе белое на светлом сливается.
     final isDark = context.isDark;
     final card = Container(
       margin: margin,
@@ -43,13 +42,10 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color ?? (isDark ? AppColors.darkSurface : AppColors.lightSurface),
         borderRadius: AppRadius.all(radius),
-        border: border ?? Border.all(color: context.hairline, width: 1),
-        boxShadow: flat ? const [] : [
-          if (glow != null)
-            BoxShadow(color: glow!.withOpacity(isDark ? 0.22 : 0.16), blurRadius: 28, spreadRadius: -8, offset: const Offset(0, 8))
-          else if (!isDark)
-            BoxShadow(color: const Color(0xFF0B1220).withOpacity(0.05), blurRadius: 18, offset: const Offset(0, 6)),
-        ],
+        border: border,
+        boxShadow: isDark
+            ? const []
+            : [BoxShadow(color: const Color(0xFF0B1220).withOpacity(0.05), blurRadius: 18, offset: const Offset(0, 6))],
       ),
       child: child,
     );
@@ -79,46 +75,8 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final flat = AppearanceService.cardStyle == CardStyle.flat;
-    final isDark = context.isDark;
-    final glowColor = glow ?? context.accent;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: AppRadius.all(radius),
-        boxShadow: flat ? const [] : [
-          BoxShadow(
-            color: glowColor.withOpacity(isDark ? 0.28 : 0.20),
-            blurRadius: 36,
-            spreadRadius: -10,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: AppRadius.all(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              borderRadius: AppRadius.all(radius),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [Colors.white.withOpacity(0.10), Colors.white.withOpacity(0.03)]
-                    : [Colors.white.withOpacity(0.92), Colors.white.withOpacity(0.72)],
-              ),
-              border: Border.all(
-                color: isDark ? Colors.white.withOpacity(0.16) : Colors.white.withOpacity(0.9),
-                width: 1,
-              ),
-            ),
-            child: child,
-          ),
-        ),
-      ),
-    );
+    // В минималистичном дизайне «стекло» — та же спокойная карточка.
+    return AppCard(padding: padding, radius: radius, child: child);
   }
 }
 
@@ -137,70 +95,14 @@ class AuroraBackground extends StatefulWidget {
   State<AuroraBackground> createState() => _AuroraBackgroundState();
 }
 
-class _AuroraBackgroundState extends State<AuroraBackground> with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(seconds: 18))..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
+class _AuroraBackgroundState extends State<AuroraBackground> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.isDark;
-    final accent = widget.accent ?? context.accent;
-    final mood = AppColors.pnl(widget.profit);
-    final o = isDark ? 1.0 : 0.55;
-
-    return Container(
-      color: isDark ? AppColors.darkBg : AppColors.lightBg,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _c,
-                builder: (context, _) {
-                  final t = _c.value * 2 * math.pi;
-                  return Stack(
-                    children: [
-                      Positioned(
-                        left: -60 + 70 * math.sin(t),
-                        top: -110 + 45 * math.sin(t * 0.7),
-                        child: _blob(accent.withOpacity(0.34 * o), 320),
-                      ),
-                      Positioned(
-                        right: -80 + 60 * math.sin(t * 0.9 + 2),
-                        top: 90 + 60 * math.sin(t * 0.5 + 1),
-                        child: _blob(mood.withOpacity(0.22 * o), 260),
-                      ),
-                      Positioned(
-                        left: 30 + 50 * math.sin(t * 0.6 + 4),
-                        bottom: -120 + 40 * math.sin(t * 0.8),
-                        child: _blob(AppColors.violet.withOpacity(0.16 * o), 300),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-          widget.child,
-        ],
-      ),
-    );
-  }
-
-  Widget _blob(Color color, double size) {
-    return ImageFiltered(
-      imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-      ),
+    // Ровный фон без пятен света: спокойнее и не отвлекает от цифр.
+    return ColoredBox(
+      color: context.isDark ? AppColors.darkBg : AppColors.lightBg,
+      child: widget.child,
     );
   }
 }
@@ -228,20 +130,11 @@ class SectionTitle extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 3,
-            height: subtitle == null ? 16 : 30,
-            margin: const EdgeInsets.only(right: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(2),
-              gradient: AppGradient.accent(context.accent),
-            ),
-          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, letterSpacing: -0.2)),
                 if (subtitle != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -331,11 +224,7 @@ class StatTile extends StatelessWidget {
                 height: 30,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(9),
-                  gradient: LinearGradient(
-                    colors: [c.withOpacity(0.28), c.withOpacity(0.10)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: c.withOpacity(0.14),
                 ),
                 child: Icon(icon, size: 16, color: c),
               ),
@@ -375,12 +264,12 @@ class StatTile extends StatelessWidget {
             RollingNumber(
               value: value!,
               formatter: formatter!,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.4),
             )
           else
             AdaptiveSingleLineText(
               text ?? '—',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.4),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.4),
             ),
           // Подсказка идёт сразу под числом мелким кеглем.
           //
@@ -418,7 +307,7 @@ class StatTile extends StatelessWidget {
               secondText!,
               style: TextStyle(
                 fontSize: 15,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
                 letterSpacing: -0.3,
                 color: secondColor ?? context.dim,
               ),
@@ -450,7 +339,7 @@ class StatTile extends StatelessWidget {
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 10.5,
-                              fontWeight: i == selectedSegment ? FontWeight.w800 : FontWeight.w600,
+                              fontWeight: i == selectedSegment ? FontWeight.w700 : FontWeight.w600,
                               color: i == selectedSegment ? c : context.dim,
                             ),
                           ),
@@ -624,7 +513,9 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.accent;
+    // Выбранная «пилюля» — светлая с тёмным текстом (в светлой теме наоборот).
+    final on = context.isDark ? const Color(0xFFEEF1F6) : const Color(0xFF111318);
+    final onText = context.isDark ? AppColors.darkBg : Colors.white;
     return Pressable(
       haptic: false,
       scale: 1,
@@ -635,28 +526,21 @@ class _Pill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(30),
-          gradient: selected ? AppGradient.accent(accent) : null,
-          color: selected ? null : (context.isDark ? Colors.white.withOpacity(0.05) : Colors.white),
-          border: Border.all(
-            color: selected ? Colors.transparent : context.hairline,
-          ),
-          boxShadow: selected
-              ? [BoxShadow(color: accent.withOpacity(0.30), blurRadius: 8, offset: const Offset(0, 2))]
-              : null,
+          color: selected ? on : (context.isDark ? AppColors.darkSurface : Colors.white),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 14, color: selected ? Colors.white : context.dim),
+              Icon(icon, size: 14, color: selected ? onText : context.dim),
               const SizedBox(width: 5),
             ],
             Text(
               label,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: selected ? Colors.white : context.dim,
+                fontWeight: FontWeight.w600,
+                color: selected ? onText : context.dim,
               ),
             ),
           ],
@@ -747,12 +631,7 @@ class _EmptyStateState extends State<EmptyState> with SingleTickerProviderStateM
                 height: 92,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [accent.withOpacity(0.22), accent.withOpacity(0.04)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  border: Border.all(color: accent.withOpacity(0.22)),
+                  color: accent.withOpacity(0.12),
                 ),
                 child: Icon(widget.icon, size: 38, color: accent),
               ),
@@ -805,25 +684,24 @@ class GradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = colors ?? AppGradient.pair(context.accent);
+    // Главная кнопка — сплошная светлая (или своего цвета, если передан).
+    final bg = colors?.first ?? (context.isDark ? const Color(0xFFEEF1F6) : const Color(0xFF111318));
+    final fg = colors != null ? Colors.white : (context.isDark ? AppColors.darkBg : Colors.white);
     final enabled = onPressed != null;
     final button = Opacity(
       opacity: enabled ? 1 : 0.45,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 22),
         decoration: BoxDecoration(
-          borderRadius: AppRadius.all(AppRadius.sm),
-          gradient: LinearGradient(colors: c, begin: Alignment.topLeft, end: Alignment.bottomRight),
-          boxShadow: enabled
-              ? [BoxShadow(color: c.first.withOpacity(0.38), blurRadius: 20, offset: const Offset(0, 8))]
-              : null,
+          borderRadius: AppRadius.all(AppRadius.sm + 2),
+          color: bg,
         ),
         child: Row(
           mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 18, color: Colors.white),
+              Icon(icon, size: 18, color: fg),
               const SizedBox(width: 8),
             ],
             Flexible(
@@ -832,7 +710,7 @@ class GradientButton extends StatelessWidget {
                 maxLines: maxLines,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700),
+                style: TextStyle(color: fg, fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ),
           ],

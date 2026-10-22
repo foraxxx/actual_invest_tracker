@@ -245,7 +245,7 @@ class _WidgetConstructorScreenState extends State<WidgetConstructorScreen> {
 
   Widget _caption(String t) => Padding(
         padding: const EdgeInsets.fromLTRB(2, 16, 0, 8),
-        child: Text(t, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: context.dim)),
+        child: Text(t, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: context.dim)),
       );
 
   Widget _wrap(List<Widget> children) => Wrap(spacing: 6, runSpacing: 6, children: children);

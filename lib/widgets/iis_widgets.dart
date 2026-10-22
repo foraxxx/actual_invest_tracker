@@ -81,7 +81,7 @@ class IisCard extends StatelessWidget {
                 HiddenAmount.forText(
                   title,
                   fontSize: 15,
-                  child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                  child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 ),
                 const SizedBox(height: 1),
                 // Если за прошлый год вычет не отмечен — напоминание вместо
@@ -100,7 +100,7 @@ class IisCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (!done) Text(percent, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color)),
+          if (!done) Text(percent, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
           const SizedBox(width: 2),
           AnimatedRotation(
             turns: collapsed ? 0 : 0.5,
@@ -175,7 +175,7 @@ class IisCard extends StatelessWidget {
             HiddenAmount.forText(
               contributed,
               fontSize: 16,
-              child: Text(contributed, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              child: Text(contributed, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
             const Spacer(),
             Text(
@@ -197,7 +197,7 @@ class IisCard extends StatelessWidget {
                     TextSpan(text: 'Вычет за ${y.year}: ', style: const TextStyle(fontWeight: FontWeight.w700)),
                     TextSpan(
                       text: '≈${Fmt.money(y.deduction)}',
-                      style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.positive),
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.positive),
                     ),
                   ]),
                   style: const TextStyle(fontSize: 13.5),
@@ -227,7 +227,7 @@ class IisCard extends StatelessWidget {
                 fontSize: 13,
                 child: Text(
                   Fmt.money(received),
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.positive),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.positive),
                 ),
               ),
             ],
@@ -239,7 +239,7 @@ class IisCard extends StatelessWidget {
             Expanded(child: Text('До минимального срока', style: TextStyle(fontSize: 12, color: context.dim))),
             Text(
               termEnd.isAfter(now) ? '${monthsText(_monthsBetween(now, termEnd))} · ${Fmt.date(termEnd)}' : 'пройден',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -293,7 +293,7 @@ class _PendingPlaque extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.warning)),
+                Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.warning)),
                 const SizedBox(height: 2),
                 HiddenAmount.forText(
                   sub,
@@ -697,7 +697,7 @@ class _IisDetails extends StatelessWidget {
         line = 'внесено ${Fmt.money(sum.contributed)} из ${Fmt.money(sum.limit)}';
         trailing = Text(
           '≈${Fmt.money(sum.deduction)}',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _blue),
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _blue),
         );
       } else if (received != null) {
         status = ' · ✓ получен';
@@ -734,7 +734,7 @@ class _IisDetails extends StatelessWidget {
               children: [
                 Text.rich(
                   TextSpan(children: [
-                    TextSpan(text: '$y', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                    TextSpan(text: '$y', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                     if (status.isNotEmpty)
                       TextSpan(
                         text: status,
@@ -834,7 +834,7 @@ class _IisDetails extends StatelessWidget {
                       fontSize: 14,
                       child: Text(
                         Fmt.money(totalReceived),
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.positive),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.positive),
                       ),
                     ),
                   ],
@@ -847,7 +847,7 @@ class _IisDetails extends StatelessWidget {
               Row(
                 children: [
                   Expanded(child: Text('Закрыть без потери льгот', style: TextStyle(fontSize: 12.5, color: ctx.dim))),
-                  Text('после ${Fmt.date(termEnd)}', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+                  Text('после ${Fmt.date(termEnd)}', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                 ],
               ),
             ),
@@ -859,7 +859,7 @@ class _IisDetails extends StatelessWidget {
                     Expanded(child: Text('Доход по счёту', style: TextStyle(fontSize: 12.5, color: ctx.dim))),
                     const Text(
                       'без налога',
-                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: AppColors.positive),
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.positive),
                     ),
                   ],
                 ),

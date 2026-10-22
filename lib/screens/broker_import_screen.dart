@@ -251,7 +251,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(meta?.name ?? 'Портфель', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                Text(meta?.name ?? 'Портфель', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
                 Text(
                   [
@@ -430,7 +430,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(broker.title,
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                           const SizedBox(height: 3),
                           Text(broker.hint,
                               style: TextStyle(fontSize: 11.5, height: 1.35, color: context.dim)),
@@ -610,7 +610,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(_imported ? 'Что получилось' : 'Что станет после импорта',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -654,7 +654,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                       Fmt.qty(row.after),
                       style: TextStyle(
                         fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         // Позиция исчезнет — это самое заметное изменение.
                         color: row.after <= 1e-9
                             ? AppColors.negative
@@ -694,7 +694,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Что нашлось в файле',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           _line('Покупок', '$buys'),
           _line('Продаж', '$sells'),
@@ -712,7 +712,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
       child: Row(
         children: [
           Expanded(child: Text(label, style: TextStyle(fontSize: 12.5, color: context.dim))),
-          Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+          Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
         ],
       ),
     );

@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/appearance_service.dart';
@@ -16,9 +15,8 @@ class NavItem {
   });
 }
 
-/// Нижняя навигация: полупрозрачная панель с размытием, под выбранным
-/// пунктом плавно переезжает акцентная «капля», иконка чуть подрастает,
-/// а подпись проявляется только у активной вкладки — меньше визуального шума.
+/// Нижняя навигация: ровная панель с тонкой линией сверху. Выбранная
+/// вкладка — светлым, остальные серым; без подсветок и анимаций формы.
 class AuroraNavBar extends StatelessWidget {
   final List<NavItem> items;
   final int index;
@@ -34,62 +32,29 @@ class AuroraNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = context.isDark;
-    final accent = context.accent;
     final bottomInset = MediaQuery.of(context).padding.bottom;
-
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: Container(
-          padding: EdgeInsets.only(bottom: bottomInset > 0 ? bottomInset : 8, top: 8, left: 8, right: 8),
-          decoration: BoxDecoration(
-            color: (isDark ? AppColors.darkBg : Colors.white).withOpacity(isDark ? 0.72 : 0.86),
-            border: Border(top: BorderSide(color: context.hairline)),
-          ),
-          child: SizedBox(
-            height: 56,
-            child: LayoutBuilder(
-              builder: (context, box) {
-                final slot = box.maxWidth / items.length;
-                return Stack(
-                  children: [
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 380),
-                      curve: Curves.easeOutCubic,
-                      left: slot * index + slot * 0.5 - 24,
-                      top: 2,
-                      width: 48,
-                      height: 34,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          gradient: AppGradient.accent(accent),
-                          boxShadow: [
-                            BoxShadow(color: accent.withOpacity(0.42), blurRadius: 18, offset: const Offset(0, 6)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        for (int i = 0; i < items.length; i++)
-                          Expanded(
-                            child: _NavButton(
-                              item: items[i],
-                              selected: i == index,
-                              onTap: () {
-                                if (i != index) HapticFeedback.selectionClick();
-                                onChanged(i);
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
+    return Container(
+      padding: EdgeInsets.only(bottom: bottomInset > 0 ? bottomInset : 6, top: 8, left: 4, right: 4),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkBg : Colors.white,
+        border: Border(top: BorderSide(color: context.hairline)),
+      ),
+      child: SizedBox(
+        height: 50,
+        child: Row(
+          children: [
+            for (int i = 0; i < items.length; i++)
+              Expanded(
+                child: _NavButton(
+                  item: items[i],
+                  selected: i == index,
+                  onTap: () {
+                    if (i != index) HapticFeedback.selectionClick();
+                    onChanged(i);
+                  },
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -105,39 +70,25 @@ class _NavButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final on = context.isDark ? const Color(0xFFEEF1F6) : const Color(0xFF111318);
+    final color = selected ? on : context.dim;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            height: 34,
-            child: Center(
-              child: AnimatedScale(
-                scale: selected ? 1.08 : 1.0,
-                duration: AppDuration.normal,
-                curve: Curves.easeOutBack,
-                child: Icon(
-                  selected ? item.activeIcon : item.icon,
-                  size: 21,
-                  color: selected ? Colors.white : context.dim,
-                ),
-              ),
-            ),
-          ),
+          Icon(selected ? item.activeIcon : item.icon, size: 22, color: color),
           // Подписи можно убрать — останутся только значки.
-          if (AppearanceService.showNavLabels) const SizedBox(height: 3),
-          if (AppearanceService.showNavLabels)
-            AnimatedDefaultTextStyle(
-            duration: AppDuration.normal,
-            style: TextStyle(
-              fontSize: selected ? 10.5 : 10,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              color: selected ? context.accent : context.dim,
+          if (AppearanceService.showNavLabels) ...[
+            const SizedBox(height: 3),
+            Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10.5, fontWeight: selected ? FontWeight.w600 : FontWeight.w500, color: color),
             ),
-            child: Text(item.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
+          ],
         ],
       ),
     );

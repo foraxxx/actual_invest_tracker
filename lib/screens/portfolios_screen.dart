@@ -328,7 +328,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
               child: RollingNumber(
                 value: value,
                 formatter: (v) => Fmt.money(v),
-                style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -1.4),
+                style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -1.4),
               ),
             ),
           const SizedBox(height: 10),
@@ -354,7 +354,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                   Fmt.signedMoney(profit),
                   style: TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     color: AppColors.pnl(profit),
                   ),
                 ),
@@ -372,7 +372,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
       padding: const EdgeInsets.only(bottom: 10, left: 2),
       child: Row(
         children: [
-          Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+          Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -402,10 +402,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
       onTap: () => _openPortfolio(p),
       padding: const EdgeInsets.all(14),
       glow: isActive ? accent : null,
-      border: Border.all(
-        color: isActive ? accent.withOpacity(0.45) : context.hairline,
-        width: isActive ? 1.4 : 1,
-      ),
+      border: isActive ? Border.all(color: accent.withOpacity(0.45), width: 1.2) : null,
       child: Column(
         children: [
           Row(
@@ -415,13 +412,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                 height: 44,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  gradient: isActive
-                      ? AppGradient.accent(accent)
-                      : LinearGradient(
-                          colors: [accent.withOpacity(0.18), accent.withOpacity(0.06)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                  color: isActive ? accent : accent.withOpacity(0.14),
                 ),
                 child: Icon(
                   isClosed ? Icons.lock_outline_rounded : Icons.account_balance_wallet_outlined,
@@ -438,7 +429,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                       p.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                     ),
                     // Метки — одной строкой; «активен» не пишем, это и так
                     // видно по разделу.
@@ -476,7 +467,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                       fontSize: 14.5,
                       child: Text(
                         Fmt.money(stat.valueRub),
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
                       ),
                     ),
                     const SizedBox(height: 3),

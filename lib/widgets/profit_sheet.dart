@@ -111,7 +111,7 @@ Future<void> showProfitSheet(BuildContext context, PeriodFilter initial) {
                         fontSize: 13.5,
                         child: Text(
                           text,
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: AppColors.pnl(shown)),
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.pnl(shown)),
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -300,7 +300,7 @@ Widget _tickers(
                     Fmt.signedMoney(expense ? -e.value : e.value),
                     style: TextStyle(
                       fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w700,
                       color: AppColors.pnl(expense ? -e.value : e.value),
                     ),
                   ),
@@ -348,7 +348,7 @@ Widget _tickers(
                       soldText,
                       style: TextStyle(
                         fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.pnl(expense ? -soldTotal : soldTotal),
                       ),
                     ),
@@ -376,7 +376,7 @@ Future<void> _showHowSheet(BuildContext context) {
         padding: const EdgeInsets.only(bottom: 12),
         child: Text.rich(
           TextSpan(children: [
-            TextSpan(text: '$title — ', style: const TextStyle(fontWeight: FontWeight.w800)),
+            TextSpan(text: '$title — ', style: const TextStyle(fontWeight: FontWeight.w700)),
             TextSpan(text: text),
           ]),
           style: const TextStyle(fontSize: 13, height: 1.45),

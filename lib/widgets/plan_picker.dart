@@ -71,7 +71,7 @@ class PlanPicker extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight: selectedId == null ? FontWeight.w800 : FontWeight.w600,
+                fontWeight: selectedId == null ? FontWeight.w700 : FontWeight.w600,
                 color: selectedId == null ? context.accent : context.dim,
               ),
             ),
@@ -157,7 +157,7 @@ class _PlanCard extends StatelessWidget {
                           text: date == null ? 'Без срока' : 'К ${Fmt.date(date)}',
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                           ),
                         ),
                         if (overdue)

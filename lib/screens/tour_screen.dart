@@ -256,7 +256,7 @@ class _TourScreenState extends State<TourScreen> {
             child: Text(
               step.title,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.6),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: -0.6),
             ),
           ),
           const SizedBox(height: 14),
