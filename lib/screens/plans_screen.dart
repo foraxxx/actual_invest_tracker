@@ -795,7 +795,7 @@ class _PlansScreenState extends State<PlansScreen> {
                   Row(
                     children: [
                       stat('Куплено', hidden ? '••• ₽' : Fmt.money(purchasedMoney), AppColors.positive),
-                      stat('Планов', '$count', null),
+                      stat('Покупок', '$count', null),
                       stat('Просрочено', '$overdue', overdue > 0 ? AppColors.negative : null),
                       AnimatedRotation(
                         turns: _summaryExpanded ? 0.5 : 0,
@@ -1045,7 +1045,8 @@ class _PlansScreenState extends State<PlansScreen> {
                         children: [
                           Text(
                             p.name,
-                            maxLines: 2,
+                            maxLines: 1,
+                            softWrap: false,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
@@ -1056,7 +1057,8 @@ class _PlansScreenState extends State<PlansScreen> {
                           const SizedBox(height: 1),
                           Text(
                             '${Fmt.qty(p.purchasedQuantity)} из ${Fmt.qty(p.targetQuantity)} шт'
-                            '${p.targetPrice != null ? ' · до ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
+                            '${p.targetPrice != null ? ' · до ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}'
+                            ' · $when',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 12.5, color: context.dim),
@@ -1068,21 +1070,41 @@ class _PlansScreenState extends State<PlansScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        if (budget != null && budget > 0)
+                          HiddenAmount.forText(
+                            '≈ ${Fmt.money(budget)}',
+                            fontSize: 15,
+                            child: Text(
+                              '≈ ${Fmt.money(budget)}',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                            ),
+                          ),
                         Text(
                           isDone ? 'готово' : isCancelled ? 'отменён' : '${(progress * 100).round()}%',
                           style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: isDone ? AppColors.positive : null,
+                            fontSize: 12,
+                            fontWeight: isDone ? FontWeight.w700 : null,
+                            color: isDone ? AppColors.positive : overdue ? AppColors.negative : context.dim,
                           ),
                         ),
-                        Text(when, style: TextStyle(fontSize: 12, color: overdue ? AppColors.negative : context.dim)),
                       ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                MiniProgressBar(value: isDone ? 1 : progress, color: barColor),
+                if ((p.note ?? '').trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 48, top: 8),
+                    child: Text(
+                      '«${p.note!.trim()}»',
+                      style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: context.dim),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 48, top: 9),
+                  child: MiniProgressBar(value: isDone ? 1 : progress, color: barColor),
+                ),
                 if (cantAffordMore) ...[
                   const SizedBox(height: 6),
                   Text(

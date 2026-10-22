@@ -2195,7 +2195,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     Text(
                       _holdingName(ticker),
-                      maxLines: 2,
+                      maxLines: 1,
+                      softWrap: false,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                     ),
