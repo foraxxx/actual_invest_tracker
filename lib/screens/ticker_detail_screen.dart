@@ -424,7 +424,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           Expanded(
             child: Text(
               p.extra ?? p.kind,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11.5, color: context.dim),
             ),
@@ -735,35 +735,71 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final Color? nowColor = prev == null || prev <= 0 || (now - prev).abs() < 1e-9
         ? null
         : (now > prev ? AppColors.positive : AppColors.negative);
-    Widget cell(String label, String value, {Color? color, bool first = false}) => Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: first ? null : Border(left: BorderSide(color: context.hairline)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: TextStyle(fontSize: 12, color: context.dim)),
-                const SizedBox(height: 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: color)),
-                ),
-              ],
-            ),
-          ),
-        );
+    final cells = [
+      ('Количество', '${Fmt.qty(holding.qty)} шт', null),
+      ('Средняя цена', Fmt.price(holding.avgCost, type: type), null),
+      ('Сейчас', Fmt.price(now, type: type), nowColor),
+    ];
+    const labelStyle = TextStyle(fontFamily: 'Inter', fontSize: 12);
+    const valueStyle = TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w600);
+    double width(String text, TextStyle style) {
+      final tp = TextPainter(text: TextSpan(text: text, style: style), textDirection: TextDirection.ltr, maxLines: 1)
+        ..layout();
+      return tp.width;
+    }
+
+    // Ширина каждой колонки — по её содержимому. Если три колонки не
+    // помещаются (очень большое количество или цена), показываем строками:
+    // шрифт при этом не уменьшается.
     return AppCard(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          cell('Количество', Fmt.qty(holding.qty), first: true),
-          cell('Средняя', Fmt.price(holding.avgCost, type: type)),
-          cell('Сейчас', Fmt.price(now, type: type), color: nowColor),
-        ],
-      ),
+      child: LayoutBuilder(builder: (context, box) {
+        final scale = MediaQuery.textScalerOf(context).scale(1);
+        final need = [
+          for (final c in cells) math.max(width(c.$1, labelStyle), width(c.$2, valueStyle)) * scale + 26,
+        ];
+        final fits = need.fold(0.0, (s, w) => s + w) <= box.maxWidth;
+        if (!fits) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Column(
+              children: [
+                for (int i = 0; i < cells.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(cells[i].$1, style: labelStyle.copyWith(color: context.dim))),
+                        Text(cells[i].$2, style: valueStyle.copyWith(color: cells[i].$3)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }
+        final extra = (box.maxWidth - need.fold(0.0, (s, w) => s + w)) / cells.length;
+        return Row(
+          children: [
+            for (int i = 0; i < cells.length; i++)
+              Container(
+                width: need[i] + extra,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
+                decoration: BoxDecoration(
+                  border: i == 0 ? null : Border(left: BorderSide(color: context.hairline)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(cells[i].$1, maxLines: 1, softWrap: false, style: labelStyle.copyWith(color: context.dim)),
+                    const SizedBox(height: 2),
+                    Text(cells[i].$2, maxLines: 1, softWrap: false, style: valueStyle.copyWith(color: cells[i].$3)),
+                  ],
+                ),
+              ),
+          ],
+        );
+      }),
     );
   }
 
@@ -830,7 +866,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             children: [
                               Text(
                                 name,
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
@@ -867,11 +903,15 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: 7),
-                          Text(
-                            '${Fmt.signedMoney(holding.pnlRub)} · ${Fmt.pct(holding.pnlPct)} за всё время',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: pnlColor),
+                          Text.rich(
+                            TextSpan(children: [
+                              TextSpan(
+                                text: '${Fmt.signedMoney(holding.pnlRub)} · ${Fmt.pct(holding.pnlPct)}',
+                                style: TextStyle(fontWeight: FontWeight.w600, color: pnlColor),
+                              ),
+                              const TextSpan(text: ' за всё время'),
+                            ]),
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                           ),
                         ],
                       )
@@ -1089,7 +1129,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     const Expanded(
                       child: Text(
                         'Доходность к погашению',
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                       ),
@@ -1172,7 +1212,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 11, color: context.dim),
                     ),

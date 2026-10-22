@@ -209,77 +209,77 @@ class _BudgetScreenState extends State<BudgetScreen> {
   }
 
   Widget _header(BudgetMonthView? v) {
+    // Верхняя строка — месяц и кнопки, всегда одной высоты: стрелки не
+    // прыгают при переходе на пустой месяц. Подпись — отдельной строкой ниже.
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'БЮДЖЕТ',
-                  style: TextStyle(fontSize: 10, letterSpacing: 1.8, fontWeight: FontWeight.w700, color: context.dim),
-                ),
-                const SizedBox(height: 3),
-                TourSpot(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: TourSpot(
                   id: 'budget_month',
                   child: Pressable(
                     onTap: _pickMonth,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            _monthTitle(_y, _m),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.headlineMedium,
-                          ),
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: _cap(_monthsNom[_m - 1])),
+                        TextSpan(
+                          text: ' $_y',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: context.dim),
                         ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.expand_more_rounded, color: context.accent),
-                      ],
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Icon(Icons.expand_more_rounded, color: context.dim),
+                        ),
+                      ]),
+                      // Месяц и год не обрезаются: в крайнем случае год
+                      // переносится на вторую строку.
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.5),
                     ),
                   ),
                 ),
-                if (v != null && v.filled) ...[
-                  const SizedBox(height: 2),
-                  Pressable(
-                    onTap: () => _incomeSheet(v),
-                    child: Text(
-                      v.data.living > 0
-                          ? 'На жизнь остаётся ${_rub(v.data.living)} с каждой выплаты'
-                          : 'Укажите, сколько оставлять на жизнь',
-                      style: TextStyle(fontSize: 12, color: context.dim),
-                    ),
-                  ),
-                ],
+              ),
+              const SizedBox(width: 8),
+              if (AppearanceService.hideAmounts) ...[
+                _iconButton(
+                  AppearanceService.revealed.value ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                  AppearanceService.toggleReveal,
+                ),
+                const SizedBox(width: 6),
               ],
-            ),
+              // Место под «⋮» держится и у пустого месяца — стрелки не сдвигаются.
+              if (v != null && v.filled)
+                _iconButton(Icons.more_vert_rounded, () => _monthMenu(v))
+              else
+                const SizedBox(width: 34),
+              const SizedBox(width: 6),
+              _iconButton(Icons.chevron_left_rounded, () {
+                final p = _shift(_y, _m, -1);
+                _go(p.$1, p.$2);
+              }),
+              const SizedBox(width: 6),
+              _iconButton(Icons.chevron_right_rounded, () {
+                final p = _shift(_y, _m, 1);
+                _go(p.$1, p.$2);
+              }),
+            ],
           ),
-          const SizedBox(width: 8),
-          if (AppearanceService.hideAmounts) ...[
-            _iconButton(
-              AppearanceService.revealed.value ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              AppearanceService.toggleReveal,
-            ),
-            const SizedBox(width: 6),
-          ],
           if (v != null && v.filled) ...[
-            _iconButton(Icons.more_vert_rounded, () => _monthMenu(v)),
-            const SizedBox(width: 6),
+            const SizedBox(height: 4),
+            Pressable(
+              onTap: () => _incomeSheet(v),
+              child: Text(
+                v.data.living > 0
+                    ? 'На жизнь остаётся ${_rub(v.data.living)} с каждой выплаты'
+                    : 'Укажите, сколько оставлять на жизнь',
+                style: TextStyle(fontSize: 12.5, color: context.dim),
+              ),
+            ),
           ],
-          _iconButton(Icons.chevron_left_rounded, () {
-            final p = _shift(_y, _m, -1);
-            _go(p.$1, p.$2);
-          }),
-          const SizedBox(width: 6),
-          _iconButton(Icons.chevron_right_rounded, () {
-            final p = _shift(_y, _m, 1);
-            _go(p.$1, p.$2);
-          }),
         ],
       ),
     );
@@ -408,7 +408,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
         children: [
           Text(
             v.config.names[i],
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w700),
           ),
@@ -420,14 +420,14 @@ class _BudgetScreenState extends State<BudgetScreen> {
           Text(
             '${date.day} ${_monthsGen[date.month - 1]} · '
             '${came ? 'пришла' : daysLeft <= 31 ? 'через ${_days(daysLeft)}' : 'ожидается'}',
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11, color: v.dayMoved(i) ? AppColors.gold : context.dim),
           ),
           for (final e in extras.take(2))
             Text(
               '+ ${e.name.isEmpty ? 'поступление' : e.name.toLowerCase()} ${_num(e.amount)}',
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11, color: AppColors.gold, fontWeight: FontWeight.w600),
             ),
@@ -550,7 +550,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
             child: Text(v.config.names[i], style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
           ),
           Text('${v.payDay(i)} ${_monthsGen[_m - 1]}',
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: context.dim)),
+              maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, color: context.dim)),
         ],
       ),
     );
@@ -733,7 +733,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                       Flexible(
                         child: Text(
                           c.name,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                         ),
@@ -755,7 +755,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   const SizedBox(height: 1),
                   Text(
                     _subtitle(l),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: l.complete ? AppColors.positive : context.dim),
                   ),

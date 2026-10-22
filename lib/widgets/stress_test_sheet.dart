@@ -301,7 +301,7 @@ class _StressSheetState extends State<_StressSheet> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(hint,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: context.dim)),
               ),
@@ -499,7 +499,7 @@ class _StressSheetState extends State<_StressSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(i.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                  Text(i.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
                   const SizedBox(height: 3),
                   Wrap(
                     spacing: 4,

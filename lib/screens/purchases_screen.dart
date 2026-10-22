@@ -574,7 +574,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                   children: [
                     Text(
                       p.ticker,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                     ),
@@ -583,7 +583,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                       '${p.isSell ? 'Продажа' : 'Покупка'} · ${Fmt.qty(p.quantity)} шт × '
                       '${Fmt.price(p.pricePerUnit, type: p.type)}'
                       '${p.fee > 0 ? ' · комиссия ${Fmt.qty(p.fee)}' : ''}',
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 12.5, color: context.dim),
                     ),
@@ -597,7 +597,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                         padding: const EdgeInsets.only(top: 3),
                         child: Text(
                           p.note!,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: context.dim),
                         ),

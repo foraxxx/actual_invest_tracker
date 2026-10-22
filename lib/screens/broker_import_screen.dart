@@ -637,7 +637,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                     Expanded(
                       child: Text(
                         row.ticker,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                       ),
@@ -739,7 +739,7 @@ class _BrokerImportScreenState extends State<BrokerImportScreen> {
                 children: [
                   Text(
                     entry.key.split(',').first,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                   ),

@@ -266,7 +266,7 @@ Widget _tickers(
               flex: 5,
               child: Text(
                 PayoutCalendarService.nameOf(e.key),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12.5, color: dimmed ? ctx.dim : null),
               ),

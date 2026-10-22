@@ -244,7 +244,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
                 Text(r.ticker, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                 Text(
                   PayoutCalendarService.nameOf(r.ticker),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11, color: context.dim),
                 ),

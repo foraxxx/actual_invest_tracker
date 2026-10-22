@@ -158,7 +158,7 @@ class MoreScreen extends StatelessWidget {
             if (value.isNotEmpty)
               Flexible(
                 child: Text(value,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,
                     style: TextStyle(fontSize: 13, color: context.dim)),

@@ -167,7 +167,7 @@ class _PlanCard extends StatelessWidget {
                           ),
                       ],
                     ),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

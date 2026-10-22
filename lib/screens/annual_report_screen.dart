@@ -320,7 +320,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
       children: [
         Text(
           label,
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: context.dim),
         ),
@@ -352,7 +352,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                         Flexible(
                           child: Text(
                             r.name.trim().isEmpty ? r.ticker : r.name,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                           ),
@@ -366,7 +366,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                     const SizedBox(height: 3),
                     Text(
                       r.isClosed ? r.sector : '${Fmt.qty(r.qtyEnd)} шт · ${r.sector}',
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 11, color: context.dim),
                     ),
@@ -422,7 +422,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
           const SizedBox(height: 2),
           Text(
             value,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color),
           ),

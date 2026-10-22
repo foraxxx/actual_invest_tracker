@@ -427,7 +427,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                   children: [
                     Text(
                       p.name,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                     ),

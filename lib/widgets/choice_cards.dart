@@ -72,7 +72,7 @@ class ChoiceCards extends StatelessWidget {
             children: [
               Text(
                 c.label,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: on ? c.color : context.dim),
               ),

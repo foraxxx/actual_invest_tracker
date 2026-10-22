@@ -447,7 +447,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     if (_preset != _DatePreset.all) _presetLabel(_preset),
                     if (_status != _StatusFilter.all) _statusLabel(_status),
                   ].join(' · '),
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12.5, color: context.dim, fontWeight: FontWeight.w600),
           ),
@@ -842,7 +842,7 @@ class _PlansScreenState extends State<PlansScreen> {
               children: [
                 Text(
                   t.name,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
                 ),
@@ -1045,7 +1045,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         children: [
                           Text(
                             p.name,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
@@ -1057,7 +1057,7 @@ class _PlansScreenState extends State<PlansScreen> {
                           Text(
                             '${Fmt.qty(p.purchasedQuantity)} из ${Fmt.qty(p.targetQuantity)} шт'
                             '${p.targetPrice != null ? ' · до ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 12.5, color: context.dim),
                           ),

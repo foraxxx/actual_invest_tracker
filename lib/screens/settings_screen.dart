@@ -253,7 +253,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Flexible(
                 child: Text(
                   value,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: context.dim),
                 ),
@@ -322,7 +322,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     child: Text(
                                       p.name,
                                       textAlign: TextAlign.center,
-                                      maxLines: 1,
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 10.5,

@@ -1259,7 +1259,7 @@ class _MarketScreenState extends State<MarketScreen> {
                     Flexible(
                       child: Text(
                         displayName.isNotEmpty ? displayName : q.ticker,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                       ),
@@ -1273,7 +1273,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 const SizedBox(height: 3),
                 Text(
                   '${q.ticker} · ${q.kindLabel}',
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12.5, color: context.dim),
                 ),
@@ -1306,7 +1306,7 @@ class _MarketScreenState extends State<MarketScreen> {
                     [
                       if (q.turnover > 0) 'оборот ${Fmt.compact(q.turnover)}',
                     ].join(' · '),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 10, color: context.dim),
                   ),

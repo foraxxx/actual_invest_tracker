@@ -95,7 +95,7 @@ class SecurityPickerField extends StatelessWidget {
                       title: Text(s.ticker, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                       subtitle: Text(
                         '${s.name} · ${s.sector.isEmpty ? "Без сектора" : s.sector}',
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 11.5, color: context.dim),
                       ),

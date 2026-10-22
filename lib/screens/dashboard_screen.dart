@@ -706,7 +706,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               Text(
                 name,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
@@ -1135,7 +1135,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   m.title,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                 ),
@@ -1311,7 +1311,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             fontSize: 11.5,
             child: Text(
               detail,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11.5, color: context.dim),
             ),
@@ -1324,7 +1324,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       Row(
         children: [
           Expanded(
-            child: Text(caption, maxLines: 1, overflow: TextOverflow.ellipsis, style: dimStyle),
+            child: Text(caption, maxLines: 2, overflow: TextOverflow.ellipsis, style: dimStyle),
           ),
           if (heightKeeper != null)
             Visibility(
@@ -1504,14 +1504,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               Text(
                 title,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 1),
               Text(
                 subtitle,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12, color: context.dim),
               ),
@@ -1593,7 +1593,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 6),
         Text(
           entries.length > 3 ? '$top · …' : top,
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.dim),
         ),
@@ -1828,7 +1828,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           children: [
                             Flexible(
                               child: Text(m.listLabel ?? m.label,
-                                  maxLines: 1,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                             ),
@@ -1837,7 +1837,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         const SizedBox(height: 1),
                         Text(m.sub,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 11, color: context.dim)),
                       ],
@@ -1875,7 +1875,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(
                       child: Text(
                         m.listLabel ?? m.label,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 11.5, color: context.dim),
                       ),
@@ -2101,7 +2101,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               Text(
                 '${_groupTitle(type)} · $count',
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
               ),
@@ -2111,7 +2111,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 fontSize: 11.5,
                 child: Text(
                   pnlText,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.pnl(pnlRub)),
                 ),
@@ -2195,7 +2195,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     Text(
                       _holdingName(ticker),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                     ),
@@ -2203,7 +2203,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     // Количество и цена. Изменение за сегодня — под мини-графиком.
                     Text(
                       _holdingSubtitle(ticker, h, weight),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 11.5, color: context.dim, fontWeight: FontWeight.w600),
                     ),

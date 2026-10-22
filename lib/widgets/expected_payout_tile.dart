@@ -120,7 +120,11 @@ class ExpectedPayoutTile extends StatelessWidget {
       ),
     );
 
+    // Слева дата, справа подпись и сумма на бумагу — каждая своей строкой
+    // во всю ширину, поэтому ничего не обрезается. «Получите» — отдельной
+    // строкой внизу: даже сумма в миллионы помещается одинаково.
     final head = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         dateBox,
         const SizedBox(width: 12),
@@ -134,42 +138,48 @@ class ExpectedPayoutTile extends StatelessWidget {
                     : (p.date.year == DateTime.now().year
                         ? 'Ожидается · выплата'
                         : 'Ожидается · выплата в ${p.date.year} году'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11.5, color: confirm ? AppColors.warning : context.dim),
+                style: TextStyle(fontSize: 12, color: confirm ? AppColors.warning : context.dim),
               ),
-              const SizedBox(height: 1),
+              const SizedBox(height: 2),
               Text(
                 confirm ? 'Выплата пришла?' : '${plainNumber(p.perUnit)} ₽ на $unit',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ],
           ),
         ),
-        if (p.units > 0) ...[
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (!confirm) Text('получите', style: TextStyle(fontSize: 11.5, color: context.dim)),
-              // Сумма со знаком «≈» — всегда одной строкой.
-              Text(
-                amountText,
-                maxLines: 1,
-                softWrap: false,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: confirm ? null : AppColors.positive,
-                ),
-              ),
-            ],
-          ),
-        ],
       ],
     );
+    final total = p.units <= 0
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Text(
+                    confirm
+                        ? 'Ожидалось · ${Fmt.qty(p.units)} шт'
+                        : 'Получите · ${Fmt.qty(p.units)} шт${p.isBond ? '' : ', после налога'}',
+                    style: TextStyle(fontSize: 12.5, color: context.dim),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  amountText,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: confirm ? null : AppColors.positive,
+                  ),
+                ),
+              ],
+            ),
+          );
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
@@ -183,13 +193,14 @@ class ExpectedPayoutTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           head,
+          if (total != null) total,
           if (confirm) ...[
             const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
                   child: GradientButton(
-                    label: hidden ? 'Пришло' : 'Пришло ${Fmt.money(net)}',
+                    label: 'Пришло',
                     onPressed: () async {
                       await confirmExpectedPayout(
                         ticker: ticker,
