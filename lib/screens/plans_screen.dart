@@ -1120,7 +1120,7 @@ class _PlansScreenState extends State<PlansScreen> {
                           const SizedBox(height: 1),
                           Text(
                             '${Fmt.qty(p.purchasedQuantity)} из ${Fmt.qty(p.targetQuantity)} шт'
-                            '${p.targetPrice != null ? ' · до ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}'
+                            '${p.targetPrice != null ? ' · до ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 12.5, color: context.dim),
