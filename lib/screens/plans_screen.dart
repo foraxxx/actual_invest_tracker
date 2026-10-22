@@ -195,7 +195,9 @@ class _PlansScreenState extends State<PlansScreen> {
     for (final p in plans) {
       final d = p.targetDate;
       // Планы «к дате» — по своей дате, планы «на месяц» — по месяцу.
-      final key = _planOverdue(p)
+      final key = p.status != PlanStatus.active
+          ? _doneKey
+          : _planOverdue(p)
           ? _overdueKey
           : d == null
               ? _PlanGroup.noDateKey
@@ -204,7 +206,7 @@ class _PlansScreenState extends State<PlansScreen> {
                   : '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
       map.putIfAbsent(key, () => []).add(p);
     }
-    int order(String k) => k == _overdueKey ? 2 : (k == _PlanGroup.noDateKey ? 3 : 1);
+    int order(String k) => k == _doneKey ? 4 : k == _overdueKey ? 3 : (k == _PlanGroup.noDateKey ? 2 : 1);
     final groups = [
       for (final e in map.entries)
         _PlanGroup(
@@ -896,6 +898,7 @@ class _PlansScreenState extends State<PlansScreen> {
   /// Месяц (или «Просрочено», «Без срока»): заголовок с числом планов и
   /// суммой, ниже — один блок, где планы разделены полосой фона.
   Widget _monthGroup(_PlanGroup g) {
+    if (g.key == _overdueKey || g.key == _doneKey) return _foldGroup(g);
     final hidden = AppearanceService.amountsHidden;
     final overdue = g.key == _overdueKey;
     final title = overdue
@@ -964,6 +967,73 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
+  /// Просроченные и выполненные (с отменёнными) — внизу, свёрнутым блоком.
+  /// Открыт блок или нет — запоминается.
+  Widget _foldGroup(_PlanGroup g) {
+    final hidden = AppearanceService.amountsHidden;
+    final overdue = g.key == _overdueKey;
+    final uiKey = 'plansFold${g.key}';
+    final open = AppearanceService.ui(uiKey) == 'open';
+    final sum = g.totalEstimated;
+    final dot = overdue ? AppColors.negative : AppColors.positive;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: ClipRRect(
+        borderRadius: AppRadius.all(AppRadius.md),
+        child: Container(
+          color: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                onTap: () async {
+                  await AppearanceService.setUi(uiKey, open ? 'closed' : 'open');
+                  if (mounted) setState(() {});
+                },
+                onLongPress: () => _confirmDeleteGroup(g),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${overdue ? 'Просрочено' : 'Выполнено'} · ${g.plans.length}',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      if (sum > 0)
+                        Text(
+                          hidden ? '•••' : '≈ ${Fmt.money(sum)}',
+                          style: TextStyle(fontSize: 13, color: context.dim),
+                        ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        size: 20,
+                        color: context.dim,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (open)
+                for (final p in g.plans) ...[
+                  Container(height: 6, color: context.isDark ? AppColors.darkBg : AppColors.lightBg),
+                  _planRow(p),
+                ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// «До 15 декабря» или «На декабрь 2026». Год пишется, если он не текущий.
   String _groupTitle(_PlanGroup g) {
     final d = g.date!;
@@ -1003,13 +1073,6 @@ class _PlansScreenState extends State<PlansScreen> {
         currentPrice != null &&
         currentPrice > 0 &&
         remainingBudget < currentPrice * lotSize;
-
-    final d = p.targetDate;
-    final when = d == null
-        ? 'без срока'
-        : p.isMonthPlan
-            ? 'на ${Fmt.monthTitle('${d.year}-${d.month}').split(' ').first.toLowerCase()}'
-            : 'до ${Fmt.dayShort(d)}';
 
     return Dismissible(
       key: Key(p.id),
@@ -1058,7 +1121,6 @@ class _PlansScreenState extends State<PlansScreen> {
                           Text(
                             '${Fmt.qty(p.purchasedQuantity)} из ${Fmt.qty(p.targetQuantity)} шт'
                             '${p.targetPrice != null ? ' · до ${Fmt.price(p.targetPrice!, type: p.type)}' : ''}'
-                            ' · $when',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 12.5, color: context.dim),
@@ -1186,6 +1248,8 @@ class _PlansScreenState extends State<PlansScreen> {
   Future<void> _confirmDeleteGroup(_PlanGroup g) async {
     final label = g.key == _overdueKey
         ? 'из просроченных'
+        : g.key == _doneKey
+        ? 'из выполненных'
         : g.key == _PlanGroup.noDateKey
             ? 'без срока'
             : '«${_groupTitle(g)}»';
@@ -1472,6 +1536,7 @@ class _PlansScreenState extends State<PlansScreen> {
 
 /// Ключ группы просроченных планов.
 const _overdueKey = '_overdue';
+const _doneKey = '_done';
 
 /// Ключ, под которым запоминается последний выбранный тип плана.
 const _planTypeKey = 'planType';
