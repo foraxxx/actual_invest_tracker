@@ -444,8 +444,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             sub: 'из них выплаты ${Fmt.money(periodCash.payouts)}',
             onTap: () => showProfitSheet(context, _period),
           ),
-          if (hasHoldings) _forecastMetric(context, hasPayouts, payoutForecast, payoutYield),
           if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
+          if (hasHoldings) _forecastMetric(context, hasPayouts, payoutForecast, payoutYield),
           if (hasHoldings) _inflationMetric(context),
           if (hasHoldings) _stressMetric(context),
         ]),
@@ -1711,7 +1711,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         sub = 'за этот период нет вложений';
       }
       return _Metric(
-        label: 'Против инфляции',
+        label: 'Инфляция',
         icon: Icons.shield_outlined,
         color: AppColors.warning,
         value: '—',
@@ -1720,7 +1720,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
     return _Metric(
-      label: 'Против инфляции',
+      label: 'Инфляция',
       icon: Icons.shield_outlined,
       color: AppColors.pnl(r.vsInflation),
       value: formatPoints(r.vsInflation),
@@ -1734,7 +1734,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   _Metric _stressMetric(BuildContext context) {
     final r = StressTestService.run(StressTestService.scenarios.first);
     return _Metric(
-      label: 'Стресс-тест',
+      label: 'Тест портфеля',
       icon: Icons.bolt_rounded,
       color: AppColors.negative,
       value: Fmt.pct(r.pct),
@@ -1858,13 +1858,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    // Плитки: одинаковые маленькие, по три в ряд, без значков — только
-    // подпись и число. Нажатие открывает подробности; у показателей с
+    // Плитки: одинаковые, по две в ряд, без значков — только подпись и
+    // число: при крупном шрифте всё помещается в одну строку. Нажатие открывает подробности; у показателей с
     // переключателем способа расчёта рядом с подписью маленький значок ⇄.
     Widget tile(_Metric m) => spot(
           m,
           AppCard(
-            padding: const EdgeInsets.fromLTRB(10, 9, 8, 10),
+            padding: const EdgeInsets.fromLTRB(12, 10, 10, 11),
             radius: AppRadius.sm,
             onTap: m.onTap,
             child: Column(
@@ -1877,7 +1877,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         m.listLabel ?? m.label,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.5, color: context.dim),
+                        style: TextStyle(fontSize: 12.5, color: context.dim),
                       ),
                     ),
                     if (m.onSwitch != null)
@@ -1892,22 +1892,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 3),
-                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 15)),
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 17)),
               ],
             ),
           ),
         );
 
     final rows = <Widget>[];
-    for (int i = 0; i < metrics.length; i += 3) {
-      if (i > 0) rows.add(const SizedBox(height: 6));
-      final chunk = metrics.sublist(i, math.min(i + 3, metrics.length));
+    for (int i = 0; i < metrics.length; i += 2) {
+      if (i > 0) rows.add(const SizedBox(height: 8));
+      final chunk = metrics.sublist(i, math.min(i + 2, metrics.length));
       rows.add(IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (int j = 0; j < 3; j++) ...[
-              if (j > 0) const SizedBox(width: 6),
+            for (int j = 0; j < 2; j++) ...[
+              if (j > 0) const SizedBox(width: 8),
               Expanded(child: j < chunk.length ? tile(chunk[j]) : const SizedBox.shrink()),
             ],
           ],

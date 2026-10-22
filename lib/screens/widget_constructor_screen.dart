@@ -158,10 +158,7 @@ class _WidgetConstructorScreenState extends State<WidgetConstructorScreen> {
       ]),
       const SizedBox(height: 14),
       Text(
-        'Место под виджет задаёт телефон — клетками рабочего стола. Карточка внутри может быть меньше; '
-        'пустая часть прозрачная, нажатие по ней тоже открывает приложение. '
-        'Ширина, высота и «по содержимому» работают на Android 12 и новее.\n\n'
-        'Как добавить виджет: долгое нажатие на пустом месте рабочего стола → «Виджеты» → Invest Tracker.',
+        'Добавить виджет: долгое нажатие на рабочем столе → «Виджеты» → Invest Tracker.',
         style: TextStyle(fontSize: 11.5, height: 1.4, color: context.dim),
       ),
     ];
@@ -169,7 +166,7 @@ class _WidgetConstructorScreenState extends State<WidgetConstructorScreen> {
 
   // --- Оформление ---
 
-  static const _bgColors = [0x111214, 0x1B1D22, 0x111A2B, 0x1A1430, 0x0F1F1A, 0x2A1A14, 0xF4F5F7, 0xFFFFFF];
+  static const _bgColors = [0x111214, 0x111A2B, 0x1A1430, 0x0F1F1A, 0x2A1A14, 0xF4F5F7, 0xFFFFFF];
   static const _lineColors = [0xFFFFFF, 0x000000, 0x3DA9FC, 0x3EE6A8, 0x8B7CFF, 0xFFC53D];
   static const _textColors = [0xF2F2F4, 0xFFFFFF, 0xE8E2D4, 0xCFD6E4, 0x14161A];
   static const _pairs = [(0x3EE6A8, 0xFF6B7A), (0x16D796, 0xFF4D6D), (0x7EE081, 0xFF9A62), (0xF2F2F4, 0x8B8F98), (0x0F9F6E, 0xD93A4F)];
@@ -234,8 +231,7 @@ class _WidgetConstructorScreenState extends State<WidgetConstructorScreen> {
       ]),
       const SizedBox(height: 14),
       Text(
-        'Android не умеет размывать обои под виджетом, поэтому полупрозрачный фон — без размытия. '
-        'Тень у виджетов тоже ненастоящая: это мягкое затемнение по краю.',
+        'Полупрозрачный фон — без размытия: Android так не умеет.',
         style: TextStyle(fontSize: 11.5, height: 1.4, color: context.dim),
       ),
     ];
@@ -378,44 +374,153 @@ class _WidgetConstructorScreenState extends State<WidgetConstructorScreen> {
     );
   }
 
-  /// Свой цвет: тон, насыщенность и яркость.
+  /// Свой цвет: квадрат (насыщенность и яркость) и полоса оттенка — водите
+  /// пальцем, сверху сразу виден получившийся цвет.
   Future<int?> _pickColor(int initial) {
     var hsv = HSVColor.fromColor(Color(0xFF000000 | initial));
     return showDialog<int>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, set) {
-          Widget row(String label, double value, double max, ValueChanged<double> onChanged) => Row(
-                children: [
-                  SizedBox(width: 92, child: Text(label, style: const TextStyle(fontSize: 12.5))),
-                  Expanded(child: Slider(value: value, max: max, onChanged: (v) => set(() => onChanged(v)))),
-                ],
-              );
-          return AlertDialog(
-            title: const Text('Свой цвет'),
-            content: Column(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text('Свой цвет'),
+          content: SizedBox(
+            width: 300,
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  height: 44,
+                  height: 40,
                   decoration: BoxDecoration(color: hsv.toColor(), borderRadius: BorderRadius.circular(12)),
                 ),
-                const SizedBox(height: 10),
-                row('Оттенок', hsv.hue, 360, (v) => hsv = hsv.withHue(v)),
-                row('Насыщенность', hsv.saturation, 1, (v) => hsv = hsv.withSaturation(v)),
-                row('Яркость', hsv.value, 1, (v) => hsv = hsv.withValue(v)),
+                const SizedBox(height: 12),
+                _SvSquare(hsv: hsv, onChanged: (v) => set(() => hsv = v)),
+                const SizedBox(height: 14),
+                _HueBar(hsv: hsv, onChanged: (v) => set(() => hsv = v)),
               ],
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, hsv.toColor().value & 0xFFFFFF),
-                child: const Text('Готово'),
-              ),
-            ],
-          );
-        },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, hsv.toColor().value & 0xFFFFFF),
+              child: const Text('Готово'),
+            ),
+          ],
+        ),
       ),
     );
   }
+
 }
+
+/// Квадрат выбора: слева направо — насыщенность, снизу вверх — яркость.
+class _SvSquare extends StatelessWidget {
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+  const _SvSquare({required this.hsv, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 1.4,
+      child: LayoutBuilder(builder: (context, box) {
+        void pick(Offset p) {
+          final sat = (p.dx / box.maxWidth).clamp(0.0, 1.0);
+          final val = 1 - (p.dy / box.maxHeight).clamp(0.0, 1.0);
+          onChanged(hsv.withSaturation(sat).withValue(val));
+        }
+
+        return GestureDetector(
+          onPanDown: (d) => pick(d.localPosition),
+          onPanUpdate: (d) => pick(d.localPosition),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.white, HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor()],
+                      ),
+                    ),
+                    child: const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.black],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: hsv.saturation * box.maxWidth - 11,
+                top: (1 - hsv.value) * box.maxHeight - 11,
+                child: _knob(hsv.toColor()),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+}
+
+/// Полоса оттенка — все цвета радуги слева направо.
+class _HueBar extends StatelessWidget {
+  final HSVColor hsv;
+  final ValueChanged<HSVColor> onChanged;
+  const _HueBar({required this.hsv, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 26,
+      child: LayoutBuilder(builder: (context, box) {
+        void pick(Offset p) => onChanged(hsv.withHue((p.dx / box.maxWidth).clamp(0.0, 1.0) * 359.9));
+        return GestureDetector(
+          onPanDown: (d) => pick(d.localPosition),
+          onPanUpdate: (d) => pick(d.localPosition),
+          child: Stack(
+            alignment: Alignment.centerLeft,
+            children: [
+              Container(
+                height: 16,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  gradient: const LinearGradient(colors: [
+                    Color(0xFFFF0000),
+                    Color(0xFFFFFF00),
+                    Color(0xFF00FF00),
+                    Color(0xFF00FFFF),
+                    Color(0xFF0000FF),
+                    Color(0xFFFF00FF),
+                    Color(0xFFFF0000),
+                  ]),
+                ),
+              ),
+              Positioned(
+                left: hsv.hue / 360 * box.maxWidth - 11,
+                child: _knob(HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor()),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+}
+
+Widget _knob(Color color) => Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: const [BoxShadow(color: Color(0x80000000), blurRadius: 4)],
+      ),
+    );

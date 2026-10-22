@@ -7,7 +7,7 @@ import 'dashboard_screen.dart';
 import 'purchases_screen.dart';
 import 'plans_screen.dart';
 import 'market_screen.dart';
-import 'more_screen.dart';
+import 'settings_screen.dart';
 import 'root_screen.dart';
 
 /// Каркас приложения внутри портфеля: пять вкладок в IndexedStack (чтобы
@@ -44,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     MarketScreen(),
     PurchasesScreen(),
     PlansScreen(),
-    MoreScreen(),
+    SettingsScreen(),
   ];
 
   static const _items = [
@@ -52,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     NavItem(icon: Icons.show_chart_rounded, activeIcon: Icons.show_chart_rounded, label: 'Биржа'),
     NavItem(icon: Icons.swap_horiz_outlined, activeIcon: Icons.swap_horiz, label: 'Сделки'),
     NavItem(icon: Icons.flag_outlined, activeIcon: Icons.flag, label: 'Планы'),
-    NavItem(icon: Icons.more_horiz_rounded, activeIcon: Icons.more_horiz_rounded, label: 'Ещё'),
+    NavItem(icon: Icons.tune_outlined, activeIcon: Icons.tune, label: 'Настройки'),
   ];
 
   @override

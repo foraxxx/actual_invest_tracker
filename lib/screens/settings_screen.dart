@@ -268,200 +268,197 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
 
+  /// Оформление: сверху тема и цвет одной карточкой, ниже переключатели и
+  /// строки с текущим значением. Пояснение — в окне выбора, а не под каждым
+  /// пунктом.
   Widget _appearanceSection() {
     return FadeSlideIn(
-                child: _section(
-                  title: 'Оформление',
-                  subtitle: 'Акцентный цвет и тема',
-                  icon: Icons.palette_outlined,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ValueListenableBuilder<Color>(
-                        valueListenable: ThemeService.accentColor,
-                        builder: (context, current, _) => Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: kPalettes.map((p) {
-                            final selected = p.color.value == current.value;
-                            return Pressable(
-                              onTap: () async {
-                                await ThemeService.setAccentColor(p.color);
-                              },
-                              child: Column(
-                                children: [
-                                  AnimatedContainer(
-                                    duration: AppDuration.normal,
-                                    curve: Curves.easeOutBack,
-                                    width: selected ? 50 : 44,
-                                    height: selected ? 50 : 44,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      gradient: AppGradient.accent(p.color),
-                                      border: Border.all(
-                                        color: selected
-                                            ? (context.isDark ? Colors.white : Colors.black87)
-                                            : Colors.transparent,
-                                        width: 2.5,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: p.color.withOpacity(selected ? 0.5 : 0.25),
-                                          blurRadius: selected ? 18 : 10,
-                                          offset: const Offset(0, 5),
-                                        ),
-                                      ],
-                                    ),
-                                    child: selected
-                                        ? const Icon(Icons.check_rounded, color: Colors.white, size: 22)
-                                        : null,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  SizedBox(
-                                    width: 58,
-                                    child: Text(
-                                      p.name,
-                                      textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                                        color: selected ? null : context.dim,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      ValueListenableBuilder<ThemeMode>(
-                        valueListenable: ThemeService.themeMode,
-                        builder: (context, mode, _) => SegmentedToggle<ThemeMode>(
-                          values: const [ThemeMode.system, ThemeMode.light, ThemeMode.dark],
-                          selected: mode,
-                          labelOf: (m) => switch (m) {
-                            ThemeMode.system => 'Авто',
-                            ThemeMode.light => 'Светлая',
-                            ThemeMode.dark => 'Тёмная',
-                          },
-                          iconOf: (m) => switch (m) {
-                            ThemeMode.system => Icons.brightness_auto_rounded,
-                            ThemeMode.light => Icons.light_mode_rounded,
-                            ThemeMode.dark => Icons.dark_mode_rounded,
-                          },
-                          onChanged: ThemeService.setThemeMode,
-                        ),
-                      ),
-
-              const SizedBox(height: 22),
-              Text(
-                'Отображение',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
-              ),
-              const SizedBox(height: 10),
-              ValueListenableBuilder<int>(
-                valueListenable: AppearanceService.version,
-                builder: (context, _, __) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _switchRow(
-                      title: 'Скрывать суммы',
-                      subtitle: 'Стоимость портфелей, позиций и суммы бюджета закрываются точками. '
-                          'Нажатие по сумме показывает её, повторное нажатие снова скрывает.',
-                      value: AppearanceService.hideAmounts,
-                      onChanged: AppearanceService.setHideAmounts,
+      child: ValueListenableBuilder<int>(
+        valueListenable: AppearanceService.version,
+        builder: (context, _, __) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppCard(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ValueListenableBuilder<ThemeMode>(
+                    valueListenable: ThemeService.themeMode,
+                    builder: (context, mode, _) => SegmentedToggle<ThemeMode>(
+                      values: const [ThemeMode.system, ThemeMode.dark, ThemeMode.light],
+                      selected: mode,
+                      labelOf: (m) => switch (m) {
+                        ThemeMode.system => 'Как в системе',
+                        ThemeMode.light => 'Светлая',
+                        ThemeMode.dark => 'Тёмная',
+                      },
+                      onChanged: ThemeService.setThemeMode,
                     ),
-                    const SizedBox(height: 16),
-                    _choiceTitle(
-                      'Состав портфеля',
-                      'Бумаги на главной разбиты на группы: акции, облигации, фонды. '
-                          'Группы можно показывать с заголовками или сворачивать.',
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<HoldingsGrouping>(
-                      values: HoldingsGrouping.values,
-                      selected: AppearanceService.holdingsGrouping,
-                      labelOf: (g) => g.title,
-                      iconOf: (g) => g == HoldingsGrouping.headers
-                          ? Icons.view_agenda_outlined
-                          : Icons.unfold_less_rounded,
-                      onChanged: AppearanceService.setHoldingsGrouping,
-                    ),
-                    const SizedBox(height: 16),
-                    _choiceTitle(
-                      'Значения на графике',
-                      'Что видно, когда палец лежит на графике или двумя пальцами '
-                          'отмечен период. «Над графиком» — на месте суммы, сам график ничем '
-                          'не закрыт. «На графике» — тонкая строка сверху и даты у линий.',
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<ChartHints>(
-                      values: ChartHints.values,
-                      selected: AppearanceService.chartHints,
-                      labelOf: (h) => h.title,
-                      iconOf: (h) => h == ChartHints.above
-                          ? Icons.vertical_align_top_rounded
-                          : Icons.show_chart_rounded,
-                      onChanged: AppearanceService.setChartHints,
-                    ),
-                    const SizedBox(height: 16),
-                    _choiceTitle(
-                      'Свёрнутые разделы',
-                      'Как выглядят свёрнутые «Распределение» и «Выплаты» на '
-                          'главной: одной строкой с итогом или ещё с превью — полосой долей '
-                          'или квадратиками месяцев. Свернуть раздел — нажать на его заголовок.',
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<SectionPreview>(
-                      values: SectionPreview.values,
-                      selected: AppearanceService.sectionPreview,
-                      labelOf: (p) => p.title,
-                      iconOf: (p) => p == SectionPreview.line
-                          ? Icons.horizontal_rule_rounded
-                          : Icons.view_day_outlined,
-                      onChanged: AppearanceService.setSectionPreview,
-                    ),
-                    const SizedBox(height: 16),
-                    _choiceTitle(
-                      'Календарь выплат',
-                      'Сетка месяцев на главной, в прогнозе выплат и в итогах года: '
-                          '3 столбца — компактнее, 2 столбца — с полными названиями месяцев.',
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<PayoutCalendarStyle>(
-                      values: PayoutCalendarStyle.values,
-                      selected: AppearanceService.payoutCalendar,
-                      labelOf: (c) => c.title,
-                      iconOf: (c) => c == PayoutCalendarStyle.threeColumns
-                          ? Icons.grid_view_rounded
-                          : Icons.view_agenda_outlined,
-                      onChanged: AppearanceService.setPayoutCalendar,
-                    ),
-                    const SizedBox(height: 16),
-                    _choiceTitle(
-                      'Показатели на главной',
-                      'Вложено, прибыль, доходность и прогноз. Список — строка на показатель, '
-                          'суммы целиком. Плитки — компактная сетка.',
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedToggle<MetricsLayout>(
-                      values: MetricsLayout.values,
-                      selected: AppearanceService.metricsLayout,
-                      labelOf: (c) => c.title,
-                      iconOf: (c) => c == MetricsLayout.list ? Icons.view_list_rounded : Icons.grid_view_rounded,
-                      onChanged: AppearanceService.setMetricsLayout,
-                    ),
-                  ],
-                ),
-              ),
-                    ],
                   ),
-                ),
-              );
+                  const SizedBox(height: 14),
+                  ValueListenableBuilder<Color>(
+                    valueListenable: ThemeService.accentColor,
+                    builder: (context, current, _) => Wrap(
+                      spacing: 12,
+                      runSpacing: 10,
+                      children: [
+                        for (final p in kPalettes)
+                          Tooltip(
+                            message: p.name,
+                            child: Pressable(
+                              onTap: () => ThemeService.setAccentColor(p.color),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: p.color,
+                                  border: Border.all(
+                                    color: p.color.value == current.value
+                                        ? (context.isDark ? Colors.white : Colors.black87)
+                                        : Colors.transparent,
+                                    width: 2.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _navGroup([
+              _switchLine('Скрывать суммы', AppearanceService.hideAmounts, AppearanceService.setHideAmounts),
+              _switchLine('Подписи в нижней панели', AppearanceService.showNavLabels, (v) async {
+                await AppearanceService.setShowNavLabels(v);
+                if (mounted) setState(() {});
+              }),
+            ]),
+            _navGroup([
+              _choiceLine<HoldingsGrouping>(
+                title: 'Состав портфеля',
+                hint: 'Бумаги на главной сгруппированы: акции, облигации, фонды.',
+                values: HoldingsGrouping.values,
+                selected: AppearanceService.holdingsGrouping,
+                labelOf: (g) => g.title,
+                onChanged: AppearanceService.setHoldingsGrouping,
+              ),
+              _choiceLine<ChartHints>(
+                title: 'Значения на графике',
+                hint: 'Где видна дата и сумма, когда палец на графике.',
+                values: ChartHints.values,
+                selected: AppearanceService.chartHints,
+                labelOf: (h) => h.title,
+                onChanged: AppearanceService.setChartHints,
+              ),
+              _choiceLine<SectionPreview>(
+                title: 'Свёрнутые разделы',
+                hint: 'Как выглядят свёрнутые разделы на главной.',
+                values: SectionPreview.values,
+                selected: AppearanceService.sectionPreview,
+                labelOf: (p) => p.title,
+                onChanged: AppearanceService.setSectionPreview,
+              ),
+              _choiceLine<PayoutCalendarStyle>(
+                title: 'Календарь выплат',
+                hint: '3 столбца — компактнее, 2 — с полными названиями месяцев.',
+                values: PayoutCalendarStyle.values,
+                selected: AppearanceService.payoutCalendar,
+                labelOf: (c) => c.title,
+                onChanged: AppearanceService.setPayoutCalendar,
+              ),
+              _choiceLine<MetricsLayout>(
+                title: 'Показатели на главной',
+                hint: 'Плитками или списком.',
+                values: MetricsLayout.values,
+                selected: AppearanceService.metricsLayout,
+                labelOf: (c) => c.title,
+                onChanged: AppearanceService.setMetricsLayout,
+              ),
+              _choiceLine<int>(
+                title: 'Стартовая вкладка',
+                hint: 'Что открывается при входе в портфель.',
+                values: const [0, 1, 2, 3],
+                selected: AppearanceService.startTab,
+                labelOf: (i) => const ['Портфель', 'Биржа', 'Сделки', 'Планы'][i],
+                onChanged: AppearanceService.setStartTab,
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Строка с переключателем.
+  Widget _switchLine(String title, bool value, ValueChanged<bool> onChanged) => Padding(
+        padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
+        child: Row(
+          children: [
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),
+            Switch(value: value, onChanged: onChanged),
+          ],
+        ),
+      );
+
+  /// Строка с текущим значением справа. Нажатие — окно выбора с коротким
+  /// пояснением.
+  Widget _choiceLine<T>({
+    required String title,
+    required String hint,
+    required List<T> values,
+    required T selected,
+    required String Function(T) labelOf,
+    required Future<void> Function(T) onChanged,
+  }) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showAppSheet<T>(
+          context: context,
+          builder: (ctx) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SheetHeader(title: title, subtitle: hint),
+                  const SizedBox(height: 6),
+                  for (final v in values)
+                    ListTile(
+                      title: Text(labelOf(v)),
+                      trailing: v == selected ? Icon(Icons.check_rounded, color: ctx.accent) : null,
+                      onTap: () => Navigator.pop(ctx, v),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+        if (picked != null) await onChanged(picked);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        child: Row(
+          children: [
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                labelOf(selected).toLowerCase(),
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 13.5, color: context.dim),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _ratesSection() {
@@ -477,9 +474,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Курсы приходят с валютного рынка Мосбиржи вместе с котировками. '
-                          'Каждая сделка пересчитывается по курсу на её дату, а если связи нет — '
-                          'берётся последний полученный курс.',
+                          'С Мосбиржи. Сделка считается по курсу на её дату.',
                           style: TextStyle(fontSize: 11.5, height: 1.45, color: context.dim),
                         ),
                         const SizedBox(height: 14),
@@ -559,14 +554,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Ставка применяется к прибыли от продажи бумаг, купленных менее 3 лет назад. '
-                          'Владение от 3 лет освобождается от налога (ЛДВ) — упрощённо, без лимита суммы.',
+                          'С прибыли от продажи. Бумаги старше 3 лет — без налога (ЛДВ).',
                           style: TextStyle(fontSize: 11.5, height: 1.45, color: context.dim),
                         ),
                         const SizedBox(height: 12),
                         _switchRow(
                           title: 'Показывать налог с продаж',
-                          subtitle: 'Расчёт НДФЛ и ЛДВ на главной и в карточке бумаги',
+                          subtitle: 'НДФЛ и ЛДВ в расчётах',
                           value: TaxService.enabled,
                           onChanged: TaxService.setEnabled,
                         ),
@@ -604,7 +598,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _actionRow(
                 icon: Icons.event_outlined,
                 title: 'Дни зарплаты и аванса',
-                subtitle: 'Когда обычно приходит каждая выплата и как она называется',
+                subtitle: 'Названия и дни выплат',
                 onTap: () => showPayDaysSheet(context),
               ),
               const SizedBox(height: 14),
@@ -612,8 +606,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 valueListenable: BudgetService.version,
                 builder: (context, _, __) => _switchRow(
                   title: 'Выплата в выходной или праздник',
-                  subtitle: 'Переносить на ближайший рабочий день раньше, как требует Трудовой кодекс. '
-                      'Например, аванс 31 октября 2026 года (суббота) придёт 30-го.',
+                  subtitle: 'Выплата в выходной придёт в рабочий день раньше.',
                   value: BudgetService.shiftToWorkday,
                   onChanged: BudgetService.setShiftToWorkday,
                 ),
@@ -645,14 +638,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _actionRow(
                         icon: Icons.file_download_outlined,
                         title: 'Восстановить из бэкапа',
-                        subtitle: 'Восстановить данные из ранее сохранённого файла',
+                        subtitle: 'Из сохранённого файла',
                         onTap: () => _importBackup(context),
                       ),
                       const SizedBox(height: 8),
                       _actionRow(
                         icon: Icons.account_balance_outlined,
                         title: 'Импорт от брокера',
-                        subtitle: 'Сделки, выплаты и пополнения из отчёта брокера. Портфель выбирается в окне импорта',
+                        subtitle: 'Сделки и выплаты из отчёта брокера',
                         onTap: () => Navigator.push(
                           context,
                           AppPageRoute(builder: (_) => const BrokerImportScreen()),
@@ -947,8 +940,7 @@ class _SectorsSectionState extends State<_SectorsSection> {
             ),
             const SizedBox(height: 14),
             Text(
-              'Привязать бумагу к сектору можно в её карточке — так не приходится '
-              'искать нужный тикер в общем списке.',
+              'Бумага привязывается к сектору в её карточке.',
               style: TextStyle(fontSize: 11.5, height: 1.4, color: context.dim),
             ),
           ],
@@ -1014,9 +1006,7 @@ class _AutoBackupSectionState extends State<_AutoBackupSection> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Приложение само сохраняет общий JSON-бэкап всех портфелей в выбранную папку при каждом '
-              'изменении данных. На некоторых версиях Android доступны для записи не все папки — '
-              'если не срабатывает, попробуйте «Загрузки».',
+              'Сохраняет бэкап в папку при каждом изменении. Не срабатывает — выберите «Загрузки».',
               style: TextStyle(fontSize: 11.3, height: 1.45, color: context.dim),
             ),
             const SizedBox(height: 12),
@@ -1130,9 +1120,7 @@ class _OnlineDataSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'С Вашего разрешения приложение получает рыночные данные с Мосбиржи, а логотипы — '
-              'из Wikidata и Wikimedia Commons. Биржа отдаёт данные с задержкой около 15 минут, а вне торгов — цену последнего '
-              'торгового дня, поэтому время котировки всегда показывается рядом с ней.',
+              'Котировки с Мосбиржи, с задержкой около 15 минут.',
               style: TextStyle(fontSize: 11.3, height: 1.45, color: context.dim),
             ),
             const SizedBox(height: 12),
@@ -1192,10 +1180,7 @@ class _OnlineDataSection extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Автообновление идёт только когда приложение открыто и торги идут. '
-                'После закрытия таймер спит до следующей сессии; ручное обновление доступно '
-                'всегда. Биржа отдаёт данные с задержкой около 15 минут, поэтому короткий '
-                'интервал почти не добавляет свежести, но расходует трафик и батарею.',
+                'Только пока приложение открыто и идут торги. Короткий интервал тратит батарею.',
                 style: TextStyle(fontSize: 11, height: 1.4, color: context.dim),
               ),
             ],
@@ -1330,10 +1315,7 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Бэкап содержит весь портфель целиком, а лежит он в «Загрузках», в облаке '
-              'или в переписке. С паролем файл превращается в шифротекст: без пароля из него '
-              'ничего не прочитать. Пароль хранится на этом устройстве, чтобы автосохранение '
-              'работало само.',
+              'С паролем файл бэкапа не прочитать без него. Пароль хранится на телефоне.',
               style: TextStyle(fontSize: 11.3, height: 1.45, color: context.dim),
             ),
             const SizedBox(height: 12),
