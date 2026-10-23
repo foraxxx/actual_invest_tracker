@@ -195,11 +195,7 @@ class _PlansScreenState extends State<PlansScreen> {
     for (final p in plans) {
       final d = p.targetDate;
       // Планы «к дате» — по своей дате, планы «на месяц» — по месяцу.
-      final key = p.status != PlanStatus.active
-          ? _doneKey
-          : _planOverdue(p)
-          ? _overdueKey
-          : d == null
+      final key = d == null
               ? _PlanGroup.noDateKey
               : p.isMonthPlan
                   ? '${d.year}-${d.month.toString().padLeft(2, '0')}-m'
@@ -328,7 +324,10 @@ class _PlansScreenState extends State<PlansScreen> {
     // Отбор — по каждому плану, а уже потом группировка по месяцам: в одном
     // месяце бывают планы с разными сроками и состояниями.
     final visible = all.where((p) => _matchesFilter(_PlanGroup('', p.targetDate, [p]))).toList();
-    final groups = _groupByMonth(visible);
+    final groups = _groupByMonth(visible.where((p) => p.status == PlanStatus.active && !_planOverdue(p)).toList());
+    final overdueGroups = _groupByMonth(visible.where(_planOverdue).toList()).reversed.toList();
+    final doneGroups = _groupByMonth(visible.where((p) => p.status != PlanStatus.active).toList()).reversed.toList();
+    final nothing = groups.isEmpty && overdueGroups.isEmpty && doneGroups.isEmpty;
 
     // Итог по периоду: все видимые планы, кроме отменённых — они больше не
     // считаются планом.
@@ -384,7 +383,7 @@ class _PlansScreenState extends State<PlansScreen> {
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: groups.isEmpty
+                    child: nothing
                         ? Center(
                             child: Text(
                               'Нет планов за выбранный период',
@@ -407,6 +406,8 @@ class _PlansScreenState extends State<PlansScreen> {
                                   ),
                                 ),
                               for (final g in groups) _monthGroup(g),
+                              if (overdueGroups.isNotEmpty) _foldSection(_overdueKey, overdueGroups),
+                              if (doneGroups.isNotEmpty) _foldSection(_doneKey, doneGroups),
                               const SizedBox(height: kListBottomPadding),
                             ],
                           ),
@@ -895,87 +896,254 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
-  /// Месяц (или «Просрочено», «Без срока»): заголовок с числом планов и
-  /// суммой, ниже — один блок, где планы разделены полосой фона.
+  /// Ключ, под которым запоминается, свёрнута ли группа.
+  String _foldKey(String section, _PlanGroup g) => 'plansG:$section:${g.key}';
+  bool _isOpen(String key, {bool byDefault = true}) {
+    final v = AppearanceService.ui(key);
+    return v == null ? byDefault : v == 'open';
+  }
+
+  Future<void> _toggle(String key, bool open) async {
+    await AppearanceService.setUi(key, open ? 'closed' : 'open');
+    if (mounted) setState(() {});
+  }
+
+  String _titleOf(_PlanGroup g) => g.key == _PlanGroup.noDateKey ? 'Без срока' : _groupTitle(g);
+
+  /// Кнопка «⋯» группы. Меню появляется прямо под кнопкой, а если снизу
+  /// не хватает места — над ней.
+  Widget _groupMenuButton(_PlanGroup g, {required String foldKey, required bool open, required String section}) {
+    return Builder(
+      builder: (btnCtx) => SizedBox(
+        width: 34,
+        height: 30,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          icon: Icon(Icons.more_horiz_rounded, size: 18, color: context.dim),
+          onPressed: () => _openGroupMenu(btnCtx, g, foldKey: foldKey, open: open, section: section),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openGroupMenu(BuildContext btnCtx, _PlanGroup g,
+      {required String foldKey, required bool open, required String section}) async {
+    final hasActive = g.plans.any((p) => p.status == PlanStatus.active);
+    final items = <(String, String, bool)>[
+      ('fold', open ? 'Свернуть группу' : 'Развернуть группу', false),
+      if (section != _doneKey) ('move', 'Перенести на месяц…', false),
+      if (hasActive) ('done', 'Отметить выполненными', false),
+      ('delete', 'Удалить группу', true),
+    ];
+    final box = btnCtx.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(btnCtx).context.findRenderObject() as RenderBox;
+    final pos = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final menuHeight = items.length * 48.0 + 16;
+    final screenBottom = overlay.size.height - MediaQuery.of(context).padding.bottom - 90;
+    final below = pos.dy + box.size.height + menuHeight <= screenBottom;
+    final top = below ? pos.dy + box.size.height : pos.dy - menuHeight;
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        pos.dx,
+        top,
+        overlay.size.width - pos.dx - box.size.width,
+        overlay.size.height - top,
+      ),
+      color: context.isDark ? AppColors.darkSurfaceTop : AppColors.lightSurface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      items: [
+        for (final (v, label, danger) in items)
+          PopupMenuItem(
+            value: v,
+            child: Text(label, style: TextStyle(color: danger ? AppColors.negative : null, fontSize: 15)),
+          ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'fold':
+        await _toggle(foldKey, open);
+      case 'move':
+        final picked = await showDialog<DateTime>(
+          context: context,
+          builder: (_) => _MonthPickerDialog(initial: g.date ?? DateTime.now()),
+        );
+        if (picked == null) return;
+        for (final p in g.plans) {
+          p.targetDate = _monthEnd(picked);
+          p.wholeMonth = true;
+          await StorageService.updatePlan(p);
+        }
+        if (mounted) setState(() {});
+      case 'done':
+        for (final p in g.plans.where((p) => p.status == PlanStatus.active)) {
+          p.status = PlanStatus.done;
+          await StorageService.updatePlan(p);
+        }
+        if (mounted) setState(() {});
+      case 'delete':
+        await _confirmDeleteGroup(g);
+    }
+  }
+
+  Widget _rowsBlock(List<Plan> plans) => Column(
+        children: [
+          for (int i = 0; i < plans.length; i++) ...[
+            // Полоса фона между планами — каждый план читается отдельно.
+            if (i > 0) Container(height: 6, color: context.isDark ? AppColors.darkBg : AppColors.lightBg),
+            _planRow(plans[i]),
+          ],
+        ],
+      );
+
+  /// Группа по сроку. Открытая — заголовок и карточка с покупками;
+  /// свёрнутая — одна карточка со сводкой.
   Widget _monthGroup(_PlanGroup g) {
-    if (g.key == _overdueKey || g.key == _doneKey) return _foldGroup(g);
     final hidden = AppearanceService.amountsHidden;
-    final overdue = g.key == _overdueKey;
-    final title = overdue
-        ? 'Просрочено'
-        : g.key == _PlanGroup.noDateKey
-            ? 'Без срока'
-            : _groupTitle(g);
+    final foldKey = _foldKey('a', g);
+    final open = _isOpen(foldKey);
+    final title = _titleOf(g);
     final sum = g.totalEstimated;
+    final surface = context.isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final menu = _groupMenuButton(g, foldKey: foldKey, open: open, section: 'a');
+
+    if (!open) {
+      final bought = g.plans.fold(0.0, (s, p) => s + p.purchasedQuantity * p.purchasedAvgPrice);
+      final progress = sum <= 0 ? 0.0 : (bought / sum).clamp(0.0, 1.0);
+      final tickers = <String>[];
+      for (final p in g.plans) {
+        if (!tickers.contains(p.ticker)) tickers.add(p.ticker);
+      }
+      final shown = tickers.take(3).toList();
+      final n = g.plans.length;
+      final caption = '$n ${Fmt.purchases(n)} · '
+          '${bought <= 0 ? 'ничего не куплено' : hidden ? 'куплено •••' : 'куплено на ${Fmt.money(bought)}'}';
+      return Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Material(
+          color: surface,
+          borderRadius: AppRadius.all(AppRadius.md),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _toggle(foldKey, open),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 6, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      ),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: context.dim),
+                      menu,
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 26.0 + (shown.length - 1) * 16,
+                          height: 26,
+                          child: Stack(
+                            children: [
+                              for (int i = 0; i < shown.length; i++)
+                                Positioned(
+                                  left: i * 16.0,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: surface, width: 2),
+                                    ),
+                                    child: TickerAvatar(ticker: shown[i], size: 22, glow: false),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(caption, style: TextStyle(fontSize: 12.5, color: context.dim)),
+                        ),
+                        const SizedBox(width: 8),
+                        if (sum > 0)
+                          Text(
+                            hidden ? '•••' : '≈ ${Fmt.money(sum)}',
+                            maxLines: 1,
+                            softWrap: false,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: MiniProgressBar(value: progress, color: context.accent)),
+                        const SizedBox(width: 10),
+                        Text('${(progress * 100).round()}%', style: TextStyle(fontSize: 12, color: context.dim)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: overdue ? AppColors.negative : null,
-                    ),
+          InkWell(
+            onTap: () => _toggle(foldKey, open),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
-                ),
-                Text(
-                  '${g.plans.length}${sum > 0 ? ' · ${hidden ? '•••' : '≈ ${Fmt.money(sum)}'}' : ''}',
-                  style: TextStyle(fontSize: 12.5, color: context.dim),
-                ),
-                SizedBox(
-                  width: 34,
-                  height: 26,
-                  child: PopupMenuButton<String>(
-                    padding: EdgeInsets.zero,
-                    icon: Icon(Icons.more_horiz_rounded, size: 18, color: context.dim),
-                    onSelected: (v) {
-                      if (v == 'delete_group') _confirmDeleteGroup(g);
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'delete_group', child: Text('Удалить группу')),
-                    ],
+                  Text(
+                    '${g.plans.length}${sum > 0 ? ' · ${hidden ? '•••' : '≈ ${Fmt.money(sum)}'}' : ''}',
+                    style: TextStyle(fontSize: 12.5, color: context.dim),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  Icon(Icons.keyboard_arrow_up_rounded, size: 20, color: context.dim),
+                  menu,
+                ],
+              ),
             ),
           ),
           ClipRRect(
             borderRadius: AppRadius.all(AppRadius.md),
-            child: Container(
-              color: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
-              child: Column(
-                children: [
-                  for (int i = 0; i < g.plans.length; i++) ...[
-                    // Полоса фона между планами — каждый план читается отдельно.
-                    if (i > 0) Container(height: 6, color: context.isDark ? AppColors.darkBg : AppColors.lightBg),
-                    _planRow(g.plans[i]),
-                  ],
-                ],
-              ),
-            ),
+            child: Container(color: surface, child: _rowsBlock(g.plans)),
           ),
         ],
       ),
     );
   }
 
-  /// Просроченные и выполненные (с отменёнными) — внизу, свёрнутым блоком.
-  /// Открыт блок или нет — запоминается.
-  Widget _foldGroup(_PlanGroup g) {
+  /// «Просрочено» и «Выполнено» (с отменёнными) — внизу, свёрнутым блоком.
+  /// Внутри — те же группы по срокам, каждая сворачивается.
+  Widget _foldSection(String section, List<_PlanGroup> groups) {
     final hidden = AppearanceService.amountsHidden;
-    final overdue = g.key == _overdueKey;
-    final uiKey = 'plansFold${g.key}';
-    final open = AppearanceService.ui(uiKey) == 'open';
-    final sum = g.totalEstimated;
+    final overdue = section == _overdueKey;
+    final uiKey = 'plansFold$section';
+    final open = _isOpen(uiKey, byDefault: false);
+    final count = groups.fold(0, (s, g) => s + g.plans.length);
+    final sum = groups.fold(0.0, (s, g) => s + g.totalEstimated);
     final dot = overdue ? AppColors.negative : AppColors.positive;
+    final bg = context.isDark ? AppColors.darkBg : AppColors.lightBg;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: ClipRRect(
@@ -986,32 +1154,21 @@ class _PlansScreenState extends State<PlansScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               InkWell(
-                onTap: () async {
-                  await AppearanceService.setUi(uiKey, open ? 'closed' : 'open');
-                  if (mounted) setState(() {});
-                },
-                onLongPress: () => _confirmDeleteGroup(g),
+                onTap: () => _toggle(uiKey, open),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
                   child: Row(
                     children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-                      ),
+                      Container(width: 8, height: 8, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          '${overdue ? 'Просрочено' : 'Выполнено'} · ${g.plans.length}',
+                          '${overdue ? 'Просрочено' : 'Выполнено'} · $count',
                           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                         ),
                       ),
                       if (sum > 0)
-                        Text(
-                          hidden ? '•••' : '≈ ${Fmt.money(sum)}',
-                          style: TextStyle(fontSize: 13, color: context.dim),
-                        ),
+                        Text(hidden ? '•••' : '≈ ${Fmt.money(sum)}', style: TextStyle(fontSize: 13, color: context.dim)),
                       const SizedBox(width: 6),
                       Icon(
                         open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
@@ -1023,14 +1180,55 @@ class _PlansScreenState extends State<PlansScreen> {
                 ),
               ),
               if (open)
-                for (final p in g.plans) ...[
-                  Container(height: 6, color: context.isDark ? AppColors.darkBg : AppColors.lightBg),
-                  _planRow(p),
+                for (final g in groups) ...[
+                  Container(height: 6, color: bg),
+                  _subGroup(section, g),
                 ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Группа по сроку внутри «Просрочено» или «Выполнено».
+  Widget _subGroup(String section, _PlanGroup g) {
+    final hidden = AppearanceService.amountsHidden;
+    final foldKey = _foldKey(section, g);
+    final open = _isOpen(foldKey);
+    final sum = g.totalEstimated;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => _toggle(foldKey, open),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _titleOf(g),
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: context.dim),
+                  ),
+                ),
+                Text(
+                  '${g.plans.length}${sum > 0 ? ' · ${hidden ? '•••' : '≈ ${Fmt.money(sum)}'}' : ''}',
+                  style: TextStyle(fontSize: 12, color: context.dim),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                  color: context.dim,
+                ),
+                _groupMenuButton(g, foldKey: foldKey, open: open, section: section),
+              ],
+            ),
+          ),
+        ),
+        if (open) _rowsBlock(g.plans),
+      ],
     );
   }
 
@@ -1246,11 +1444,7 @@ class _PlansScreenState extends State<PlansScreen> {
   }
 
   Future<void> _confirmDeleteGroup(_PlanGroup g) async {
-    final label = g.key == _overdueKey
-        ? 'из просроченных'
-        : g.key == _doneKey
-        ? 'из выполненных'
-        : g.key == _PlanGroup.noDateKey
+    final label = g.key == _PlanGroup.noDateKey
             ? 'без срока'
             : '«${_groupTitle(g)}»';
     final confirm = await showDialog<bool>(
@@ -1258,7 +1452,7 @@ class _PlansScreenState extends State<PlansScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Удалить группу?'),
         content: Text(
-          'Будет удалено ${g.plans.length} ${Fmt.papers(g.plans.length)} $label — без возможности восстановления.',
+          'Будет удалено ${g.plans.length} ${Fmt.purchases(g.plans.length)} $label — без возможности восстановления.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
