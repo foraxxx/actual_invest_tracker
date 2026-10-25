@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'date_picker.dart';
 import 'package:flutter/services.dart';
 import 'tokens.dart';
 
@@ -155,7 +156,7 @@ class AppDateField extends StatelessWidget {
       borderRadius: AppRadius.all(AppRadius.sm),
       onTap: () async {
         final now = DateTime.now();
-        final picked = await showDatePicker(
+        final picked = await showAppDatePicker(
           context: context,
           initialDate: value ?? now,
           firstDate: firstDate ?? DateTime(2010),

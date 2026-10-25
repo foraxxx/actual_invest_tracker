@@ -3,9 +3,17 @@ import 'package:invest_tracker/services/home_widget_config.dart';
 import 'package:invest_tracker/services/work_calendar.dart';
 
 void main() {
-  group('день выплаты переносится на рабочий день раньше', () {
+  group('день выплаты — ближайший рабочий день месяца', () {
     test('суббота — пятница', () {
       expect(WorkCalendar.payDay(DateTime(2026, 10, 31)), DateTime(2026, 10, 30));
+    });
+
+    test('воскресенье — понедельник', () {
+      expect(WorkCalendar.payDay(DateTime(2026, 11, 15)), DateTime(2026, 11, 16));
+    });
+
+    test('последний день месяца в воскресенье — пятница', () {
+      expect(WorkCalendar.payDay(DateTime(2026, 5, 31)), DateTime(2026, 5, 29));
     });
 
     test('рабочий день не меняется', () {
@@ -13,12 +21,12 @@ void main() {
     });
 
     test('праздник в выходной — свободен понедельник', () {
-      // 8 марта 2026 — воскресенье, 9-е выходной, платят в пятницу 6-го.
+      // 8 марта 2026 — воскресенье, 9-е выходной: ближайший рабочий — 10-е.
       expect(WorkCalendar.isWorkDay(DateTime(2026, 3, 9)), isFalse);
-      expect(WorkCalendar.payDay(DateTime(2026, 3, 9)), DateTime(2026, 3, 6));
-      // 9 мая 2026 — суббота, 11-е выходной.
+      expect(WorkCalendar.payDay(DateTime(2026, 3, 9)), DateTime(2026, 3, 10));
+      // 9 мая 2026 — суббота, 11-е выходной: ближайший рабочий — 12-е.
       expect(WorkCalendar.isWorkDay(DateTime(2026, 5, 11)), isFalse);
-      expect(WorkCalendar.payDay(DateTime(2026, 5, 11)), DateTime(2026, 5, 8));
+      expect(WorkCalendar.payDay(DateTime(2026, 5, 11)), DateTime(2026, 5, 12));
     });
 
     test('праздники', () {
