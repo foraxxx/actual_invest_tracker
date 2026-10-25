@@ -2,19 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../design/format.dart';
 import '../design/motion.dart';
+import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../models/plan.dart';
 import '../services/plan_apply_service.dart';
 
-/// Выбор плана для покупки: все активные планы по бумаге карточками, у
-/// каждой — прогресс и то, как он изменится после этой покупки.
+/// Выбор плана для покупки: одна строка с выбранным планом и тем, сколько
+/// станет после сделки. Нажатие открывает список планов по бумаге и
+/// «Не засчитывать».
 ///
 /// Одна и та же для формы в карточке бумаги и для формы во вкладке
 /// «Сделки»: раньше в них были свои галка и выпадающий список, и поведение
 /// двух форм расходилось.
-///
-/// «Не учитывать» — отдельная карточка, а не галка: так выбор всегда один и
-/// виден целиком, без второго шага «включить, а потом выбрать».
 class PlanPicker extends StatelessWidget {
   /// Кандидаты, см. [PlanApplyService.candidatesFor].
   final List<Plan> plans;
@@ -37,48 +36,131 @@ class PlanPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Plan? selected;
+    for (final p in plans) {
+      if (p.id == selectedId) selected = p;
+    }
+    final String title;
+    final String sub;
+    Color subColor = context.dim;
+    if (selected == null) {
+      title = 'Не засчитывать';
+      sub = plans.length == 1 ? 'Есть 1 план по этой бумаге' : 'Планов по этой бумаге: ${plans.length}';
+    } else {
+      final d = selected.targetDate;
+      final when = d == null
+          ? 'Без срока'
+          : selected.isMonthPlan
+              ? 'На ${Fmt.monthTitle('${d.year}-${d.month}').split(' ').first.toLowerCase()}'
+              : 'До ${Fmt.dayShort(d)}';
+      title = '$when · ${Fmt.qty(selected.purchasedQuantity)} из ${Fmt.qty(selected.targetQuantity)} шт';
+      final add = PlanApplyService.allocation(selected, quantity);
+      final after = selected.purchasedQuantity + add;
+      final target = selected.targetQuantity;
+      final pct = target <= 0 ? 0 : (after / target * 100).clamp(0, 100).round();
+      final extra = quantity - add;
+      if (extra > 0 && add > 0) {
+        sub = 'засчитается ${Fmt.qty(add)} шт, ещё ${Fmt.qty(extra)} — без плана';
+        subColor = AppColors.warning;
+      } else {
+        sub = after >= target ? 'после сделки план выполнится' : 'после сделки — ${Fmt.qty(after)} из ${Fmt.qty(target)} · $pct%';
+        if (after >= target) subColor = AppColors.positive;
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Засчитать в план',
-          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 6),
+          child: Text('Засчитать в план', style: TextStyle(fontSize: 12, color: context.dim)),
         ),
-        const SizedBox(height: 8),
-        for (final plan in plans) ...[
-          _PlanCard(
-            plan: plan,
-            selected: plan.id == selectedId,
-            quantity: quantity,
-            onTap: () => onChanged(plan.id),
-          ),
-          const SizedBox(height: 6),
-        ],
-        Pressable(
-          onTap: () => onChanged(null),
-          child: AnimatedContainer(
-            duration: AppDuration.fast,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-            decoration: BoxDecoration(
-              borderRadius: AppRadius.all(AppRadius.md),
-              border: Border.all(
-                color: selectedId == null ? context.accent : context.hairline,
-                width: selectedId == null ? 1.6 : 1,
-              ),
-            ),
-            child: Text(
-              'Не учитывать в планах',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: selectedId == null ? FontWeight.w700 : FontWeight.w600,
-                color: selectedId == null ? context.accent : context.dim,
+        Material(
+          color: context.isDark ? AppColors.darkSurfaceHigh : AppColors.lightSurfaceHigh,
+          borderRadius: AppRadius.all(AppRadius.md),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _choose(context),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+              child: Row(
+                children: [
+                  Icon(
+                    selected == null ? Icons.flag_outlined : Icons.flag_rounded,
+                    size: 20,
+                    color: selected == null ? context.dim : AppColors.positive,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        Text(sub, style: TextStyle(fontSize: 12, color: subColor)),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.keyboard_arrow_down_rounded, color: context.dim),
+                ],
               ),
             ),
           ),
         ),
       ],
     );
+  }
+
+  /// Список планов по бумаге и «Не засчитывать» — в листе снизу.
+  Future<void> _choose(BuildContext context) async {
+    final picked = await showAppSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SheetHeader(title: 'Засчитать в план'),
+              const SizedBox(height: 10),
+              for (final plan in plans) ...[
+                _PlanCard(
+                  plan: plan,
+                  selected: plan.id == selectedId,
+                  quantity: quantity,
+                  onTap: () => Navigator.pop(ctx, plan.id),
+                ),
+                const SizedBox(height: 6),
+              ],
+              Pressable(
+                onTap: () => Navigator.pop(ctx, ''),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: AppRadius.all(AppRadius.md),
+                    border: Border.all(
+                      color: selectedId == null ? context.accent : context.hairline,
+                      width: selectedId == null ? 1.6 : 1,
+                    ),
+                  ),
+                  child: Text(
+                    'Не засчитывать',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: selectedId == null ? context.accent : context.dim,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null) return;
+    onChanged(picked.isEmpty ? null : picked);
   }
 }
 

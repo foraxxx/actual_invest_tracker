@@ -35,6 +35,7 @@ import '../widgets/income_sheet.dart';
 import '../widgets/dividend_history_card.dart';
 import '../widgets/trade_edit_sheet.dart';
 import '../widgets/ticker_avatar.dart';
+import '../widgets/selected_security_card.dart';
 
 /// Карточка одной бумаги: сводка позиции, история цены, льгота ЛДВ,
 /// полученные выплаты и все сделки — плюс быстрые кнопки «купить/продать».
@@ -1291,6 +1292,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             // Средняя цена покупки — пунктиром с подписью цены.
                             referenceValue: avgPrice,
                             referenceLabel: avgPrice == null ? null : Fmt.price(avgPrice, type: assetType),
+                            sideLabels: true,
                           );
                         },
                       ),
@@ -1526,7 +1528,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final priceCtrl = TextEditingController(
       // Без разрядных пробелов и с точкой — значение должно оставаться
       // редактируемым числом, а не подписью.
-      text: knownPrice != null ? (knownPrice * lotSize).toStringAsFixed(2) : '',
+      text: knownPrice != null ? plainNumber(knownPrice) : '',
     );
     final feeCtrl = TextEditingController(text: '0');
     final noteCtrl = TextEditingController();
@@ -1546,7 +1548,8 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           final keyboard = MediaQuery.of(ctx).viewInsets.bottom;
           final lots = int.tryParse(qtyCtrl.text) ?? 0;
           final qty = lots * lotSize.toDouble();
-          final totalPrice = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
+          final unitPrice = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
+          final totalPrice = unitPrice * qty;
           final fee = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
           final sum = totalPrice + (isSell ? -fee : fee);
 
@@ -1556,81 +1559,51 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SheetHeader(
-                  title: isSell ? 'Продать $ticker' : 'Купить $ticker',
-                  subtitle: name,
+                  title: isSell ? 'Продажа' : 'Покупка',
                   trailing: IconButton(
                     icon: const Icon(Icons.close_rounded),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
+                SelectedSecurityCard(
+                  ticker: ticker,
+                  name: name,
+                  type: type,
+                  lotSize: lotSize,
+                  isSell: isSell,
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    IconButton.filledTonal(
-                      tooltip: 'Уменьшить на один лот',
-                      icon: const Icon(Icons.remove_rounded),
-                      onPressed: () => setSheetState(() {
-                        final oldLots = int.tryParse(qtyCtrl.text) ?? 1;
-                        final next = (oldLots - 1).clamp(1, 1000000);
-                        if (totalPrice > 0 && oldLots > 0) {
-                          priceCtrl.text = (totalPrice / oldLots * next).toStringAsFixed(2);
-                        }
-                        qtyCtrl.text = '$next';
-                      }),
-                    ),
-                    const SizedBox(width: 8),
                     Expanded(
                       child: AppTextField(
                         controller: qtyCtrl,
-                        label: 'Количество лотов',
+                        label: 'Лотов',
                         number: true,
                         integerOnly: true,
-                        suffixText: '× $lotSize шт.',
+                        suffixText: lotSize > 1 ? '× $lotSize' : null,
                         autofocus: true,
-                        onChanged: (_) => setSheetState(() {}),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filledTonal(
-                      tooltip: 'Добавить один лот',
-                      icon: const Icon(Icons.add_rounded),
-                      onPressed: () => setSheetState(() {
-                        final oldLots = int.tryParse(qtyCtrl.text) ?? 1;
-                        final next = (oldLots + 1).clamp(1, 1000000);
-                        if (totalPrice > 0 && oldLots > 0) {
-                          priceCtrl.text = (totalPrice / oldLots * next).toStringAsFixed(2);
-                        }
-                        qtyCtrl.text = '$next';
-                      }),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                InfoBanner(
-                  icon: Icons.inventory_2_outlined,
-                  color: AppColors.info,
-                  text: '$lots лот. × $lotSize шт. = ${Fmt.qty(qty)} шт.',
-                ),
-                const SizedBox(height: 12),
-                AppTextField(
-                  controller: priceCtrl,
-                  label: 'Стоимость всех выбранных бумаг ($currency)',
-                  number: true,
-                  onChanged: (_) => setSheetState(() {}),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppTextField(
-                        controller: feeCtrl,
-                        label: 'Комиссия',
-                        number: true,
                         onChanged: (_) => setSheetState(() {}),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
+                      flex: 3,
+                      child: AppTextField(
+                        controller: priceCtrl,
+                        label: 'Цена за бумагу',
+                        number: true,
+                        onChanged: (_) => setSheetState(() {}),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
                       child: AppDateField(
                         value: date,
                         label: 'Дата',
@@ -1639,18 +1612,20 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                         onPicked: (d) => setSheetState(() => date = d),
                       ),
                     ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: AppTextField(
+                        controller: feeCtrl,
+                        label: 'Комиссия',
+                        number: true,
+                        onChanged: (_) => setSheetState(() {}),
+                      ),
+                    ),
                   ],
                 ),
-                if (sum > 0) ...[
-                  const SizedBox(height: 12),
-                  InfoBanner(
-                    icon: Icons.calculate_outlined,
-                    color: isSell ? AppColors.negative : AppColors.positive,
-                    text: isSell
-                        ? 'К зачислению примерно ${Fmt.group(sum)} $currency'
-                        : 'Списание примерно ${Fmt.group(sum)} $currency',
-                  ),
-                ],
+                const SizedBox(height: 10),
+                TradeSumLine(sum: sum, quantity: qty, currency: currency, isSell: isSell),
                 if (priceSource != null) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -1661,16 +1636,16 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 // Предупреждение появляется прямо во время ввода: заметить
                 // опечатку здесь несопоставимо проще, чем потом разбираться,
                 // почему график за прошлый месяц провалился.
-                if (_suspiciousPrice(ticker, qtyCtrl.text, priceCtrl.text, lotSize) != null) ...[
+                if (_suspiciousPrice(ticker, qtyCtrl.text, totalPrice.toString(), lotSize) != null) ...[
                   const SizedBox(height: 10),
                   InfoBanner(
                     icon: Icons.warning_amber_rounded,
                     color: AppColors.warning,
-                    text: _suspiciousPrice(ticker, qtyCtrl.text, priceCtrl.text, lotSize)!,
+                    text: _suspiciousPrice(ticker, qtyCtrl.text, totalPrice.toString(), lotSize)!,
                   ),
                 ],
                 if (hasPlan) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
                   PlanPicker(
                     plans: planCandidates,
                     selectedId: selectedPlanId,
@@ -1689,10 +1664,10 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       : const [Color(0xFF0FA97E), Color(0xFF16D796)],
                   onPressed: () async {
                     final enteredLots = int.tryParse(qtyCtrl.text);
-                    final enteredTotal = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
-                    if (enteredLots == null || enteredTotal == null || enteredLots <= 0 || enteredTotal <= 0) return;
+                    final enteredPrice = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
+                    if (enteredLots == null || enteredPrice == null || enteredLots <= 0 || enteredPrice <= 0) return;
                     final q = enteredLots * lotSize.toDouble();
-                    final pr = enteredTotal / q;
+                    final pr = enteredPrice;
                     final f = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
                     final purchase = Purchase(
                       id: const Uuid().v4(),

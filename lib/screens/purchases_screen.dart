@@ -18,6 +18,8 @@ import '../services/tax_service.dart';
 import '../services/moex_sync_service.dart';
 import '../widgets/plan_picker.dart';
 import '../widgets/security_picker_field.dart';
+import '../widgets/selected_security_card.dart';
+import '../widgets/income_sheet.dart' show plainNumber;
 import '../widgets/ticker_avatar.dart';
 import '../widgets/trade_edit_sheet.dart';
 import 'broker_import_screen.dart';
@@ -794,9 +796,8 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     int added = 0;
     for (final pos in positions) {
       final qty = pos.securityQuantity;
-      final totalPrice = double.tryParse(pos.priceCtrl.text.replaceAll(',', '.'));
-      if (pos.tickerCtrl.text.isEmpty || qty <= 0 || totalPrice == null || totalPrice <= 0) continue;
-      final price = totalPrice / qty;
+      final price = pos.unitPrice;
+      if (pos.tickerCtrl.text.isEmpty || qty <= 0 || price <= 0) continue;
       final fee = double.tryParse(pos.feeCtrl.text.replaceAll(',', '.')) ?? 0;
       final ticker = pos.tickerCtrl.text.toUpperCase();
       final purchase = Purchase(
@@ -863,21 +864,17 @@ class _PositionDraft {
   String? selectedPlanId;
   int lotSize = 1;
 
+  /// Бумаги нет в справочнике — название, тикер и тип вводятся вручную.
+  bool manual = false;
+
   int get lots => int.tryParse(qtyCtrl.text) ?? 0;
   double get securityQuantity => lots * lotSize.toDouble();
 
-  void changeLots(int delta) {
-    final oldQuantity = securityQuantity;
-    final oldTotal = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
-    final next = (lots + delta).clamp(1, 1000000);
-    qtyCtrl.text = '$next';
-    if (oldTotal != null && oldQuantity > 0) {
-      priceCtrl.text = (oldTotal / oldQuantity * securityQuantity).toStringAsFixed(2);
-    }
-  }
+  /// Цена за одну бумагу.
+  double get unitPrice => double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
 
   double get total {
-    final p = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0;
+    final p = unitPrice * securityQuantity;
     final f = double.tryParse(feeCtrl.text.replaceAll(',', '.')) ?? 0;
     return isSell ? p - f : p + f;
   }
@@ -899,10 +896,7 @@ class _PositionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accentColor = draft.isSell ? AppColors.negative : AppColors.positive;
-    final holding = draft.tickerCtrl.text.isEmpty
-        ? null
-        : AnalyticsService.currentHoldings()[draft.tickerCtrl.text.toUpperCase()];
-    final hasHolding = holding != null && holding.qty > 0;
+    final chosen = draft.tickerCtrl.text.isNotEmpty && !draft.manual;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -927,22 +921,19 @@ class _PositionCard extends StatelessWidget {
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: accentColor),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    draft.tickerCtrl.text.isEmpty
-                        ? 'Бумага'
-                        : draft.nameCtrl.text.trim().isEmpty
-                            ? draft.tickerCtrl.text.toUpperCase()
-                            : '${draft.nameCtrl.text.trim()} · ${draft.tickerCtrl.text.toUpperCase()}',
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                  child: SegmentedToggle<bool>(
+                    values: const [false, true],
+                    selected: draft.isSell,
+                    labelOf: (v) => v ? 'Продажа' : 'Покупка',
+                    colorOf: (v) => v ? AppColors.negative : AppColors.positive,
+                    onChanged: (v) {
+                      draft.isSell = v;
+                      onChanged();
+                    },
                   ),
                 ),
-                if (draft.total > 0)
-                  Text(
-                    Fmt.money(draft.total),
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: context.dim),
-                  ),
                 if (onRemove != null)
                   IconButton(
                     icon: const Icon(Icons.close_rounded, size: 18),
@@ -952,125 +943,114 @@ class _PositionCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            SegmentedToggle<bool>(
-              values: const [false, true],
-              selected: draft.isSell,
-              labelOf: (v) => v ? 'Продажа' : 'Покупка',
-              iconOf: (v) => v ? Icons.sell_outlined : Icons.add_shopping_cart_rounded,
-              colorOf: (v) => v ? AppColors.negative : AppColors.positive,
-              onChanged: (v) {
-                draft.isSell = v;
-                onChanged();
-              },
-            ),
-            const SizedBox(height: 12),
-            SecurityPickerField(
-              onSelected: (s) {
-                draft.tickerCtrl.text = s.ticker;
-                draft.nameCtrl.text = s.name;
-                draft.type = s.type;
-                draft.sector = s.sector;
-                final quote = MoexSyncService.marketSnapshot.value[s.ticker.toUpperCase()];
-                draft.lotSize = quote?.lotSize ?? 1;
-                if (draft.qtyCtrl.text.isEmpty) draft.qtyCtrl.text = '1';
-                final currentPrice = quote?.price ?? AnalyticsService.priceFor(s.ticker);
-                if (currentPrice != null && currentPrice > 0) {
-                  draft.priceCtrl.text = (currentPrice * draft.securityQuantity).toStringAsFixed(2);
-                }
-                onChanged();
-              },
-            ),
-            if (draft.isSell && draft.tickerCtrl.text.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              InfoBanner(
-                icon: hasHolding ? Icons.inventory_2_outlined : Icons.error_outline_rounded,
-                color: hasHolding ? AppColors.info : AppColors.negative,
-                text: holding != null && holding.qty > 0
-                    ? 'На счету: ${Fmt.qty(holding.qty)} шт по средней ${Fmt.price(holding.avgCost, type: draft.type)}'
-                    : 'Этой бумаги нет на счету',
+            if (chosen)
+              SelectedSecurityCard(
+                ticker: draft.tickerCtrl.text,
+                name: draft.nameCtrl.text,
+                type: draft.type,
+                lotSize: draft.lotSize,
+                isSell: draft.isSell,
+                onChange: () {
+                  draft.tickerCtrl.clear();
+                  draft.nameCtrl.clear();
+                  draft.selectedPlanId = null;
+                  onChanged();
+                },
+              )
+            else ...[
+              SecurityPickerField(
+                onSelected: (s) {
+                  draft.manual = false;
+                  draft.tickerCtrl.text = s.ticker;
+                  draft.nameCtrl.text = s.name;
+                  draft.type = s.type;
+                  draft.sector = s.sector;
+                  final quote = MoexSyncService.marketSnapshot.value[s.ticker.toUpperCase()];
+                  draft.lotSize = quote?.lotSize ?? 1;
+                  if (draft.qtyCtrl.text.isEmpty) draft.qtyCtrl.text = '1';
+                  // Текущая цена подставляется в поле — карточка её не пишет.
+                  final currentPrice = quote?.price ?? AnalyticsService.priceFor(s.ticker);
+                  if (currentPrice != null && currentPrice > 0) {
+                    draft.priceCtrl.text = plainNumber(currentPrice);
+                  }
+                  draft.selectedPlanId = PlanApplyService.defaultFor(s.ticker)?.id;
+                  onChanged();
+                },
               ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: AppTextField(controller: draft.nameCtrl, label: 'Название'),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AppTextField(
-                    controller: draft.tickerCtrl,
-                    label: 'Тикер',
-                    upperCase: true,
-                    onChanged: (value) {
-                      draft.lotSize = MoexSyncService
-                              .marketSnapshot.value[value.trim().toUpperCase()]?.lotSize ??
-                          1;
+              if (!draft.manual)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () {
+                      draft.manual = true;
                       onChanged();
                     },
+                    child: const Text('Нет в списке — ввести вручную'),
                   ),
+                )
+              else ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: AppTextField(controller: draft.nameCtrl, label: 'Название'),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: AppTextField(
+                        controller: draft.tickerCtrl,
+                        label: 'Тикер',
+                        upperCase: true,
+                        onChanged: (value) {
+                          draft.lotSize = MoexSyncService
+                                  .marketSnapshot.value[value.trim().toUpperCase()]?.lotSize ??
+                              1;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                AppDropdown<AssetType>(
+                  value: draft.type,
+                  label: 'Тип актива',
+                  icon: Icons.category_outlined,
+                  items: AssetType.values
+                      .map((t) => DropdownMenuItem(value: t, child: Text(Fmt.assetType(t))))
+                      .toList(),
+                  onChanged: (v) {
+                    draft.type = v ?? AssetType.stock;
+                    onChanged();
+                  },
                 ),
               ],
-            ),
-            const SizedBox(height: 10),
-            AppDropdown<AssetType>(
-              value: draft.type,
-              label: 'Тип актива',
-              icon: Icons.category_outlined,
-              items: AssetType.values
-                  .map((t) => DropdownMenuItem(value: t, child: Text(Fmt.assetType(t))))
-                  .toList(),
-              onChanged: (v) {
-                draft.type = v ?? AssetType.stock;
-                onChanged();
-              },
-            ),
+            ],
             const SizedBox(height: 10),
             Row(
               children: [
-                IconButton.filledTonal(
-                  tooltip: 'Уменьшить на один лот',
-                  onPressed: () {
-                    draft.changeLots(-1);
-                    onChanged();
-                  },
-                  icon: const Icon(Icons.remove_rounded),
-                ),
-                const SizedBox(width: 8),
                 Expanded(
                   child: AppTextField(
                     controller: draft.qtyCtrl,
-                    label: 'Количество лотов',
+                    label: 'Лотов',
                     number: true,
                     integerOnly: true,
-                    suffixText: '× ${draft.lotSize} шт.',
+                    suffixText: draft.lotSize > 1 ? '× ${draft.lotSize}' : null,
                     onChanged: (_) => onChanged(),
                   ),
                 ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: 'Добавить один лот',
-                  onPressed: () {
-                    draft.changeLots(1);
-                    onChanged();
-                  },
-                  icon: const Icon(Icons.add_rounded),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 3,
+                  child: AppTextField(
+                    controller: draft.priceCtrl,
+                    label: 'Цена за бумагу',
+                    number: true,
+                    onChanged: (_) => onChanged(),
+                  ),
                 ),
               ],
-            ),
-            const SizedBox(height: 10),
-            InfoBanner(
-              icon: Icons.inventory_2_outlined,
-              color: AppColors.info,
-              text: '${draft.lots} лот. × ${draft.lotSize} шт. = ${Fmt.qty(draft.securityQuantity)} шт.',
-            ),
-            const SizedBox(height: 10),
-            AppTextField(
-              controller: draft.priceCtrl,
-              label: 'Стоимость всех выбранных бумаг',
-              number: true,
-              onChanged: (_) => onChanged(),
             ),
             const SizedBox(height: 10),
             Row(
@@ -1100,9 +1080,15 @@ class _PositionCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
+            TradeSumLine(
+              sum: draft.total,
+              quantity: draft.securityQuantity,
+              currency: draft.currency,
+              isSell: draft.isSell,
+            ),
+            const SizedBox(height: 10),
             AppTextField(controller: draft.noteCtrl, label: 'Заметка (необязательно)'),
-            if (!draft.isSell && draft.tickerCtrl.text.isNotEmpty)
-              _planSection(context),
+            if (!draft.isSell && draft.tickerCtrl.text.isNotEmpty) _planSection(context),
           ],
         ),
       ),
@@ -1118,7 +1104,7 @@ class _PositionCard extends StatelessWidget {
     final selected = candidates.any((p) => p.id == draft.selectedPlanId) ? draft.selectedPlanId : null;
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 12),
       child: PlanPicker(
         plans: candidates,
         selectedId: selected,

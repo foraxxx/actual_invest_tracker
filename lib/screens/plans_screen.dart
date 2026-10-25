@@ -100,8 +100,6 @@ class _PlansScreenState extends State<PlansScreen> {
   /// Выбранный календарный год, если [_preset] — [_DatePreset.calendarYear].
   int? _year;
 
-  /// Галка «Сохранить фильтры»: пока стоит, фильтры переживают закрытие экрана.
-  bool _rememberFilters = false;
 
   /// Сколько условий отличается от «показывать всё» — для счётчика на кнопке.
   int get _activeFilterCount =>
@@ -117,7 +115,6 @@ class _PlansScreenState extends State<PlansScreen> {
   void _restoreFilters() {
     final saved = PlanFilterService.saved;
     if (saved == null) return;
-    _rememberFilters = true;
     _preset = _DatePreset.values.firstWhere(
       (p) => p.name == saved['preset'],
       orElse: () => _DatePreset.all,
@@ -136,15 +133,11 @@ class _PlansScreenState extends State<PlansScreen> {
     if (_preset == _DatePreset.custom && _customRange == null) _preset = _DatePreset.all;
   }
 
-  /// Записывает фильтры, если стоит галка, и стирает запись, если снята.
+  /// Фильтры сохраняются всегда — при следующем открытии они те же.
   ///
   /// «Месяц» и «3 месяца» хранятся как пресет, а не как даты: при следующем
   /// открытии они снова отсчитываются от сегодняшнего дня.
   void _persistFilters() {
-    if (!_rememberFilters) {
-      PlanFilterService.clear();
-      return;
-    }
     PlanFilterService.save({
       'preset': _preset.name,
       'status': _status.name,
@@ -639,15 +632,6 @@ class _PlansScreenState extends State<PlansScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              AppCheckRow(
-                value: _rememberFilters,
-                title: 'Сохранить фильтры',
-                subtitle: 'Применять их при каждом открытии планов',
-                onChanged: (v) {
-                  setState(() => _rememberFilters = v);
-                  setSheetState(() {});
-                },
-              ),
               const SizedBox(height: 18),
               GradientButton(
                 label: 'Показать',

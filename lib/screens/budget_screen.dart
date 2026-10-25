@@ -698,22 +698,8 @@ class _BudgetScreenState extends State<BudgetScreen> {
     return parts.join(' · ');
   }
 
-  String? _tagOf(BudgetLine l, BudgetConfig config) => switch (l.source) {
-        BudgetSource.half => '½',
-        BudgetSource.salary => _shortName(config.names[0]),
-        BudgetSource.advance => _shortName(config.names[1]),
-        BudgetSource.auto => null,
-      };
-
-  String _shortName(String name) {
-    final n = name.toLowerCase();
-    if (n == 'зарплата') return 'зп';
-    return n.length <= 5 ? n : n.substring(0, 3);
-  }
-
   Widget _row(BudgetMonthView v, BudgetLine l) {
     final c = l.category;
-    final tag = _tagOf(l, v.config);
     return Container(
       color: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
@@ -738,18 +724,6 @@ class _BudgetScreenState extends State<BudgetScreen> {
                           style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                         ),
                       ),
-                      if (tag != null) ...[
-                        const SizedBox(width: 5),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppColors.info.withOpacity(0.16),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          child: Text(tag,
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.info)),
-                        ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 1),

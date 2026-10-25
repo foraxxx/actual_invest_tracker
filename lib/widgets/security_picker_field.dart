@@ -3,6 +3,7 @@ import '../data/securities.dart';
 import '../data/security_info.dart';
 import '../design/tokens.dart';
 import '../services/favorites_service.dart';
+import '../services/storage_service.dart';
 import 'ticker_avatar.dart';
 
 /// Поле выбора бумаги с автокомплитом по встроенному справочнику: можно
@@ -39,18 +40,20 @@ class SecurityPickerField extends StatelessWidget {
       optionsBuilder: (textEditingValue) {
         final fits = filter;
         if (textEditingValue.text.isEmpty) {
-          // Пустой запрос — показываем избранное: чаще всего покупают именно
-          // то, что уже отслеживается.
-          final favs = FavoritesService.all
-              .map((t) => SecuritiesDatabase.byTicker(t))
-              .whereType<SecurityInfo>()
-              .where((s) => fits == null || fits(s))
-              .toList();
-          // Если из избранного под фильтр ничего не подошло — показываем
-          // начало справочника, а не пустой список: пустота выглядела бы
-          // как «таких бумаг нет».
-          if (favs.isEmpty) return SecuritiesDatabase.search('', where: fits);
-          return favs;
+          // Пустой запрос — несколько бумаг из последних сделок. Избранное
+          // здесь больше не показывается: оно мешало искать нужную бумагу.
+          final trades = StorageService.purchases.toList()..sort((a, b) => b.date.compareTo(a.date));
+          final seen = <String>{};
+          final recent = <SecurityInfo>[];
+          for (final t in trades) {
+            if (!seen.add(t.ticker.toUpperCase())) continue;
+            final info = SecuritiesDatabase.byTicker(t.ticker) ??
+                SecurityInfo(ticker: t.ticker, name: t.name, type: t.type, sector: t.sector ?? '');
+            if (fits != null && !fits(info)) continue;
+            recent.add(info);
+            if (recent.length >= 5) break;
+          }
+          return recent;
         }
         return SecuritiesDatabase.search(textEditingValue.text, where: fits);
       },

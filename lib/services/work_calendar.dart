@@ -35,18 +35,20 @@ class WorkCalendar {
 
   static bool isWorkDay(DateTime d) => !_weekend(d) && !isHoliday(d);
 
-  /// Ближайший рабочий день не позже [d]. Если до него пришлось бы уйти в
-  /// прошлый месяц — ближайший рабочий день после, в том же месяце.
+  /// День выплаты: [d] или ближайший к нему рабочий день того же месяца.
   static DateTime payDay(DateTime d) {
-    var x = DateTime(d.year, d.month, d.day);
-    while (!isWorkDay(x)) {
-      x = DateTime(x.year, x.month, x.day - 1);
+    final day = DateTime(d.year, d.month, d.day);
+    if (isWorkDay(day)) return day;
+    // Ближайший рабочий день этого же месяца; при равном расстоянии — более
+    // ранний. Суббота → пятница, воскресенье → понедельник, а если понедельник
+    // уже в следующем месяце — пятница.
+    for (var k = 1; k <= 31; k++) {
+      final before = DateTime(d.year, d.month, d.day - k);
+      if (before.month == d.month && isWorkDay(before)) return before;
+      final after = DateTime(d.year, d.month, d.day + k);
+      if (after.month == d.month && isWorkDay(after)) return after;
     }
-    if (x.month == d.month) return x;
-    x = DateTime(d.year, d.month, d.day);
-    while (!isWorkDay(x) && x.month == d.month) {
-      x = DateTime(x.year, x.month, x.day + 1);
-    }
-    return x.month == d.month ? x : DateTime(d.year, d.month, d.day);
+    return day;
   }
+
 }

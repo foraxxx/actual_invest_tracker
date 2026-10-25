@@ -225,6 +225,11 @@ class Sparkline extends StatefulWidget {
   final double? referenceValue;
   final String? referenceLabel;
 
+  /// Справа от графика — колонка с ценами: максимум и минимум видимого
+  /// периода и опорный уровень (средняя цена), каждая плашкой на своей
+  /// высоте. Подпись опорного уровня тогда на самом графике не рисуется.
+  final bool sideLabels;
+
   const Sparkline({
     super.key,
     required this.values,
@@ -244,7 +249,11 @@ class Sparkline extends StatefulWidget {
     this.inspection,
     this.referenceValue,
     this.referenceLabel,
+    this.sideLabels = false,
   });
+
+  /// Ширина колонки с ценами справа.
+  static const sideWidth = 84.0;
 
   @override
   State<Sparkline> createState() => _SparklineState();
@@ -287,8 +296,12 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
 
   /// Индекс точки под пальцем — с поправкой на положение окна.
   int _indexAt(double dx, double width) {
-    final raw = widget.windowStart + dx / _step(width);
-    return raw.round().clamp(0, widget.values.length - 1);
+    // Палец за краем графика держит крайнюю видимую точку — уйти за левый
+    // или правый край нельзя.
+    final raw = widget.windowStart + dx.clamp(0.0, width) / _step(width);
+    final first = widget.windowStart.ceil().clamp(0, widget.values.length - 1);
+    final last = (widget.windowStart + _visible - 1).floor().clamp(first, widget.values.length - 1);
+    return raw.round().clamp(first, last);
   }
 
   void _syncRange(double width) {
@@ -498,11 +511,12 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final w = constraints.maxWidth;
+        final side = widget.sideLabels ? Sparkline.sideWidth : 0.0;
+        final w = constraints.maxWidth - side;
         final touchedX =
             _touch == null ? 0.0 : (_touch! - widget.windowStart) * _step(w);
 
-        return Listener(
+        final chart = Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: widget.interactive
               ? (e) {
@@ -577,7 +591,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           onTapUp: widget.interactive ? (d) => _handleTap(d.localPosition.dx, w) : null,
           onTapCancel: widget.interactive ? () => setState(() => _touch = null) : null,
           child: SizedBox(
-            height: widget.height,
+            height: widget.sideLabels ? math.max(40.0, widget.height - 22) : widget.height,
             width: double.infinity,
             child: Stack(
               clipBehavior: Clip.none,
@@ -604,6 +618,8 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                         selectedMarker: _marker,
                         referenceValue: widget.referenceValue,
                         referenceLabel: widget.referenceLabel,
+                        sideWidth: side,
+                        sideFormat: widget.priceLabel ?? ((double v) => v.toStringAsFixed(2)),
                         labelBackground: context.isDark ? AppColors.darkSurfaceTop : Colors.white,
                         labelText: context.isDark ? Colors.white : const Color(0xFF1D2434),
                       ),
@@ -647,6 +663,21 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
             ),
           ),
           ),
+        );
+        if (!widget.sideLabels) return chart;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            chart,
+            const SizedBox(height: 6),
+            Text(
+              widget.referenceValue != null
+                  ? 'Справа: макс · моя средняя · мин за период'
+                  : 'Справа: макс и мин за период',
+              style: TextStyle(fontSize: 11.5, color: context.dim),
+            ),
+          ],
         );
       },
     );
@@ -769,6 +800,8 @@ class _SparklinePainter extends CustomPainter {
   final String? referenceLabel;
   final Color labelBackground;
   final Color labelText;
+  final double sideWidth;
+  final String Function(double) sideFormat;
 
   _SparklinePainter({
     required this.values,
@@ -786,13 +819,17 @@ class _SparklinePainter extends CustomPainter {
     this.referenceLabel,
     this.labelBackground = Colors.white,
     this.labelText = Colors.black,
+    this.sideWidth = 0,
+    required this.sideFormat,
   });
 
   static const _referenceColor = AppColors.violet;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (values.length < 2 || size.width <= 0 || size.height <= 0) return;
+  void paint(Canvas canvas, Size full) {
+    if (values.length < 2 || full.width <= sideWidth || full.height <= 0) return;
+    // Сам график — левее колонки с ценами.
+    final size = Size(full.width - sideWidth, full.height);
 
     // Окно просмотра: рисуем не весь набор, а видимый отрезок. Масштаб по
     // вертикали тоже считается по нему — иначе при листании линия выглядела бы
@@ -951,6 +988,7 @@ class _SparklinePainter extends CustomPainter {
     // нет: на её месте могут быть подсказки касания или замера.
     final label = referenceLabel;
     if (ref != null &&
+        sideWidth == 0 &&
         label != null &&
         label.isNotEmpty &&
         progress > 0.98 &&
@@ -1053,6 +1091,56 @@ class _SparklinePainter extends CustomPainter {
     }
 
     canvas.restore();
+
+    if (sideWidth > 0 && progress > 0.98) {
+      _paintSide(canvas, size, minV, maxV, padTop, usable);
+    }
+  }
+
+  /// Цены справа: максимум, опорный уровень и минимум — плашками на своей
+  /// высоте. Плашки не налезают друг на друга и не выходят за график.
+  void _paintSide(Canvas canvas, Size chart, double minV, double maxV, double padTop, double usable) {
+    double yOf(double v) => padTop + (1 - (v - minV) / (maxV - minV)) * usable;
+    final neutralBg = labelText.withOpacity(0.1);
+    final items = <(double, String, Color, Color)>[
+      (yOf(maxV), sideFormat(maxV), neutralBg, labelText),
+      (yOf(minV), sideFormat(minV), neutralBg, labelText),
+    ];
+    final ref = referenceValue;
+    if (ref != null) {
+      final arrow = ref > maxV ? ' ↑' : ref < minV ? ' ↓' : '';
+      items.add((yOf(ref.clamp(minV, maxV).toDouble()), '${sideFormat(ref)}$arrow', _referenceColor, Colors.white));
+    }
+    const h = 20.0;
+    final tops = <double>[];
+    final painted = <(double, TextPainter, Color)>[];
+    for (final (y, text, bg, fg) in items) {
+      final tp = TextPainter(
+        text: TextSpan(text: text, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: fg)),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout(maxWidth: sideWidth - 16);
+      var top = (y - h / 2).clamp(0.0, chart.height - h).toDouble();
+      // Сдвигаем от уже поставленных плашек.
+      for (var guard = 0; guard < 4; guard++) {
+        final hit = tops.where((t) => (t - top).abs() < h + 2).toList();
+        if (hit.isEmpty) break;
+        final t = hit.first;
+        top = top >= t ? t + h + 2 : t - h - 2;
+        top = top.clamp(0.0, chart.height - h).toDouble();
+      }
+      tops.add(top);
+      painted.add((top, tp, bg));
+    }
+    for (final (top, tp, bg) in painted) {
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(chart.width + 6, top, tp.width + 12, h),
+        const Radius.circular(6),
+      );
+      canvas.drawRRect(rect, Paint()..color = bg);
+      tp.paint(canvas, Offset(chart.width + 12, top + (h - tp.height) / 2));
+    }
   }
 
   @override
@@ -1069,6 +1157,7 @@ class _SparklinePainter extends CustomPainter {
       old.referenceValue != referenceValue ||
       old.referenceLabel != referenceLabel ||
       old.labelBackground != labelBackground ||
+      old.sideWidth != sideWidth ||
       old.values.length != values.length;
 }
 

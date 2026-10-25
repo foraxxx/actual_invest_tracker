@@ -628,6 +628,7 @@ class _MarketScreenState extends State<MarketScreen> {
                               priceLabel: (v) => Fmt.price(v),
                               onPan: _viewSize < all.length ? _panChart : null,
                               onPanEnd: _loadOlderChart,
+                            sideLabels: true,
                               inspection: AppearanceService.chartHints == ChartHints.above
                                   ? _chartInspect
                                   : null,

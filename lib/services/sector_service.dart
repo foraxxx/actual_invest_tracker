@@ -22,6 +22,26 @@ class SectorService {
 
   static Future<void> init() async {
     _box = await Hive.openBox<String>(_boxName(PortfolioService.activeId));
+    // Отрасли с биржи — последняя загруженная карта. Без неё до первой
+    // удачной загрузки (или без интернета) у Россетей, облигаций и других
+    // бумаг не из встроенного справочника сектор пропадал.
+    try {
+      _cache = await Hive.openBox<String>('sector_exchange_cache');
+      final raw = _cache?.get('map');
+      if (raw != null) {
+        _fromExchange = (jsonDecode(raw) as Map).map((k, v) => MapEntry('$k', '$v'));
+      }
+    } catch (_) {
+      _fromExchange = {};
+    }
+  }
+
+  static Box<String>? _cache;
+
+  static void _saveCache() {
+    try {
+      _cache?.put('map', jsonEncode(_fromExchange));
+    } catch (_) {}
   }
 
   /// Вызывается PortfolioService при переключении портфеля.
@@ -139,7 +159,10 @@ class SectorService {
 
   static void setExchangeSectors(Map<String, String> map) {
     if (map.isEmpty) return;
-    _fromExchange = map;
+    // Новая карта дополняет сохранённую: отрасли облигаций, найденные
+    // раньше, не стираются.
+    _fromExchange = {..._fromExchange, ...map};
+    _saveCache();
     version.value++;
   }
 
@@ -147,6 +170,7 @@ class SectorService {
   static void mergeExchangeSectors(Map<String, String> map) {
     if (map.isEmpty) return;
     _fromExchange = {..._fromExchange, ...map};
+    _saveCache();
     version.value++;
   }
 
