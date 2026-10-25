@@ -253,7 +253,7 @@ class Sparkline extends StatefulWidget {
   });
 
   /// Ширина колонки с ценами справа.
-  static const sideWidth = 84.0;
+  static const sideWidth = 70.0;
 
   @override
   State<Sparkline> createState() => _SparklineState();
@@ -512,6 +512,20 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
     return LayoutBuilder(
       builder: (context, constraints) {
         final side = widget.sideLabels ? Sparkline.sideWidth : 0.0;
+        // Средняя выше (1) или ниже (−1) видимого периода — тогда её плашка
+        // стоит над или под графиком.
+        var outside = 0;
+        final refValue = widget.referenceValue;
+        if (widget.sideLabels && refValue != null) {
+          final first = widget.windowStart.floor().clamp(0, values.length - 1);
+          final last = (widget.windowStart + _visible).ceil().clamp(0, values.length - 1);
+          var lo = values[first], hi = values[first];
+          for (var i = first; i <= last; i++) {
+            if (values[i] < lo) lo = values[i];
+            if (values[i] > hi) hi = values[i];
+          }
+          outside = refValue > hi ? 1 : (refValue < lo ? -1 : 0);
+        }
         final w = constraints.maxWidth - side;
         final touchedX =
             _touch == null ? 0.0 : (_touch! - widget.windowStart) * _step(w);
@@ -591,7 +605,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           onTapUp: widget.interactive ? (d) => _handleTap(d.localPosition.dx, w) : null,
           onTapCancel: widget.interactive ? () => setState(() => _touch = null) : null,
           child: SizedBox(
-            height: widget.sideLabels ? math.max(40.0, widget.height - 22) : widget.height,
+            height: outside != 0 ? math.max(40.0, widget.height - 24) : widget.height,
             width: double.infinity,
             child: Stack(
               clipBehavior: Clip.none,
@@ -664,19 +678,26 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
           ),
           ),
         );
-        if (!widget.sideLabels) return chart;
+        if (!widget.sideLabels || outside == 0) return chart;
+        final ref = widget.referenceValue!;
+        final plaque = Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            margin: const EdgeInsets.only(right: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: AppColors.violet, borderRadius: BorderRadius.circular(6)),
+            child: Text(
+              '${(widget.priceLabel ?? ((double v) => v.toStringAsFixed(2)))(ref)} ${outside > 0 ? '↑' : '↓'}',
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white),
+            ),
+          ),
+        );
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (outside > 0) ...[plaque, const SizedBox(height: 4)],
             chart,
-            const SizedBox(height: 6),
-            Text(
-              widget.referenceValue != null
-                  ? 'Справа: макс · моя средняя · мин за период'
-                  : 'Справа: макс и мин за период',
-              style: TextStyle(fontSize: 11.5, color: context.dim),
-            ),
+            if (outside < 0) ...[const SizedBox(height: 4), plaque],
           ],
         );
       },
@@ -921,6 +942,18 @@ class _SparklinePainter extends CustomPainter {
       canvas.drawPath(area, areaPaint);
     }
 
+    // Максимум и минимум периода — тонкий серый пунктир к их плашкам.
+    if (sideWidth > 0) {
+      final grey = Paint()
+        ..color = labelText.withOpacity(0.35)
+        ..strokeWidth = 1;
+      for (final y in [padTop, padTop + usable]) {
+        for (double x = 0; x < size.width; x += 7) {
+          canvas.drawLine(Offset(x, y), Offset(math.min(x + 3, size.width), y), grey);
+        }
+      }
+    }
+
     // Опорный уровень (средняя цена покупки) — пунктир под линией цены.
     final ref = referenceValue;
     double? refY;
@@ -1107,9 +1140,9 @@ class _SparklinePainter extends CustomPainter {
       (yOf(minV), sideFormat(minV), neutralBg, labelText),
     ];
     final ref = referenceValue;
-    if (ref != null) {
-      final arrow = ref > maxV ? ' ↑' : ref < minV ? ' ↓' : '';
-      items.add((yOf(ref.clamp(minV, maxV).toDouble()), '${sideFormat(ref)}$arrow', _referenceColor, Colors.white));
+    // Средняя вне периода рисуется не здесь, а плашкой над или под графиком.
+    if (ref != null && ref >= minV && ref <= maxV) {
+      items.add((yOf(ref), sideFormat(ref), _referenceColor, Colors.white));
     }
     const h = 20.0;
     final tops = <double>[];

@@ -137,3 +137,103 @@ class TradeSumLine extends StatelessWidget {
     );
   }
 }
+
+/// Количество лотов: − и + внутри поля, число можно вписать. Под полем —
+/// сколько это штук.
+class LotStepper extends StatelessWidget {
+  final TextEditingController controller;
+  final int lotSize;
+  final VoidCallback onChanged;
+  final bool autofocus;
+
+  const LotStepper({
+    super.key,
+    required this.controller,
+    required this.lotSize,
+    required this.onChanged,
+    this.autofocus = false,
+  });
+
+  int get _lots => int.tryParse(controller.text.replaceAll(' ', '')) ?? 0;
+
+  void _step(int d) {
+    final next = (_lots + d).clamp(1, 100000000);
+    controller.text = '$next';
+    controller.selection = TextSelection.collapsed(offset: controller.text.length);
+    onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final btnColor = context.isDark ? AppColors.darkSurfaceTop : Colors.white;
+    Widget btn(IconData icon, int d) => Material(
+          color: btnColor,
+          borderRadius: BorderRadius.circular(9),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(9),
+            onTap: () => _step(d),
+            child: SizedBox(width: 34, height: 40, child: Icon(icon, size: 18)),
+          ),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 4),
+          child: Text('Лотов', style: TextStyle(fontSize: 12, color: context.dim)),
+        ),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: context.isDark ? Colors.white.withOpacity(0.04) : AppColors.lightSurfaceHigh,
+            borderRadius: AppRadius.all(AppRadius.sm),
+            border: Border.all(color: context.hairline, width: 1.2),
+          ),
+          child: Row(
+            children: [
+              btn(Icons.remove_rounded, -1),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  autofocus: autofocus,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  onChanged: (_) => onChanged(),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              btn(Icons.add_rounded, 1),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// «1 100 лотов × 10 = 11 000 шт» — подпись под строкой с лотами и ценой.
+class LotCaption extends StatelessWidget {
+  final int lots;
+  final int lotSize;
+
+  const LotCaption({super.key, required this.lots, required this.lotSize});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = lotSize > 1
+        ? '${Fmt.group(lots.toDouble())} ${Fmt.plural(lots, 'лот', 'лота', 'лотов')} × $lotSize = ${Fmt.group(lots * lotSize.toDouble())} шт'
+        : '${Fmt.group(lots.toDouble())} шт';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+      child: Text(text, style: TextStyle(fontSize: 12, color: context.dim)),
+    );
+  }
+}

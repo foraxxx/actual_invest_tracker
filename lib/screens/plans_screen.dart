@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../design/charts.dart';
+import '../design/date_picker.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -560,11 +561,11 @@ class _PlansScreenState extends State<PlansScreen> {
                     selected: _preset == _DatePreset.custom,
                     onTap: () async {
                       final now = DateTime.now();
-                      final picked = await showDateRangePicker(
+                      final picked = await showAppDateRangePicker(
                         context: ctx,
                         firstDate: DateTime(now.year - 2),
                         lastDate: DateTime(now.year + 5),
-                        initialDateRange: _customRange,
+                        initial: _customRange,
                       );
                       if (picked == null) return;
                       setState(() {
@@ -949,10 +950,7 @@ class _PlansScreenState extends State<PlansScreen> {
       case 'fold':
         await _toggle(foldKey, open);
       case 'move':
-        final picked = await showDialog<DateTime>(
-          context: context,
-          builder: (_) => _MonthPickerDialog(initial: g.date ?? DateTime.now()),
-        );
+        final picked = await showAppMonthPicker(context: context, initial: g.date ?? DateTime.now());
         if (picked == null) return;
         for (final p in g.plans) {
           p.targetDate = _monthEnd(picked);
@@ -1734,10 +1732,7 @@ class _MonthField extends StatelessWidget {
     final v = value;
     return Pressable(
       onTap: () async {
-        final picked = await showDialog<DateTime>(
-          context: context,
-          builder: (_) => _MonthPickerDialog(initial: v ?? DateTime.now()),
-        );
+        final picked = await showAppMonthPicker(context: context, initial: v ?? DateTime.now());
         if (picked != null) onPicked(picked);
       },
       child: Container(

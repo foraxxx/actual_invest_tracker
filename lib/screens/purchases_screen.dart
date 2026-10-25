@@ -867,7 +867,7 @@ class _PositionDraft {
   /// Бумаги нет в справочнике — название, тикер и тип вводятся вручную.
   bool manual = false;
 
-  int get lots => int.tryParse(qtyCtrl.text) ?? 0;
+  int get lots => int.tryParse(qtyCtrl.text.replaceAll(' ', '')) ?? 0;
   double get securityQuantity => lots * lotSize.toDouble();
 
   /// Цена за одну бумагу.
@@ -1029,20 +1029,19 @@ class _PositionCard extends StatelessWidget {
             ],
             const SizedBox(height: 10),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
-                  child: AppTextField(
+                  flex: 5,
+                  child: LotStepper(
                     controller: draft.qtyCtrl,
-                    label: 'Лотов',
-                    number: true,
-                    integerOnly: true,
-                    suffixText: draft.lotSize > 1 ? '× ${draft.lotSize}' : null,
-                    onChanged: (_) => onChanged(),
+                    lotSize: draft.lotSize,
+                    onChanged: onChanged,
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  flex: 3,
+                  flex: 4,
                   child: AppTextField(
                     controller: draft.priceCtrl,
                     label: 'Цена за бумагу',
@@ -1052,6 +1051,7 @@ class _PositionCard extends StatelessWidget {
                 ),
               ],
             ),
+            LotCaption(lots: draft.lots, lotSize: draft.lotSize),
             const SizedBox(height: 10),
             Row(
               children: [

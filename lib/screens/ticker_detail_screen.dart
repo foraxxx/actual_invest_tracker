@@ -1575,21 +1575,20 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 ),
                 const SizedBox(height: 12),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
-                      child: AppTextField(
+                      flex: 5,
+                      child: LotStepper(
                         controller: qtyCtrl,
-                        label: 'Лотов',
-                        number: true,
-                        integerOnly: true,
-                        suffixText: lotSize > 1 ? '× $lotSize' : null,
+                        lotSize: lotSize,
                         autofocus: true,
-                        onChanged: (_) => setSheetState(() {}),
+                        onChanged: () => setSheetState(() {}),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: AppTextField(
                         controller: priceCtrl,
                         label: 'Цена за бумагу',
@@ -1599,6 +1598,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     ),
                   ],
                 ),
+                LotCaption(lots: lots, lotSize: lotSize),
                 const SizedBox(height: 10),
                 Row(
                   children: [
