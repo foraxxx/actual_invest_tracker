@@ -957,8 +957,8 @@ class _SectorsSectionState extends State<_SectorsSection> {
         content: Text('Бумаги, привязанные к «$sector», вернутся к сектору по умолчанию.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.negative),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.negative),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Удалить'),
           ),
@@ -1287,8 +1287,8 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.negative),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.negative),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Убрать'),
           ),

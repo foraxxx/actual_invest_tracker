@@ -17,6 +17,7 @@ import '../services/online_price_service.dart';
 import '../services/plan_filter_service.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/ticker_avatar.dart';
+import '../widgets/undo_snack.dart';
 import 'home_screen.dart';
 
 /// Период, за который показываются планы. Отсчитывается от сегодняшнего дня
@@ -356,11 +357,17 @@ class _PlansScreenState extends State<PlansScreen> {
         child: SafeArea(
         bottom: false,
         child: all.isEmpty
-            ? const EmptyState(
+            ? EmptyState(
                 icon: Icons.flag_rounded,
                 title: 'Планов пока нет',
                 subtitle: 'Запланируйте будущие покупки — приложение соберёт их по срокам '
                     'и посчитает, сколько денег на это понадобится.',
+                action: GradientButton(
+                  label: 'Новый план',
+                  icon: Icons.add_rounded,
+                  expand: false,
+                  onPressed: () => _showAddSheet(context),
+                ),
               )
             : Column(
                 children: [
@@ -378,10 +385,23 @@ class _PlansScreenState extends State<PlansScreen> {
                   const SizedBox(height: 12),
                   Expanded(
                     child: nothing
-                        ? Center(
-                            child: Text(
-                              'Нет планов за выбранный период',
-                              style: TextStyle(color: context.dim, fontSize: 13),
+                        ? EmptyState(
+                            icon: Icons.filter_alt_off_rounded,
+                            title: 'Нет планов за выбранный период',
+                            subtitle: 'Измените фильтр или покажите все планы.',
+                            action: GradientButton(
+                              label: 'Показать все',
+                              expand: false,
+                              secondary: true,
+                              onPressed: () {
+                                setState(() {
+                                  _preset = _DatePreset.all;
+                                  _status = _StatusFilter.all;
+                                  _year = null;
+                                  _customRange = null;
+                                });
+                                _persistFilters();
+                              },
                             ),
                           )
                         : ListView(
@@ -1019,7 +1039,7 @@ class _PlansScreenState extends State<PlansScreen> {
                       Expanded(
                         child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                       ),
-                      Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: context.dim),
+                      const FoldArrow(open: false),
                       menu,
                     ],
                   ),
@@ -1100,7 +1120,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     style: TextStyle(fontSize: 12.5, color: context.dim),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.keyboard_arrow_up_rounded, size: 20, color: context.dim),
+                  const FoldArrow(open: true),
                   menu,
                 ],
               ),
@@ -1152,11 +1172,7 @@ class _PlansScreenState extends State<PlansScreen> {
                       if (sum > 0)
                         Text(hidden ? '•••' : '≈ ${Fmt.money(sum)}', style: TextStyle(fontSize: 13, color: context.dim)),
                       const SizedBox(width: 6),
-                      Icon(
-                        open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                        size: 20,
-                        color: context.dim,
-                      ),
+                      FoldArrow(open: open),
                     ],
                   ),
                 ),
@@ -1199,11 +1215,7 @@ class _PlansScreenState extends State<PlansScreen> {
                   style: TextStyle(fontSize: 12, color: context.dim),
                 ),
                 const SizedBox(width: 4),
-                Icon(
-                  open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                  size: 20,
-                  color: context.dim,
-                ),
+                FoldArrow(open: open),
                 _groupMenuButton(g, foldKey: foldKey, open: open, section: section),
               ],
             ),
@@ -1257,16 +1269,21 @@ class _PlansScreenState extends State<PlansScreen> {
     return Dismissible(
       key: Key(p.id),
       direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(context),
       background: Container(
         color: AppColors.negative,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
       ),
-      onDismissed: (_) {
-        StorageService.deletePlan(p.id);
+      onDismissed: (_) async {
+        final copy = p.copy();
+        await StorageService.deletePlan(p.id);
+        if (!mounted) return;
         setState(() {});
+        showUndoSnack(context, 'План удалён', () async {
+          await StorageService.addPlan(copy);
+          if (mounted) setState(() {});
+        });
       },
       child: InkWell(
         onTap: () => _showAddSheet(context, existing: p),
@@ -1414,8 +1431,8 @@ class _PlansScreenState extends State<PlansScreen> {
             content: const Text('Запланированная покупка будет удалена без возможности восстановления.'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.negative),
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: AppColors.negative),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Удалить'),
               ),
@@ -1438,8 +1455,8 @@ class _PlansScreenState extends State<PlansScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.negative),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.negative),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Удалить'),
           ),

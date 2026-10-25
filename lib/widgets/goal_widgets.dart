@@ -822,7 +822,7 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
                           title: const Text('Удалить цель?'),
                           actions: [
                             TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Отмена')),
-                            FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Удалить')),
+                            TextButton(style: TextButton.styleFrom(foregroundColor: AppColors.negative), onPressed: () => Navigator.pop(d, true), child: const Text('Удалить')),
                           ],
                         ),
                       );

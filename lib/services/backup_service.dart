@@ -17,6 +17,9 @@ import 'currency_service.dart';
 import 'package:flutter/material.dart';
 import 'tour_service.dart';
 import 'online_settings_service.dart';
+import 'moex_sync_service.dart';
+import 'mini_history_service.dart';
+import 'analytics_service.dart';
 import 'tax_service.dart';
 import 'theme_service.dart';
 import 'logo_service.dart';
@@ -340,6 +343,16 @@ class BackupService {
     // Выплаты и история стоимости — для бумаг из бэкапа, которых раньше не было.
     unawaited(PayoutForecastService.refresh(force: true));
     unawaited(PortfolioHistoryService.refresh());
+    // Котировки бумаг из бэкапа: без них прибыль до ручного обновления
+    // считалась по старым ценам и была занижена.
+    if (OnlineSettingsService.enabled) {
+      unawaited(MoexSyncService.instance.refreshNow(force: true).then((_) {
+        Memo.clear();
+        StorageService.notifyReplaced();
+        unawaited(PortfolioHistoryService.refresh());
+      }, onError: (_) {}));
+    }
+    unawaited(MiniHistoryService.refresh(AnalyticsService.currentHoldings().keys, force: true));
   }
 
   static Future<ImportResult> importFromJson(

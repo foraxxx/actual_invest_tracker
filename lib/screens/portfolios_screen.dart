@@ -563,8 +563,8 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.negative),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.negative),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Удалить'),
           ),

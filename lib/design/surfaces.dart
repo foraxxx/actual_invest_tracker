@@ -669,6 +669,9 @@ class GradientButton extends StatelessWidget {
   final List<Color>? colors;
   final bool expand;
 
+  /// Второстепенное действие — тёмная кнопка рядом с основной.
+  final bool secondary;
+
   /// Длинная надпись может переноситься на вторую строку, а не обрезаться.
   final int maxLines;
 
@@ -680,10 +683,21 @@ class GradientButton extends StatelessWidget {
     this.colors,
     this.expand = true,
     this.maxLines = 1,
+    this.secondary = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (secondary) {
+      return GradientButton(
+        label: label,
+        icon: icon,
+        onPressed: onPressed,
+        expand: expand,
+        maxLines: maxLines,
+        colors: [context.isDark ? AppColors.darkSurfaceHigh : const Color(0xFF3A3F4B)],
+      );
+    }
     // Главная кнопка — сплошная светлая (или своего цвета, если передан).
     final bg = colors?.first ?? (context.isDark ? const Color(0xFFEEF1F6) : const Color(0xFF111318));
     final fg = colors != null ? Colors.white : (context.isDark ? AppColors.darkBg : Colors.white);
@@ -873,4 +887,17 @@ class _MaskPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MaskPainter old) => old.color != color;
+}
+
+/// Стрелка сворачиваемого блока — одна и та же во всём приложении.
+class FoldArrow extends StatelessWidget {
+  final bool open;
+  const FoldArrow({super.key, required this.open});
+
+  @override
+  Widget build(BuildContext context) => AnimatedRotation(
+        turns: open ? 0.5 : 0,
+        duration: AppDuration.fast,
+        child: Icon(Icons.expand_more_rounded, size: 22, color: context.dim),
+      );
 }

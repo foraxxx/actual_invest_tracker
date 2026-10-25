@@ -157,7 +157,11 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: AppRadius.all(AppRadius.xl)),
       ),
       filledButtonTheme: FilledButtonThemeData(
+        // Основное действие везде одного вида: светлая кнопка на тёмной
+        // теме, тёмная — на светлой.
         style: FilledButton.styleFrom(
+          backgroundColor: isDark ? const Color(0xFFEEF1F6) : const Color(0xFF111318),
+          foregroundColor: isDark ? AppColors.darkBg : Colors.white,
           shape: RoundedRectangleBorder(borderRadius: AppRadius.all(AppRadius.sm)),
           padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
           textStyle: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),

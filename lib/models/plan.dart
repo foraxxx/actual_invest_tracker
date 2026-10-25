@@ -86,4 +86,21 @@ class Plan extends HiveObject {
 
   double? get estimatedTotal =>
       targetPrice != null ? targetPrice! * targetQuantity : null;
+
+  /// Отдельная копия — чтобы вернуть удалённый план.
+  Plan copy() => Plan(
+        id: id,
+        ticker: ticker,
+        name: name,
+        type: type,
+        targetQuantity: targetQuantity,
+        targetPrice: targetPrice,
+        targetDate: targetDate,
+        status: status,
+        note: note,
+        createdAt: createdAt,
+        purchasedQuantity: purchasedQuantity,
+        purchasedAvgPrice: purchasedAvgPrice,
+        wholeMonth: wholeMonth,
+      );
 }

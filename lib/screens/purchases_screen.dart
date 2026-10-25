@@ -9,6 +9,7 @@ import '../design/tokens.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
 import '../services/analytics_service.dart';
+import '../services/appearance_service.dart';
 import '../services/manual_price_service.dart';
 import '../services/plan_apply_service.dart';
 import '../services/price_sanity_service.dart';
@@ -19,6 +20,7 @@ import '../services/moex_sync_service.dart';
 import '../widgets/plan_picker.dart';
 import '../widgets/security_picker_field.dart';
 import '../widgets/selected_security_card.dart';
+import '../widgets/undo_snack.dart';
 import '../widgets/income_sheet.dart' show plainNumber;
 import '../widgets/ticker_avatar.dart';
 import '../widgets/trade_edit_sheet.dart';
@@ -484,25 +486,60 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     }
     final items = <Widget>[];
     var index = 0;
+    var first = true;
     for (final e in months.entries) {
-      items.add(Padding(
-        padding: EdgeInsets.only(top: items.isEmpty ? 0 : 18, bottom: 8, left: 4),
-        child: Text(
-          Fmt.monthTitle(e.key).toUpperCase(),
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4, color: context.dim),
-        ),
-      ));
+      // Последний месяц открыт, прошлые свёрнуты; выбор запоминается.
+      final foldKey = 'deals:${e.key}';
+      final saved = AppearanceService.ui(foldKey);
+      final open = saved == null ? first : saved == 'open';
+      first = false;
+      final flow = e.value.fold(0.0, (s, p) => s + (p.isSell ? p.settlementAmount : -p.settlementAmount));
+      final n = e.value.length;
+      final title = Fmt.monthTitle(e.key);
+      final year = '${DateTime.now().year}';
+      final shortTitle = title.endsWith(' $year') ? title.substring(0, title.length - year.length - 1) : title;
       items.add(FadeSlideIn.staggered(
         index: index++,
-        child: AppCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            children: [
-              for (int i = 0; i < e.value.length; i++) ...[
-                if (i > 0) Divider(height: 1, thickness: 1, indent: 64, color: context.hairline),
-                _tradeCard(e.value[i], tax[e.value[i].id]),
+        child: Padding(
+          padding: EdgeInsets.only(top: items.isEmpty ? 0 : 10),
+          child: AppCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                InkWell(
+                  onTap: () async {
+                    await AppearanceService.setUi(foldKey, open ? 'closed' : 'open');
+                    if (mounted) setState(() {});
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 13, 10, 13),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(shortTitle, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700)),
+                        ),
+                        HiddenAmount.forText(
+                          '$n ${Fmt.deals(n)} · ${Fmt.money(flow)}',
+                          fontSize: 12.5,
+                          child: Text(
+                            '$n ${Fmt.deals(n)} · ${flow > 0 ? '+' : ''}${Fmt.money(flow)}',
+                            style: TextStyle(fontSize: 12.5, color: context.dim),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        FoldArrow(open: open),
+                      ],
+                    ),
+                  ),
+                ),
+                if (open)
+                  for (int i = 0; i < e.value.length; i++) ...[
+                    Divider(height: 1, thickness: 1, indent: i == 0 ? 0 : 64, color: context.hairline),
+                    _tradeCard(e.value[i], tax[e.value[i].id]),
+                  ],
               ],
-            ],
+            ),
           ),
         ),
       ));
@@ -522,16 +559,22 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     return Dismissible(
       key: Key(p.id),
       direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(context),
       background: Container(
         color: AppColors.negative,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 22),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
       ),
-      onDismissed: (_) {
-        StorageService.deletePurchase(p.id);
+      onDismissed: (_) async {
+        final copy = p.copy();
+        await StorageService.deletePurchase(p.id);
+        if (!mounted) return;
         setState(() {});
+        showUndoSnack(context, 'Сделка удалена', () async {
+          // Сохранение через правку пересчитывает и план, если сделка в нём.
+          await StorageService.updatePurchase(copy);
+          if (mounted) setState(() {});
+        });
       },
       // Нажатие открывает правку сделки; из неё есть переход в карточку бумаги.
       child: InkWell(
@@ -645,8 +688,8 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
             content: const Text('Запись будет удалена без возможности восстановления.'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.negative),
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: AppColors.negative),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Удалить'),
               ),
@@ -694,7 +737,6 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                     padding: EdgeInsets.fromLTRB(20, typing ? 8 : 14, 20, typing ? 4 : 12),
                     child: SheetHeader(
                       title: 'Новая сделка',
-                      subtitle: typing ? null : 'Можно записать сразу несколько бумаг одной датой',
                       trailing: IconButton(
                         icon: const Icon(Icons.close_rounded),
                         onPressed: () => Navigator.pop(ctx),
@@ -704,24 +746,12 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                   Flexible(
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                      itemCount: positions.length + 2,
+                      itemCount: positions.length + 1,
                       itemBuilder: (context, i) {
-                        if (i == 0) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: AppDateField(
-                              value: date,
-                              label: 'Дата сделки',
-                              lastDate: DateTime.now(),
-                              firstDate: DateTime(2010),
-                              onPicked: (d) => setSheetState(() => date = d),
-                            ),
-                          );
-                        }
-                        if (i == positions.length + 1) {
+                        if (i == positions.length) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 4, bottom: 8),
-                            child: OutlinedButton.icon(
+                            child: TextButton.icon(
                               onPressed: () => setSheetState(() => positions.add(_PositionDraft())),
                               icon: const Icon(Icons.add_rounded, size: 18),
                               label: const Text('Ещё одна бумага'),
@@ -729,10 +759,14 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                           );
                         }
                         return _PositionCard(
-                          draft: positions[i - 1],
-                          index: i - 1,
+                          draft: positions[i],
+                          index: i,
+                          showIndex: positions.length > 1,
+                          // Дата у сделки одна — поле в первой бумаге.
+                          date: i == 0 ? date : null,
+                          onDate: (d) => setSheetState(() => date = d),
                           onRemove: positions.length > 1
-                              ? () => setSheetState(() => positions.removeAt(i - 1))
+                              ? () => setSheetState(() => positions.removeAt(i))
                               : null,
                           onChanged: () => setSheetState(() {}),
                         );
@@ -883,12 +917,18 @@ class _PositionDraft {
 class _PositionCard extends StatelessWidget {
   final _PositionDraft draft;
   final int index;
+  final bool showIndex;
+  final DateTime? date;
+  final ValueChanged<DateTime> onDate;
   final VoidCallback? onRemove;
   final VoidCallback onChanged;
 
   const _PositionCard({
     required this.draft,
     required this.index,
+    required this.showIndex,
+    required this.date,
+    required this.onDate,
     required this.onRemove,
     required this.onChanged,
   });
@@ -908,6 +948,7 @@ class _PositionCard extends StatelessWidget {
           children: [
             Row(
               children: [
+                if (showIndex) ...[
                 Container(
                   width: 22,
                   height: 22,
@@ -922,12 +963,12 @@ class _PositionCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
+                ],
                 Expanded(
                   child: SegmentedToggle<bool>(
                     values: const [false, true],
                     selected: draft.isSell,
                     labelOf: (v) => v ? 'Продажа' : 'Покупка',
-                    colorOf: (v) => v ? AppColors.negative : AppColors.positive,
                     onChanged: (v) {
                       draft.isSell = v;
                       onChanged();
@@ -1055,26 +1096,26 @@ class _PositionCard extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
+                if (date != null) ...[
+                  Expanded(
+                    flex: 3,
+                    child: AppDateField(
+                      value: date,
+                      label: 'Дата',
+                      lastDate: DateTime.now(),
+                      firstDate: DateTime(2010),
+                      onPicked: onDate,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 Expanded(
+                  flex: 2,
                   child: AppTextField(
                     controller: draft.feeCtrl,
                     label: 'Комиссия',
                     number: true,
                     onChanged: (_) => onChanged(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AppDropdown<String>(
-                    value: draft.currency,
-                    label: 'Валюта',
-                    items: const ['RUB', 'USD', 'EUR', 'CNY']
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (v) {
-                      draft.currency = v ?? 'RUB';
-                      onChanged();
-                    },
                   ),
                 ),
               ],
@@ -1086,8 +1127,6 @@ class _PositionCard extends StatelessWidget {
               currency: draft.currency,
               isSell: draft.isSell,
             ),
-            const SizedBox(height: 10),
-            AppTextField(controller: draft.noteCtrl, label: 'Заметка (необязательно)'),
             if (!draft.isSell && draft.tickerCtrl.text.isNotEmpty) _planSection(context),
           ],
         ),

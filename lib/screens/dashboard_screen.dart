@@ -28,6 +28,8 @@ import '../services/portfolio_history_service.dart';
 import '../services/value_forecast_service.dart';
 import '../services/mini_history_service.dart';
 import '../services/moex_sync_service.dart';
+import '../widgets/pending_payouts_card.dart';
+import 'search_screen.dart';
 import '../services/online_settings_service.dart';
 import '../widgets/ticker_avatar.dart';
 import '../widgets/choice_cards.dart';
@@ -112,6 +114,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     StorageService.dataVersion.addListener(_onDataChanged);
     ManualPriceService.version.addListener(_onDataChanged);
     OnlinePriceService.version.addListener(_onPriceChanged);
+    MoexSyncService.marketSnapshot.addListener(_onPriceChanged);
     BenchmarkService.returnPercent.addListener(_onDataChanged);
     BenchmarkService.error.addListener(_onDataChanged);
     PortfolioHistoryService.timeline.addListener(_onDataChanged);
@@ -147,6 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     StorageService.dataVersion.removeListener(_onDataChanged);
     ManualPriceService.version.removeListener(_onDataChanged);
     OnlinePriceService.version.removeListener(_onPriceChanged);
+    MoexSyncService.marketSnapshot.removeListener(_onPriceChanged);
     BenchmarkService.returnPercent.removeListener(_onDataChanged);
     BenchmarkService.error.removeListener(_onDataChanged);
     PortfolioHistoryService.timeline.removeListener(_onDataChanged);
@@ -399,6 +403,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
 
+      // --- Выплаты, которые пора записать ---
+      if (pendingPayouts().isNotEmpty) ...[
+        const SizedBox(height: 14),
+        PendingPayoutsCard(onChanged: () {
+          if (mounted) setState(() {});
+        }),
+      ],
+
       const SizedBox(height: 14),
 
       // --- Период статистики ---
@@ -444,10 +456,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
             sub: 'из них выплаты ${Fmt.money(periodCash.payouts)}',
             onTap: () => showProfitSheet(context, _period),
           ),
-          if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
           if (hasHoldings) _forecastMetric(context, hasPayouts, payoutForecast, payoutYield),
-          if (hasHoldings) _inflationMetric(context),
-          if (hasHoldings) _stressMetric(context),
+          // Доходность, инфляция и тест портфеля — в «Аналитике», чтобы на
+          // главной остались три главных числа.
+          if (xirr != null || twr != null || hasHoldings)
+            _Metric(
+              label: 'Аналитика',
+              icon: Icons.insights_rounded,
+              color: AppColors.info,
+              value: (xirr ?? twr) == null ? 'Открыть' : Fmt.pct((xirr ?? twr)!),
+              valueColor: (xirr ?? twr) == null ? null : AppColors.pnl((xirr ?? twr)!),
+              sub: 'доходность, инфляция, тест портфеля',
+              onTap: () => _showAnalytics(context, xirr, twr, benchmark, benchmarkError, hasHoldings),
+            ),
         ]),
       ),
 
@@ -717,6 +738,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
         ),
+        _circleButton(
+          context,
+          icon: Icons.search_rounded,
+          tooltip: 'Поиск',
+          onTap: () => Navigator.push(context, AppPageRoute(builder: (_) => const SearchScreen())),
+        ),
+        const SizedBox(width: 8),
         _circleButton(
           context,
           icon: Icons.auto_awesome_rounded,
@@ -1727,6 +1755,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
       valueColor: AppColors.pnl(r.vsInflation),
       sub: '${r.vsInflation >= 0 ? 'обогнал' : 'отстал от'} рост${r.vsInflation >= 0 ? '' : 'а'} цен ${realReturnPeriodText(_period)}',
       onTap: () => showRealReturnSheet(context, _period),
+    );
+  }
+
+  /// «Аналитика»: доходность, инфляция и тест портфеля — в листе снизу.
+  Future<void> _showAnalytics(
+    BuildContext context,
+    double? xirr,
+    double? twr,
+    double? benchmark,
+    String? benchmarkError,
+    bool hasHoldings,
+  ) {
+    return showAppSheet(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SheetHeader(title: 'Аналитика', subtitle: _periodLabel(_period)),
+                const SizedBox(height: 12),
+                // Переключатель XIRR / TWR меняет и главную, и этот лист.
+                Listener(
+                  onPointerUp: (_) => Future.microtask(() {
+                    if (ctx.mounted) setSheet(() {});
+                  }),
+                  child: _metricsBlock(context, [
+                    if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
+                    if (hasHoldings) _inflationMetric(context),
+                    if (hasHoldings) _stressMetric(context),
+                  ]),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

@@ -116,4 +116,24 @@ class Purchase extends HiveObject {
   /// Историческое имя оставлено для совместимости с UI. Новые расчёты должны
   /// использовать [settlementAmount].
   double get total => quantity * pricePerUnit + fee;
+
+  /// Отдельная копия — чтобы вернуть удалённую сделку: удалённый объект
+  /// Hive повторно не сохранить.
+  Purchase copy() => Purchase(
+        id: id,
+        date: date,
+        ticker: ticker,
+        name: name,
+        type: type,
+        quantity: quantity,
+        pricePerUnit: pricePerUnit,
+        fee: fee,
+        currency: currency,
+        note: note,
+        sector: sector,
+        isSell: isSell,
+        planId: planId,
+        planQuantity: planQuantity,
+      );
 }
+

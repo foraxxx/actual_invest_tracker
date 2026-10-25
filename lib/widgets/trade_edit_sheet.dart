@@ -130,7 +130,6 @@ Future<void> showEditTradeSheet(BuildContext context, Purchase trade, {bool with
                 selected: isSell,
                 labelOf: (v) => v ? 'Продажа' : 'Покупка',
                 iconOf: (v) => v ? Icons.sell_outlined : Icons.add_shopping_cart_rounded,
-                colorOf: (v) => v ? AppColors.negative : AppColors.positive,
                 onChanged: (v) => setSheetState(() => isSell = v),
               ),
               const SizedBox(height: 12),
@@ -217,9 +216,6 @@ Future<void> showEditTradeSheet(BuildContext context, Purchase trade, {bool with
               GradientButton(
                 label: 'Сохранить',
                 icon: Icons.check_rounded,
-                colors: isSell
-                    ? const [Color(0xFFE23A5B), Color(0xFFFF6B85)]
-                    : const [Color(0xFF0FA97E), Color(0xFF16D796)],
                 onPressed: save,
               ),
               const SizedBox(height: 8),
@@ -232,7 +228,7 @@ Future<void> showEditTradeSheet(BuildContext context, Purchase trade, {bool with
                       content: const Text('Позиции, график и налоги пересчитаются без неё.'),
                       actions: [
                         TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Отмена')),
-                        FilledButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Удалить')),
+                        TextButton(style: TextButton.styleFrom(foregroundColor: AppColors.negative), onPressed: () => Navigator.pop(dctx, true), child: const Text('Удалить')),
                       ],
                     ),
                   );

@@ -218,7 +218,7 @@ class ExpectedPayoutTile extends StatelessWidget {
                 Expanded(
                   child: GradientButton(
                     label: 'Другая сумма',
-                    colors: [context.isDark ? AppColors.darkSurfaceHigh : const Color(0xFF3A3F4B)],
+                    secondary: true,
                     onPressed: () async {
                       final paid = p.isBond ? p.date : p.date.add(const Duration(days: 14));
                       await showAddIncomeSheet(

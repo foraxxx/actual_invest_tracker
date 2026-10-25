@@ -543,16 +543,44 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
 
     final pnlColor = AppColors.pnl(holding?.pnlRub ?? 0);
 
+    final isFav = FavoritesService.isFavorite(ticker);
     return Scaffold(
-      // Потянуть вниз — обновить цену, историю цены и выплаты.
-      body: RefreshIndicator(
+      appBar: AppBar(
+        backgroundColor: context.isDark ? AppColors.darkBg : AppColors.lightBg,
+        surfaceTintColor: Colors.transparent,
+        title: Text(ticker, style: const TextStyle(fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(
+            tooltip: isFav ? 'Убрать из избранного' : 'В избранное',
+            icon: Icon(
+              isFav ? Icons.star_rounded : Icons.star_border_rounded,
+              color: isFav ? AppColors.gold : null,
+            ),
+            onPressed: () async {
+              await FavoritesService.toggle(ticker);
+              if (mounted) setState(() {});
+            },
+          ),
+          IconButton(
+            tooltip: 'Иконка бумаги',
+            icon: const Icon(Icons.image_outlined),
+            onPressed: () => _showLogoOptions(context, ticker),
+          ),
+        ],
+      ),
+      // Шапка не прокручивается: название и стоимость всегда на виду.
+      body: Column(
+        children: [
+          _compactHeader(context, ticker, name, sector, holding, quote, pnlColor),
+          Expanded(
+            // Потянуть вниз — обновить цену, историю цены и выплаты.
+            child: RefreshIndicator(
         onRefresh: _pullToRefresh,
         child: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
-          _appBar(context, ticker, name, sector, holding, quote, pnlColor),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 if (holding != null) ...[
@@ -636,70 +664,16 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     )),
                 ],
 
-                const SizedBox(height: 22),
-                SectionTitle(
-                  title: 'Сделки по бумаге',
-                  subtitle: '${purchases.length} ${Fmt.deals(purchases.length)}',
-                  // Новая сделка по этой бумаге — без выбора бумаги, как
-                  // «+ Выплата» выше. Сначала короткий выбор: покупка или
-                  // продажа.
-                  trailing: PopupMenuButton<bool>(
-                    tooltip: 'Новая сделка',
-                    position: PopupMenuPosition.under,
-                    onSelected: (isSell) async {
-                      await _quickTradeSheet(context, ticker, name, isSell);
-                      if (mounted) setState(() {});
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: false,
-                        child: Row(
-                          children: [
-                            Icon(Icons.add_shopping_cart_rounded, size: 18, color: AppColors.positive),
-                            SizedBox(width: 10),
-                            Text('Покупка'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: true,
-                        child: Row(
-                          children: [
-                            Icon(Icons.sell_outlined, size: 18, color: AppColors.negative),
-                            SizedBox(width: 10),
-                            Text('Продажа'),
-                          ],
-                        ),
-                      ),
-                    ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.add_rounded, size: 18, color: context.accent),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Сделка',
-                            style: TextStyle(fontWeight: FontWeight.w700, color: context.accent),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (purchases.isEmpty)
-                  Text('Сделок по этой бумаге пока нет', style: TextStyle(fontSize: 13, color: context.dim))
-                else
-                  ...purchases.map((p) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _tradeRow(p, p.isSell ? taxBreakdown[p.id] : null),
-                      )),
+                const SizedBox(height: 14),
+                _tradesBlock(purchases, taxBreakdown),
               ]),
             ),
           ),
         ],
       ),
+      ),
+          ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -716,13 +690,166 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
               Expanded(
                 child: GradientButton(
                   label: 'Продать',
-                  colors: [context.isDark ? AppColors.darkSurfaceHigh : const Color(0xFF3A3F4B)],
+                  secondary: true,
                   onPressed: () => _quickTradeSheet(context, ticker, name, true),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Сделки по бумаге — свёрнутым блоком: в заголовке количество, по
+  /// нажатию раскрывается список. Открыт ли блок — запоминается.
+  Widget _tradesBlock(List<Purchase> purchases, Map<String, SaleTaxResult> taxBreakdown) {
+    const key = 'tickerTradesOpen';
+    final open = AppearanceService.ui(key) == 'open';
+    final buys = purchases.where((p) => !p.isSell).length;
+    final sells = purchases.length - buys;
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: purchases.isEmpty
+                ? null
+                : () async {
+                    await AppearanceService.setUi(key, open ? 'closed' : 'open');
+                    if (mounted) setState(() {});
+                  },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Сделки по бумаге', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text(
+                          purchases.isEmpty
+                              ? 'Пока нет'
+                              : '${purchases.length} ${Fmt.deals(purchases.length)}'
+                                  '${buys > 0 ? ' · покупок $buys' : ''}${sells > 0 ? ' · продаж $sells' : ''}',
+                          style: TextStyle(fontSize: 12.5, color: context.dim),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (purchases.isNotEmpty)
+                    FoldArrow(open: open),
+                ],
+              ),
+            ),
+          ),
+          if (open && purchases.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: Column(
+                children: [
+                  for (final p in purchases)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _tradeRow(p, p.isSell ? taxBreakdown[p.id] : null),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Шапка бумаги одной строкой: логотип, название и сектор слева, стоимость
+  /// позиции и прибыль справа. Не прокручивается вместе со страницей.
+  Widget _compactHeader(
+    BuildContext context,
+    String ticker,
+    String name,
+    String sector,
+    HoldingInfo? holding,
+    MoexQuote? quote,
+    Color pnlColor,
+  ) {
+    final String? big;
+    final String? small;
+    Color? smallColor;
+    if (holding != null) {
+      big = Fmt.money(holding.valueRub);
+      small = '${Fmt.signedMoney(holding.pnlRub)} · ${Fmt.pct(holding.pnlPct)}';
+      smallColor = pnlColor;
+    } else if (quote != null) {
+      big = Fmt.price(quote.price, currency: '₽', isBond: quote.isBond);
+      small = 'нет в портфеле';
+    } else {
+      big = null;
+      small = null;
+    }
+    return Container(
+      color: context.isDark ? AppColors.darkBg : AppColors.lightBg,
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => _pickLogo(context, ticker),
+            onLongPress: () => _showLogoOptions(context, ticker),
+            child: Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 44, glow: false)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 1),
+                // Нажатие по сектору открывает выбор.
+                GestureDetector(
+                  onTap: () => _sectorSheet(ticker),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          sector,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, color: context.dim),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.edit_rounded, size: 12, color: context.dim),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (big != null) ...[
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                HiddenAmount.forText(
+                  big,
+                  fontSize: 20,
+                  child: Text(big, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                ),
+                if (small != null)
+                  Text(small, style: TextStyle(fontSize: 12.5, color: smallColor ?? context.dim)),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1184,9 +1311,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           ValueListenableBuilder<ChartInspection?>(
             valueListenable: _chartInspect,
             builder: (context, inspect, _) {
-              String subtitle = visibleValues.length > 1
-                  ? '${Fmt.date(points.first.key)} — ${Fmt.date(points.last.key)}'
-                  : _statusText();
+              // Даты периода не пишем: подпись появляется, только пока
+              // палец на графике.
+              String subtitle = visibleValues.length > 1 ? '' : _statusText();
               String chipText = '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)} · ${Fmt.pct(changePct)}';
               Color chipColor = AppColors.pnl(change);
               if (inspect != null && inspect.fits(all.length)) {
@@ -1210,13 +1337,15 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   children: [
                     const Text('Цена на бирже',
                         style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11, color: context.dim),
-                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: context.dim),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1225,9 +1354,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
-                    child: TagChip(
-                      text: chipText,
-                      color: chipColor,
+                    child: Text(
+                      chipText,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: chipColor),
                     ),
                   ),
                 )
@@ -1653,15 +1782,10 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     onChanged: (id) => setSheetState(() => selectedPlanId = id),
                   ),
                 ],
-                const SizedBox(height: 12),
-                AppTextField(controller: noteCtrl, label: 'Заметка (необязательно)'),
                 const SizedBox(height: 22),
                 GradientButton(
                   label: isSell ? 'Записать продажу' : 'Записать покупку',
                   icon: Icons.check_rounded,
-                  colors: isSell
-                      ? const [Color(0xFFE23A5B), Color(0xFFFF6B85)]
-                      : const [Color(0xFF0FA97E), Color(0xFF16D796)],
                   onPressed: () async {
                     final enteredLots = int.tryParse(qtyCtrl.text);
                     final enteredPrice = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
