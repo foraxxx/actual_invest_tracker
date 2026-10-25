@@ -2279,36 +2279,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
-              // Столбик: график за 30 дней, под ним — изменение за сегодня.
-              // Без графика «сегодня» стоит на его месте. Следует тому же
-              // переключателю «% / ₽», что и плашка справа.
-              if (mini != null || day != null) ...[
-                const SizedBox(width: 8),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (mini != null) MiniSparkline(values: mini, width: 44, height: 20),
-                    if (mini != null && day != null) const SizedBox(height: 3),
-                    if (day != null)
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 72),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            '${day.rub >= 0 ? '▲' : '▼'}'
-                            '${_pnlUnitsRub ? (AppearanceService.amountsHidden ? '•••' : Fmt.money(day.rub.abs())) : '${day.pct.abs().toStringAsFixed(1)}%'}',
-                            maxLines: 1,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.pnl(day.rub),
-                            ),
-                          ),
-                        ),
+              // Столбик: график за 30 дней, под ним — прибыль за всё время.
+              // Нажатие переключает весь список между % и ₽.
+              const SizedBox(width: 8),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _togglePnlUnits,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 52, maxWidth: 80),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (mini != null) ...[
+                        MiniSparkline(values: mini, width: 44, height: 20),
+                        const SizedBox(height: 3),
+                      ],
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: _pnlUnitsRub
+                            ? HiddenAmount.forText(
+                                Fmt.signedMoney(h.pnlRub),
+                                fontSize: 11,
+                                child: Text(
+                                  Fmt.signedMoney(h.pnlRub),
+                                  maxLines: 1,
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: pnlColor),
+                                ),
+                              )
+                            : Text(
+                                Fmt.pct(h.pnlPct),
+                                maxLines: 1,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: pnlColor),
+                              ),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
-              ],
+              ),
               const SizedBox(width: 8),
               // Сумма и плашка прибыли. Нажатие сюда переключает весь список
               // между процентами и рублями, остальная строка открывает
@@ -2338,22 +2345,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        _pnlUnitsRub
-                            ? HiddenAmount.forText(
-                                Fmt.signedMoney(h.pnlRub),
-                                fontSize: 10.5,
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerRight,
-                                  child: TagChip(text: Fmt.signedMoney(h.pnlRub), color: pnlColor, fontSize: 10.5),
-                                ),
-                              )
-                            : FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerRight,
-                                child: TagChip(text: Fmt.pct(h.pnlPct), color: pnlColor, fontSize: 10.5),
-                              ),
+                        // Изменение за сегодня.
+                        if (day != null) ...[
+                          const SizedBox(height: 3),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: _pnlUnitsRub
+                                ? HiddenAmount.forText(
+                                    Fmt.signedMoney(day.rub),
+                                    fontSize: 11,
+                                    child: Text(
+                                      Fmt.signedMoney(day.rub),
+                                      maxLines: 1,
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.pnl(day.rub)),
+                                    ),
+                                  )
+                                : Text(
+                                    '${day.pct >= 0 ? '+' : '−'}${day.pct.abs().toStringAsFixed(1).replaceAll('.', ',')}%',
+                                    maxLines: 1,
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.pnl(day.rub)),
+                                  ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

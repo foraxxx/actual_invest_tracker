@@ -1,4 +1,7 @@
+import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'moex_sync_service.dart';
+import 'portfolio_history_service.dart';
 import 'cash_service.dart';
 import 'currency_service.dart';
 import 'sector_service.dart';
@@ -33,6 +36,14 @@ class ReportRow {
   /// Незафиксированная прибыль по остатку.
   final double unrealizedRub;
 
+  /// Стоимость позиции на 1 января.
+  final double valueStartRub;
+
+  final bool isBond;
+
+  /// Облигация погашена в этом году (или ушла с биржи, а продажа не записана).
+  final bool redeemed;
+
   const ReportRow({
     required this.ticker,
     required this.name,
@@ -47,7 +58,17 @@ class ReportRow {
     required this.payoutsRub,
     required this.valueRub,
     required this.unrealizedRub,
+    this.valueStartRub = 0,
+    this.isBond = false,
+    this.redeemed = false,
   });
+
+  /// Результат бумаги за год в процентах: к стоимости на начало плюс покупки.
+  double get yieldPct {
+    final base = valueStartRub + boughtSumRub;
+    if (base <= 0) return 0;
+    return totalResultRub / base * 100;
+  }
 
   /// Куплена ли бумага впервые в этом году.
   bool get isNew => qtyStart <= 1e-9 && boughtQty > 0;
@@ -115,6 +136,16 @@ class AnnualReport {
   /// Распределение текущей стоимости по секторам.
   final Map<String, double> bySector;
 
+  /// Пополнения по месяцам и выведенные за год деньги.
+  final Map<int, double> depositsByMonth;
+  final double withdrawnRub;
+
+  /// Комиссии брокера за год.
+  final double feesRub;
+
+  /// Стоимость портфеля по дням за год — для линии.
+  final List<MapEntry<DateTime, double>> valueSeries;
+
   const AnnualReport({
     required this.year,
     required this.rows,
@@ -132,6 +163,10 @@ class AnnualReport {
     required this.trades,
     required this.payoutEvents,
     required this.bySector,
+    this.depositsByMonth = const {},
+    this.withdrawnRub = 0,
+    this.feesRub = 0,
+    this.valueSeries = const [],
   });
 
   /// Бумаги, купленные впервые в этом году.
@@ -275,12 +310,22 @@ class AnnualReportService {
       ...sold.keys,
       ...payouts.keys,
       ...qtyEnd.keys.where((t) => (qtyEnd[t] ?? 0) > 1e-9),
+      // Были на начало года — даже если за год с ними ничего не происходило
+      // (например, облигацию погасили, а продажа не записана).
+      ...qtyStart.keys.where((t) => (qtyStart[t] ?? 0) > 1e-9),
     };
+    final types = <String, AssetType>{for (final p in purchases) p.ticker as String: p.type as AssetType};
+    final snapshot = MoexSyncService.marketSnapshot.value;
 
     final rows = <ReportRow>[];
     for (final t in tickers) {
       final holding = holdings[t];
       final endQty = qtyEnd[t] ?? 0;
+      final isBond = types[t] == AssetType.bond || snapshot[t.toUpperCase()]?.isBond == true;
+      final mat = snapshot[t.toUpperCase()]?.matDate;
+      final redeemed = isBond &&
+          endQty > 1e-9 &&
+          ((mat != null && !mat.isBefore(from) && !mat.isAfter(periodEnd)) || (holding?.valueRub ?? 0) <= 0);
       rows.add(ReportRow(
         ticker: t,
         name: names[t] ?? t,
@@ -293,8 +338,11 @@ class AnnualReportService {
         soldSumRub: soldSum[t] ?? 0,
         realizedRub: realized[t] ?? 0,
         payoutsRub: payouts[t] ?? 0,
-        valueRub: holding?.valueRub ?? 0,
-        unrealizedRub: holding?.pnlRub ?? 0,
+        valueRub: redeemed ? 0 : holding?.valueRub ?? 0,
+        unrealizedRub: redeemed ? 0 : holding?.pnlRub ?? 0,
+        valueStartRub: startHoldings[t]?.valueRub ?? 0,
+        isBond: isBond,
+        redeemed: redeemed,
       ));
     }
     rows.sort((a, b) => b.valueRub.compareTo(a.valueRub));
@@ -314,6 +362,24 @@ class AnnualReportService {
             !m.date.isBefore(from) &&
             !m.date.isAfter(periodEnd))
         .fold(0.0, (sum, m) => sum + m.amountRub);
+    final depositsByMonth = <int, double>{};
+    double withdrawn = 0;
+    for (final m in cash.moves) {
+      if (m.date.isBefore(from) || m.date.isAfter(periodEnd)) continue;
+      if (m.kind == CashMoveKind.autoDeposit || m.kind == CashMoveKind.deposit) {
+        depositsByMonth[m.date.month] = (depositsByMonth[m.date.month] ?? 0) + m.amountRub;
+      } else if (m.kind == CashMoveKind.withdrawal) {
+        withdrawn += m.amountRub.abs();
+      }
+    }
+    double fees = 0;
+    for (final p in purchases) {
+      if (p.date.isBefore(from) || p.date.isAfter(periodEnd)) continue;
+      fees += CurrencyService.toRub(p.fee as double, p.currency as String, date: p.date as DateTime);
+    }
+    final valueSeries = PortfolioHistoryService.timeline.value
+        .where((e) => !e.key.isBefore(from) && !e.key.isAfter(periodEnd))
+        .toList();
 
     return AnnualReport(
       year: year,
@@ -333,6 +399,10 @@ class AnnualReportService {
       trades: trades,
       payoutEvents: payoutEvents,
       bySector: bySector,
+      depositsByMonth: depositsByMonth,
+      withdrawnRub: withdrawn,
+      feesRub: fees,
+      valueSeries: valueSeries,
     );
   }
 

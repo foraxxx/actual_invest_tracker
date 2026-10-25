@@ -171,6 +171,15 @@ class ChartInspection {
   int get hashCode => Object.hash(index, from, to);
 }
 
+/// Цены в колонке справа — не больше 4 знаков после запятой, одинаково у
+/// максимума, минимума и средней.
+double _round4(double v) => (v * 10000).roundToDouble() / 10000;
+
+/// Цена для колонки справа: дешёвые бумаги — ровно 4 знака, остальные — как
+/// везде в приложении.
+String _sideText(double v, String Function(double) format) =>
+    v.abs() < 1 ? v.toStringAsFixed(4).replaceAll('.', ',') : format(_round4(v));
+
 /// Разница между двумя точками графика: «+42 310 ₽ · +2.30%».
 String chartDiffLabel(double from, double to, String Function(double) priceLabel) {
   final diff = to - from;
@@ -687,7 +696,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(color: AppColors.violet, borderRadius: BorderRadius.circular(6)),
             child: Text(
-              '${(widget.priceLabel ?? ((double v) => v.toStringAsFixed(2)))(ref)} ${outside > 0 ? '↑' : '↓'}',
+              '${_sideText(ref, widget.priceLabel ?? ((double v) => v.toStringAsFixed(2)))} ${outside > 0 ? '↑' : '↓'}',
               style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white),
             ),
           ),
@@ -1136,13 +1145,13 @@ class _SparklinePainter extends CustomPainter {
     double yOf(double v) => padTop + (1 - (v - minV) / (maxV - minV)) * usable;
     final neutralBg = labelText.withOpacity(0.1);
     final items = <(double, String, Color, Color)>[
-      (yOf(maxV), sideFormat(maxV), neutralBg, labelText),
-      (yOf(minV), sideFormat(minV), neutralBg, labelText),
+      (yOf(maxV), _sideText(maxV, sideFormat), neutralBg, labelText),
+      (yOf(minV), _sideText(minV, sideFormat), neutralBg, labelText),
     ];
     final ref = referenceValue;
     // Средняя вне периода рисуется не здесь, а плашкой над или под графиком.
     if (ref != null && ref >= minV && ref <= maxV) {
-      items.add((yOf(ref), sideFormat(ref), _referenceColor, Colors.white));
+      items.add((yOf(ref), _sideText(ref, sideFormat), _referenceColor, Colors.white));
     }
     const h = 20.0;
     final tops = <double>[];

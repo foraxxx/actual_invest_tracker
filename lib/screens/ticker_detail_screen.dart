@@ -792,60 +792,72 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     return Container(
       color: context.isDark ? AppColors.darkBg : AppColors.lightBg,
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          GestureDetector(
-            onTap: () => _pickLogo(context, ticker),
-            onLongPress: () => _showLogoOptions(context, ticker),
-            child: Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 44, glow: false)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 1),
-                // Нажатие по сектору открывает выбор.
-                GestureDetector(
-                  onTap: () => _sectorSheet(ticker),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          sector,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12.5, color: context.dim),
-                        ),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => _pickLogo(context, ticker),
+                onLongPress: () => _showLogoOptions(context, ticker),
+                child: Hero(tag: 'logo-$ticker', child: TickerAvatar(ticker: ticker, size: 44, glow: false)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Название целиком — при нехватке места переносится.
+                    Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 1),
+                    GestureDetector(
+                      onTap: () => _sectorSheet(ticker),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              sector,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12.5, color: context.dim),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.edit_rounded, size: 12, color: context.dim),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.edit_rounded, size: 12, color: context.dim),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+          // Стоимость в портфеле и прибыль — строкой ниже.
           if (big != null) ...[
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+            const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              spacing: 12,
+              runSpacing: 2,
               children: [
                 HiddenAmount.forText(
                   big,
-                  fontSize: 20,
-                  child: Text(big, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  fontSize: 24,
+                  child: Text(big, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
                 ),
                 if (small != null)
-                  Text(small, style: TextStyle(fontSize: 12.5, color: smallColor ?? context.dim)),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: small, style: TextStyle(color: smallColor ?? context.dim)),
+                        if (holding != null) const TextSpan(text: ' за всё время'),
+                      ]),
+                      style: const TextStyle(fontSize: 13.5),
+                    ),
+                  ),
               ],
             ),
           ],
@@ -1640,6 +1652,10 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     final quote = MoexSyncService.marketSnapshot.value[ticker.toUpperCase()];
     final lotSize = quote?.lotSize ?? 1;
     final qtyCtrl = TextEditingController(text: '1');
+    // Продать можно не больше, чем есть на счету.
+    final int? maxSellLots = isSell
+        ? ((AnalyticsService.currentHoldings()[ticker]?.qty ?? 0) / (lotSize <= 0 ? 1 : lotSize)).floor()
+        : null;
 
     // Подставляем актуальную цену: сначала биржевая, потом ручная, потом цена
     // последней сделки. Поле остаётся обычным — своё значение можно вписать.
@@ -1711,6 +1727,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                       child: LotStepper(
                         controller: qtyCtrl,
                         lotSize: lotSize,
+                        maxLots: maxSellLots,
                         autofocus: true,
                         onChanged: () => setSheetState(() {}),
                       ),
@@ -1727,7 +1744,12 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                     ),
                   ],
                 ),
-                LotCaption(lots: lots, lotSize: lotSize),
+                LotCaption(
+                  lots: lots,
+                  lotSize: lotSize,
+                  maxLots: maxSellLots,
+                  onAll: () => setSheetState(() => qtyCtrl.text = '$maxSellLots'),
+                ),
                 const SizedBox(height: 10),
                 Row(
                   children: [

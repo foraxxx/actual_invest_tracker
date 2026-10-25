@@ -161,12 +161,6 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                   icon: Icons.folder_off_outlined,
                   title: 'Портфелей нет',
                   subtitle: 'Создайте первый портфель — в нём будут храниться сделки, выплаты и планы.',
-                  action: GradientButton(
-                    label: 'Создать портфель',
-                    icon: Icons.add_rounded,
-                    expand: false,
-                    onPressed: _createDialog,
-                  ),
                 )
               : RefreshIndicator(
                   onRefresh: _pullToRefresh,

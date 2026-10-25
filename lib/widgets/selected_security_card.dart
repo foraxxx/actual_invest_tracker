@@ -146,18 +146,22 @@ class LotStepper extends StatelessWidget {
   final VoidCallback onChanged;
   final bool autofocus;
 
+  /// Больше скольких лотов ввести нельзя — для продажи: сколько есть.
+  final int? maxLots;
+
   const LotStepper({
     super.key,
     required this.controller,
     required this.lotSize,
     required this.onChanged,
     this.autofocus = false,
+    this.maxLots,
   });
 
   int get _lots => int.tryParse(controller.text.replaceAll(' ', '')) ?? 0;
 
   void _step(int d) {
-    final next = (_lots + d).clamp(1, 100000000);
+    final next = (_lots + d).clamp(1, maxLots == null || maxLots! < 1 ? 100000000 : maxLots!);
     controller.text = '$next';
     controller.selection = TextSelection.collapsed(offset: controller.text.length);
     onChanged();
@@ -166,15 +170,22 @@ class LotStepper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final btnColor = context.isDark ? AppColors.darkSurfaceTop : Colors.white;
-    Widget btn(IconData icon, int d) => Material(
+    final atMax = maxLots != null && _lots >= maxLots!;
+    Widget btn(IconData icon, int d) {
+      final enabled = !(d > 0 && atMax);
+      return Opacity(
+        opacity: enabled ? 1 : 0.35,
+        child: Material(
           color: btnColor,
           borderRadius: BorderRadius.circular(9),
           child: InkWell(
             borderRadius: BorderRadius.circular(9),
-            onTap: () => _step(d),
+            onTap: enabled ? () => _step(d) : null,
             child: SizedBox(width: 34, height: 40, child: Icon(icon, size: 18)),
           ),
-        );
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -198,7 +209,14 @@ class LotStepper extends StatelessWidget {
                   autofocus: autofocus,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
-                  onChanged: (_) => onChanged(),
+                  onChanged: (_) {
+                    // Больше, чем есть, продать нельзя — число уменьшается.
+                    if (maxLots != null && maxLots! > 0 && _lots > maxLots!) {
+                      controller.text = '$maxLots';
+                      controller.selection = TextSelection.collapsed(offset: controller.text.length);
+                    }
+                    onChanged();
+                  },
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   decoration: const InputDecoration(
                     isDense: true,
@@ -224,7 +242,11 @@ class LotCaption extends StatelessWidget {
   final int lots;
   final int lotSize;
 
-  const LotCaption({super.key, required this.lots, required this.lotSize});
+  /// Для продажи: «Все · N» — продать всё одним нажатием.
+  final int? maxLots;
+  final VoidCallback? onAll;
+
+  const LotCaption({super.key, required this.lots, required this.lotSize, this.maxLots, this.onAll});
 
   @override
   Widget build(BuildContext context) {
@@ -233,7 +255,19 @@ class LotCaption extends StatelessWidget {
         : '${Fmt.group(lots.toDouble())} шт';
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-      child: Text(text, style: TextStyle(fontSize: 12, color: context.dim)),
+      child: Row(
+        children: [
+          Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: context.dim))),
+          if (maxLots != null && maxLots! > 0 && onAll != null)
+            GestureDetector(
+              onTap: onAll,
+              child: Text(
+                'Все · ${Fmt.group(maxLots!.toDouble())}',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: context.accent),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

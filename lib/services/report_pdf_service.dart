@@ -24,67 +24,219 @@ class ReportPdfService {
     _bold ??= pw.Font.ttf(await rootBundle.load('assets/fonts/DejaVuSansCondensed-Bold.ttf'));
   }
 
-  static const _accent = PdfColor.fromInt(0xFF3DA9FC);
-  static const _positive = PdfColor.fromInt(0xFF0F9D67);
-  static const _negative = PdfColor.fromInt(0xFFD63B58);
-  static const _muted = PdfColor.fromInt(0xFF6B7280);
-  static const _line = PdfColor.fromInt(0xFFE2E6EE);
+  static const _accent = PdfColor.fromInt(0xFF18A36B);
+  static const _positive = PdfColor.fromInt(0xFF18A36B);
+  static const _negative = PdfColor.fromInt(0xFFD64545);
+  static const _muted = PdfColor.fromInt(0xFF8A8F99);
+  static const _line = PdfColor.fromInt(0xFFECEEF2);
+  static const _violet = PdfColor.fromInt(0xFF7C6CFF);
+
+  static const _monthsShort = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
   /// Собирает документ и сохраняет его в файл. Возвращает путь.
-  static Future<String> save(AnnualReport report, {String? portfolioName}) async {
-    final bytes = await build(report, portfolioName: portfolioName);
+  static Future<String> save(
+    AnnualReport report, {
+    String? portfolioName,
+    double? imoexPct,
+    double? inflationPct,
+    double? keyRatePct,
+  }) async {
+    final bytes = await build(
+      report,
+      portfolioName: portfolioName,
+      imoexPct: imoexPct,
+      inflationPct: inflationPct,
+      keyRatePct: keyRatePct,
+    );
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/otchet_${report.year}.pdf');
+    final file = File('${dir.path}/itogi_${report.year}.pdf');
     await file.writeAsBytes(bytes);
     return file.path;
   }
 
-  static Future<Uint8List> build(AnnualReport report, {String? portfolioName}) async {
+  static PdfColor _pnl(double v) => v > 0 ? _positive : (v < 0 ? _negative : PdfColors.black);
+
+  static Future<Uint8List> build(
+    AnnualReport report, {
+    String? portfolioName,
+    double? imoexPct,
+    double? inflationPct,
+    double? keyRatePct,
+  }) async {
     await _loadFonts();
     final theme = pw.ThemeData.withFont(base: _regular!, bold: _bold!);
     final doc = pw.Document(title: 'Итоги ${report.year}');
+    final result = report.totalResultRub;
+    final growth = report.valueEndRub - report.valueStartRub - report.boughtRub + report.soldRub;
+
+    final ranked = report.rows.where((r) => r.valueStartRub + r.boughtSumRub > 0).toList()
+      ..sort((a, b) => b.yieldPct.compareTo(a.yieldPct));
+    final topPayout = report.payoutEvents.isEmpty
+        ? null
+        : (report.payoutEvents.toList()..sort((a, b) => b.rub.compareTo(a.rub))).first;
+    final story = [
+      if (ranked.isNotEmpty && ranked.first.yieldPct > 0)
+        'Лучшая бумага — ${ranked.first.name} (${Fmt.pct(ranked.first.yieldPct)}).',
+      if (topPayout != null)
+        'Крупнейшая выплата — ${topPayout.name}, ${Fmt.money(topPayout.rub)} в ${_monthsShort[topPayout.date.month - 1]}.',
+      if (report.trades.isNotEmpty) 'Сделок за год — ${report.trades.length}.',
+    ].join(' ');
 
     doc.addPage(
       pw.MultiPage(
         theme: theme,
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 36),
-        footer: (context) => pw.Container(
-          alignment: pw.Alignment.centerRight,
-          margin: const pw.EdgeInsets.only(top: 10),
-          child: pw.Text(
-            'Invest Tracker · страница ${context.pageNumber} из ${context.pagesCount}',
-            style: const pw.TextStyle(fontSize: 8, color: _muted),
-          ),
+        margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+        footer: (context) => pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('Invest Tracker · Итоги ${report.year}', style: const pw.TextStyle(fontSize: 7.5, color: _muted)),
+            pw.Text('${context.pageNumber} / ${context.pagesCount}', style: const pw.TextStyle(fontSize: 7.5, color: _muted)),
+          ],
         ),
         build: (context) => [
-          _header(report, portfolioName),
+          // --- Сводка ---
+          pw.Text('ИТОГИ ГОДА', style: const pw.TextStyle(fontSize: 8, color: _muted, letterSpacing: 2)),
+          pw.SizedBox(height: 2),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text('${report.year}', style: pw.TextStyle(fontSize: 28, fontWeight: pw.FontWeight.bold)),
+              if (portfolioName != null) ...[
+                pw.SizedBox(width: 10),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(bottom: 4),
+                  child: pw.Text(portfolioName, style: const pw.TextStyle(fontSize: 11, color: _muted)),
+                ),
+              ],
+            ],
+          ),
           pw.SizedBox(height: 18),
-          _summary(report),
-          pw.SizedBox(height: 18),
-          if (report.payoutsByMonth.isNotEmpty) ...[
-            _sectionTitle('Выплаты по месяцам'),
-            _monthChart(report.payoutsByMonth, _positive),
-            pw.SizedBox(height: 16),
+          pw.Text('Прирост портфеля', style: const pw.TextStyle(fontSize: 8.5, color: _muted)),
+          pw.Text(Fmt.signedMoney(result),
+              style: pw.TextStyle(fontSize: 30, fontWeight: pw.FontWeight.bold, color: _pnl(result))),
+          pw.Text(
+            '${Fmt.pct(report.yieldPct)} · ${Fmt.money(report.valueStartRub)} → ${Fmt.money(report.valueEndRub)}',
+            style: const pw.TextStyle(fontSize: 9.5, color: PdfColor.fromInt(0xFF555B66)),
+          ),
+          pw.SizedBox(height: 16),
+          _grid([
+            ('Вложено за год', Fmt.signedMoney(report.investedRub), null),
+            ('Выплаты', Fmt.money(report.payoutsRub), _positive),
+            ('Прибыль от продаж', Fmt.signedMoney(report.realizedRub), _pnl(report.realizedRub)),
+            ('Налоги', Fmt.money(report.taxPaidRub), null),
+            ('Доходность', Fmt.pct(report.yieldPct), _pnl(report.yieldPct)),
+            ('Индекс Мосбиржи', imoexPct == null ? '—' : Fmt.pct(imoexPct), null),
+          ]),
+          if (report.valueSeries.length >= 2) ...[
+            pw.SizedBox(height: 18),
+            _label('Стоимость портфеля'),
+            _lineChart(report.valueSeries.map((e) => e.value).toList(), _pnl(result), height: 90),
+            _monthAxis(),
           ],
-          if (report.boughtByMonth.isNotEmpty || report.soldByMonth.isNotEmpty) ...[
-            _sectionTitle('Сделки по месяцам'),
-            _tradesByMonth(report),
-            pw.SizedBox(height: 16),
+          if (story.isNotEmpty) ...[
+            pw.SizedBox(height: 14),
+            pw.Container(height: 0.6, color: _line),
+            pw.SizedBox(height: 8),
+            pw.Text(story, style: const pw.TextStyle(fontSize: 9, color: PdfColor.fromInt(0xFF555B66), lineSpacing: 2)),
           ],
+
+          // --- Из чего сложился год и сравнение ---
+          pw.SizedBox(height: 22),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _h('Из чего сложился год'),
+                    _kv('На 1 января', Fmt.money(report.valueStartRub)),
+                    _kv('Куплено бумаг', '+${Fmt.money(report.boughtRub)}'),
+                    _kv('Продано бумаг', '−${Fmt.money(report.soldRub)}'),
+                    _kv('Рост цен', Fmt.signedMoney(growth), color: _pnl(growth)),
+                    _kv('Выплаты', '+${Fmt.money(report.payoutsRub)}', color: _positive),
+                    _kv('Налоги и комиссии', '−${Fmt.money(report.taxPaidRub + report.feesRub)}', color: _negative),
+                    _kv('На конец периода', Fmt.money(report.valueEndRub), bold: true, top: true),
+                  ],
+                ),
+              ),
+              pw.SizedBox(width: 28),
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _h('Доходность в сравнении'),
+                    _kv('Мой портфель', Fmt.pct(report.yieldPct), color: _pnl(report.yieldPct), bold: true),
+                    _kv('Индекс Мосбиржи', imoexPct == null ? '—' : Fmt.pct(imoexPct)),
+                    _kv('Инфляция', inflationPct == null ? '—' : Fmt.pct(inflationPct)),
+                    _kv('Вклад под ключевую', keyRatePct == null ? '—' : '≈ ${Fmt.pct(keyRatePct)}'),
+                    pw.SizedBox(height: 10),
+                    _h('Сделки'),
+                    _kv('Куплено', Fmt.money(report.boughtRub)),
+                    _kv('Продано', Fmt.money(report.soldRub)),
+                    _kv('Сделок', '${report.trades.length}'),
+                    _kv('Комиссии', Fmt.money(report.feesRub)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // --- Пополнения и выплаты ---
+          if (report.depositsByMonth.isNotEmpty || report.payoutsByMonth.isNotEmpty) ...[
+            pw.SizedBox(height: 22),
+            _h('Пополнения и выплаты по месяцам'),
+            if (report.depositsByMonth.isNotEmpty) ...[
+              _label('Пополнения · ${Fmt.money(report.depositsByMonth.values.fold(0.0, (a, b) => a + b))}'),
+              _monthChart(report.depositsByMonth, _violet),
+              pw.SizedBox(height: 10),
+            ],
+            if (report.payoutsByMonth.isNotEmpty) ...[
+              _label('Выплаты · ${Fmt.money(report.payoutsRub)}'),
+              _monthChart(report.payoutsByMonth, _positive),
+            ],
+          ],
+
+          // --- Выплаты по бумагам ---
+          if (report.payoutEvents.isNotEmpty) ...[
+            pw.SizedBox(height: 22),
+            _h('Выплаты по бумагам'),
+            _payoutsTable(report),
+          ],
+
+          // --- Секторы ---
           if (report.bySector.isNotEmpty) ...[
-            _sectionTitle('Распределение по секторам'),
+            pw.SizedBox(height: 22),
+            _h('Секторы на конец года'),
             _sectorBars(report.bySector),
-            pw.SizedBox(height: 16),
           ],
-          if (report.newRows.isNotEmpty) ...[
-            _sectionTitle('Куплены впервые в ${report.year} году'),
-            _table(report.newRows),
-            pw.SizedBox(height: 16),
+
+          // --- Бумаги ---
+          pw.SizedBox(height: 22),
+          _h('Бумаги за год'),
+          _table(report.rows),
+
+          // --- Все сделки ---
+          if (report.trades.isNotEmpty) ...[
+            pw.SizedBox(height: 22),
+            _h('Все сделки'),
+            _eventsTable([
+              for (final e in report.trades)
+                [
+                  Fmt.date(e.date),
+                  e.name,
+                  e.isSell ? 'Продажа' : 'Покупка',
+                  '${e.isSell ? '+' : '−'}${Fmt.money(e.rub)}',
+                ],
+            ], ['Дата', 'Бумага', 'Операция', 'Сумма']),
           ],
-          if (report.oldRows.isNotEmpty) ...[
-            _sectionTitle('Были в портфеле и раньше'),
-            _table(report.oldRows),
+          if (report.payoutEvents.isNotEmpty) ...[
+            pw.SizedBox(height: 22),
+            _h('Все выплаты'),
+            _eventsTable([
+              for (final e in report.payoutEvents) [Fmt.date(e.date), e.name, '', '+${Fmt.money(e.rub)}'],
+            ], ['Дата', 'Бумага', '', 'Получено']),
           ],
         ],
       ),
@@ -93,70 +245,137 @@ class ReportPdfService {
     return doc.save();
   }
 
-  static pw.Widget _header(AnnualReport report, String? portfolioName) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text('ИТОГИ ГОДА', style: const pw.TextStyle(fontSize: 9, color: _muted, letterSpacing: 2)),
-        pw.SizedBox(height: 4),
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
+  static pw.Widget _h(String text) => pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 6),
+        child: pw.Text(text, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+      );
+
+  static pw.Widget _label(String text) => pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 4),
+        child: pw.Text(text, style: const pw.TextStyle(fontSize: 8.5, color: _muted)),
+      );
+
+  static pw.Widget _kv(String k, String v, {PdfColor? color, bool bold = false, bool top = false}) => pw.Container(
+        padding: const pw.EdgeInsets.symmetric(vertical: 3.5),
+        decoration: top ? const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(color: _line))) : null,
+        child: pw.Row(
           children: [
-            pw.Text('${report.year}', style: pw.TextStyle(fontSize: 30, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(width: 10),
-            if (portfolioName != null)
-              pw.Padding(
-                padding: const pw.EdgeInsets.only(bottom: 5),
-                child: pw.Text(portfolioName, style: const pw.TextStyle(fontSize: 13, color: _muted)),
-              ),
+            pw.Expanded(child: pw.Text(k, style: pw.TextStyle(fontSize: 9, color: bold ? PdfColors.black : _muted))),
+            pw.Text(v,
+                style: pw.TextStyle(
+                  fontSize: 9,
+                  fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                  color: color,
+                )),
           ],
         ),
-        pw.SizedBox(height: 6),
-        pw.Container(height: 2, width: 60, color: _accent),
-      ],
+      );
+
+  static pw.Widget _grid(List<(String, String, PdfColor?)> cells) => pw.Wrap(
+        spacing: 16,
+        runSpacing: 12,
+        children: [
+          for (final (k, v, c) in cells)
+            pw.SizedBox(
+              width: 150,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(k, style: const pw.TextStyle(fontSize: 8, color: _muted)),
+                  pw.SizedBox(height: 2),
+                  pw.Text(v, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: c)),
+                ],
+              ),
+            ),
+        ],
+      );
+
+  static pw.Widget _monthAxis() => pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 3),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [for (final m in _monthsShort) pw.Text(m, style: const pw.TextStyle(fontSize: 6.5, color: _muted))],
+        ),
+      );
+
+  /// Линия стоимости — векторная, тонкая.
+  static pw.Widget _lineChart(List<double> values, PdfColor color, {double height = 90}) {
+    final lo = values.reduce((a, b) => a < b ? a : b);
+    final hi = values.reduce((a, b) => a > b ? a : b);
+    final span = (hi - lo).abs() < 1e-9 ? 1.0 : hi - lo;
+    return pw.SizedBox(
+      height: height,
+      child: pw.CustomPaint(
+        // Ширина страницы A4 без полей.
+        size: PdfPoint(515, height),
+        painter: (canvas, size) {
+          canvas
+            ..setStrokeColor(color)
+            ..setLineWidth(1.4);
+          for (var i = 0; i < values.length; i++) {
+            final x = size.x * i / (values.length - 1);
+            final y = 4 + (values[i] - lo) / span * (size.y - 8);
+            if (i == 0) {
+              canvas.moveTo(x, y);
+            } else {
+              canvas.lineTo(x, y);
+            }
+          }
+          canvas.strokePath();
+        },
+      ),
     );
   }
 
-  static pw.Widget _summary(AnnualReport report) {
-    final cells = <List<String>>[
-      ['Вложено за год', Fmt.money(report.investedRub)],
-      ['Куплено на', Fmt.money(report.boughtRub)],
-      ['Продано на', Fmt.money(report.soldRub)],
-      ['Выплаты получены', Fmt.money(report.payoutsRub)],
-      ['Прибыль от продаж', Fmt.signedMoney(report.realizedRub)],
-      ['Удержан налог', Fmt.money(report.taxPaidRub)],
-      ['Стоимость бумаг', Fmt.money(report.valueEndRub)],
-      ['Итог года', Fmt.signedMoney(report.totalResultRub)],
-    ];
+  static pw.Widget _payoutsTable(AnnualReport report) {
+    final count = <String, int>{};
+    final sum = <String, double>{};
+    final names = <String, String>{};
+    for (final e in report.payoutEvents) {
+      count[e.ticker] = (count[e.ticker] ?? 0) + 1;
+      sum[e.ticker] = (sum[e.ticker] ?? 0) + e.rub;
+      names[e.ticker] = e.name;
+    }
+    final keys = sum.keys.toList()..sort((a, b) => sum[b]!.compareTo(sum[a]!));
+    return _eventsTable([
+      for (final k in keys)
+        [names[k]!, '${count[k]}', '${(sum[k]! / report.payoutsRub * 100).round()}%', Fmt.money(sum[k]!)],
+      ['Итого', '${report.payoutEvents.length}', '100%', Fmt.money(report.payoutsRub)],
+    ], ['Бумага', 'Выплат', 'Доля', 'Получено']);
+  }
 
-    return pw.Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        for (final c in cells)
-          pw.Container(
-            width: 122,
-            padding: const pw.EdgeInsets.all(10),
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: _line),
-              borderRadius: pw.BorderRadius.circular(6),
-            ),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(c[0], style: const pw.TextStyle(fontSize: 8, color: _muted)),
-                pw.SizedBox(height: 3),
-                pw.Text(
-                  c[1],
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                    color: c[1].startsWith('-') ? _negative : PdfColors.black,
-                  ),
-                ),
-              ],
-            ),
+  static pw.Widget _eventsTable(List<List<String>> rows, List<String> head) {
+    pw.Widget c(String t, {bool left = false, bool bold = false, PdfColor? color}) => pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 3.5, horizontal: 2),
+          child: pw.Text(
+            t,
+            textAlign: left ? pw.TextAlign.left : pw.TextAlign.right,
+            style: pw.TextStyle(fontSize: 8.5, fontWeight: bold ? pw.FontWeight.bold : null, color: color),
           ),
+        );
+    PdfColor? tone(String v) => v.startsWith('+') ? _positive : (v.startsWith('−') ? _negative : null);
+    return pw.Table(
+      border: const pw.TableBorder(horizontalInside: pw.BorderSide(color: _line, width: 0.6)),
+      columnWidths: const {
+        0: pw.FlexColumnWidth(1.3),
+        1: pw.FlexColumnWidth(3),
+        2: pw.FlexColumnWidth(1.4),
+        3: pw.FlexColumnWidth(1.6),
+      },
+      children: [
+        pw.TableRow(children: [
+          for (int i = 0; i < head.length; i++)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 4, left: 2, right: 2),
+              child: pw.Text(head[i],
+                  textAlign: i <= 1 ? pw.TextAlign.left : pw.TextAlign.right,
+                  style: const pw.TextStyle(fontSize: 7.5, color: _muted)),
+            ),
+        ]),
+        for (final r in rows)
+          pw.TableRow(children: [
+            for (int i = 0; i < r.length; i++) c(r[i], left: i <= 1, color: i == r.length - 1 ? tone(r[i]) : null),
+          ]),
       ],
     );
   }
@@ -347,74 +566,65 @@ class ReportPdfService {
   static pw.Widget _table(List<ReportRow> rows) {
     pw.Widget cell(String text, {bool bold = false, PdfColor? color, pw.TextAlign align = pw.TextAlign.right}) {
       return pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 3),
+        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 2),
         child: pw.Text(
           text,
           textAlign: align,
-          style: pw.TextStyle(
-            fontSize: 8,
-            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            color: color,
-          ),
+          style: pw.TextStyle(fontSize: 8, fontWeight: bold ? pw.FontWeight.bold : null, color: color),
         ),
       );
     }
 
+    String m(double v) => v == 0 ? '—' : Fmt.compact(v);
     return pw.Table(
-      border: const pw.TableBorder(
-        horizontalInside: pw.BorderSide(color: _line),
-        bottom: pw.BorderSide(color: _line),
-      ),
+      border: const pw.TableBorder(horizontalInside: pw.BorderSide(color: _line, width: 0.6)),
       columnWidths: const {
-        0: pw.FlexColumnWidth(2.3),
+        0: pw.FlexColumnWidth(2.6),
         1: pw.FlexColumnWidth(1.2),
-        2: pw.FlexColumnWidth(1.4),
-        3: pw.FlexColumnWidth(1.4),
-        4: pw.FlexColumnWidth(1.4),
-        5: pw.FlexColumnWidth(1.4),
-        6: pw.FlexColumnWidth(1.5),
+        2: pw.FlexColumnWidth(1.2),
+        3: pw.FlexColumnWidth(1.2),
+        4: pw.FlexColumnWidth(1.2),
+        5: pw.FlexColumnWidth(1.1),
+        6: pw.FlexColumnWidth(1.3),
+        7: pw.FlexColumnWidth(1),
       },
       children: [
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFFF4F6FA)),
-          children: [
-            cell('Бумага', bold: true, align: pw.TextAlign.left),
-            cell('Кол-во', bold: true),
-            cell('Куплено', bold: true),
-            cell('Продано', bold: true),
-            cell('Выплаты', bold: true),
-            cell('По продажам', bold: true),
-            cell('Стоимость', bold: true),
-          ],
-        ),
+        pw.TableRow(children: [
+          for (final (i, h) in ['Бумага', 'На 1 янв', 'Куплено', 'Продано', 'На конец', 'Выплаты', 'Итог', '%'].indexed)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 4, left: 2, right: 2),
+              child: pw.Text(h,
+                  textAlign: i == 0 ? pw.TextAlign.left : pw.TextAlign.right,
+                  style: const pw.TextStyle(fontSize: 7.5, color: _muted)),
+            ),
+        ]),
         for (final r in rows)
-          pw.TableRow(
-            children: [
-              pw.Padding(
-                padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 3),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(r.ticker, style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
-                    pw.Text(
-                      r.isClosed ? '${r.sector} · позиция закрыта' : r.sector,
-                      style: const pw.TextStyle(fontSize: 6.5, color: _muted),
-                    ),
-                  ],
-                ),
+          pw.TableRow(children: [
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(r.name, style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                  pw.Text(
+                    [
+                      r.ticker,
+                      if (r.redeemed) 'погашена' else if (r.isClosed) 'закрыта',
+                      if (!r.isClosed && !r.redeemed) '${Fmt.qty(r.qtyEnd)} шт',
+                    ].join(' · '),
+                    style: const pw.TextStyle(fontSize: 6.5, color: _muted),
+                  ),
+                ],
               ),
-              cell(Fmt.qty(r.qtyEnd)),
-              cell(r.boughtSumRub > 0 ? Fmt.compact(r.boughtSumRub) : '—'),
-              cell(r.soldSumRub > 0 ? Fmt.compact(r.soldSumRub) : '—'),
-              cell(r.payoutsRub > 0 ? Fmt.compact(r.payoutsRub) : '—',
-                  color: r.payoutsRub > 0 ? _positive : null),
-              cell(
-                r.realizedRub != 0 ? Fmt.signedMoney(r.realizedRub) : '—',
-                color: r.realizedRub == 0 ? null : (r.realizedRub > 0 ? _positive : _negative),
-              ),
-              cell(r.valueRub > 0 ? Fmt.compact(r.valueRub) : '—', bold: true),
-            ],
-          ),
+            ),
+            cell(m(r.valueStartRub)),
+            cell(m(r.boughtSumRub)),
+            cell(m(r.soldSumRub)),
+            cell(m(r.valueRub), bold: true),
+            cell(r.payoutsRub > 0 ? Fmt.compact(r.payoutsRub) : '—', color: r.payoutsRub > 0 ? _positive : null),
+            cell(Fmt.signedMoney(r.totalResultRub), color: _pnl(r.totalResultRub)),
+            cell(r.valueStartRub + r.boughtSumRub > 0 ? Fmt.pct(r.yieldPct) : '—', color: _pnl(r.yieldPct)),
+          ]),
       ],
     );
   }

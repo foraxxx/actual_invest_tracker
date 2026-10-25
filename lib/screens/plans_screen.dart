@@ -357,17 +357,11 @@ class _PlansScreenState extends State<PlansScreen> {
         child: SafeArea(
         bottom: false,
         child: all.isEmpty
-            ? EmptyState(
+            ? const EmptyState(
                 icon: Icons.flag_rounded,
                 title: 'Планов пока нет',
                 subtitle: 'Запланируйте будущие покупки — приложение соберёт их по срокам '
                     'и посчитает, сколько денег на это понадобится.',
-                action: GradientButton(
-                  label: 'Новый план',
-                  icon: Icons.add_rounded,
-                  expand: false,
-                  onPressed: () => _showAddSheet(context),
-                ),
               )
             : Column(
                 children: [
