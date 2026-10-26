@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../design/charts.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -801,12 +802,91 @@ class _BudgetScreenState extends State<BudgetScreen> {
       if (ok) await BudgetService.clearCell(_y, _m, l.category.id, i);
       return;
     }
-    final left = l.left(i);
-    final ids = await BudgetService.markLeft(_y, _m, l.category.id, payout: i);
-    if (!mounted) return;
-    if (ids.isNotEmpty) {
-      _snack('Отложено ${_rub(left)} · $name', undo: () => BudgetService.deleteEntries(ids));
-    }
+    await _partSheet(l, i);
+  }
+
+  /// Лист ячейки: отложить остаток целиком или свою сумму. Ниже — уже
+  /// внесённые части, каждую можно удалить.
+  Future<void> _partSheet(BudgetLine l, int i) async {
+    final name = l.category.name;
+    final payoutName = BudgetService.config.names[i].toLowerCase();
+    final ctrl = TextEditingController();
+    await showAppSheet(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+        final line = BudgetService.view(_y, _m).lines.firstWhere(
+              (x) => x.category.id == l.category.id,
+              orElse: () => l,
+            );
+        final plan = line.plan[i];
+        final done = line.done[i];
+        final left = line.left(i);
+        final entries = (BudgetService.monthData(_y, _m)?.entries ?? const <BudgetEntry>[])
+            .where((e) => e.category == l.category.id && e.payout == i)
+            .toList();
+        final custom = double.tryParse(ctrl.text.replaceAll(' ', '').replaceAll(',', '.')) ?? 0;
+        Future<void> add(double amount) async {
+          if (amount <= 0) return;
+          await BudgetService.addEntry(_y, _m, l.category.id, i, amount);
+          if (ctx.mounted) Navigator.pop(ctx);
+          if (mounted) _snack('Отложено ${_rub(amount)} · $name');
+        }
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetHeader(
+                title: '${l.category.emoji} $name · $payoutName',
+                subtitle: 'По плану ${_rub(plan)} · отложено ${_rub(done)}',
+              ),
+              const SizedBox(height: 12),
+              MiniProgressBar(value: plan <= 0 ? 0 : (done / plan).clamp(0.0, 1.0), color: AppColors.gold),
+              const SizedBox(height: 14),
+              if (left > 0.5)
+                GradientButton(label: 'Отложить остаток · ${_rub(left)}', onPressed: () => add(left)),
+              const SizedBox(height: 10),
+              AppTextField(
+                controller: ctrl,
+                label: 'Или другая сумма',
+                number: true,
+                onChanged: (_) => setSheet(() {}),
+              ),
+              const SizedBox(height: 8),
+              GradientButton(
+                label: custom > 0 ? 'Отложить ${_rub(custom)}' : 'Отложить',
+                secondary: true,
+                onPressed: custom > 0 ? () => add(custom) : null,
+              ),
+              if (entries.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('Уже отложено', style: TextStyle(fontSize: 12, color: context.dim)),
+                for (final e in entries)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('${_rub(e.amount)} · ${Fmt.dayShort(e.date)}',
+                            style: const TextStyle(fontSize: 14)),
+                      ),
+                      IconButton(
+                        tooltip: 'Удалить',
+                        icon: Icon(Icons.close_rounded, size: 18, color: context.dim),
+                        onPressed: () async {
+                          await BudgetService.deleteEntries([e.id]);
+                          setSheet(() {});
+                        },
+                      ),
+                    ],
+                  ),
+              ],
+            ],
+          ),
+        );
+      }),
+    );
+    ctrl.dispose();
   }
 
   // --- Категории ---

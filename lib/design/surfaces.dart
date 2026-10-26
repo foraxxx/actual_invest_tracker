@@ -38,7 +38,6 @@ class AppCard extends StatelessWidget {
     final isDark = context.isDark;
     final card = Container(
       margin: margin,
-      padding: padding,
       decoration: BoxDecoration(
         color: color ?? (isDark ? AppColors.darkSurface : AppColors.lightSurface),
         borderRadius: AppRadius.all(radius),
@@ -47,7 +46,15 @@ class AppCard extends StatelessWidget {
             ? const []
             : [BoxShadow(color: const Color(0xFF0B1220).withOpacity(0.05), blurRadius: 18, offset: const Offset(0, 6))],
       ),
-      child: child,
+      // Подсветка нажатия рисуется внутри карточки и обрезается по её
+      // скруглению — без серых уголков по краям.
+      child: ClipRRect(
+        borderRadius: AppRadius.all(radius),
+        child: Material(
+          type: MaterialType.transparency,
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
     );
     if (onTap == null) return card;
     return Pressable(onTap: onTap, child: card);

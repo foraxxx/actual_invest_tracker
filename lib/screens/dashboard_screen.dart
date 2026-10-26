@@ -1779,16 +1779,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 SheetHeader(title: 'Аналитика', subtitle: _periodLabel(_period)),
                 const SizedBox(height: 12),
+                // Список: цветная иконка, название с пояснением, значение.
                 // Переключатель XIRR / TWR меняет и главную, и этот лист.
-                Listener(
-                  onPointerUp: (_) => Future.microtask(() {
-                    if (ctx.mounted) setSheet(() {});
-                  }),
-                  child: _metricsBlock(context, [
-                    if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
-                    if (hasHoldings) _inflationMetric(context),
-                    if (hasHoldings) _stressMetric(context),
-                  ]),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  color: context.isDark ? AppColors.darkSurface : AppColors.lightSurfaceHigh,
+                  child: Column(
+                    children: [
+                      for (final (i, m) in [
+                        if (xirr != null || twr != null) _returnMetric(context, xirr, twr, benchmark, benchmarkError),
+                        if (hasHoldings) _inflationMetric(context),
+                        if (hasHoldings) _stressMetric(context),
+                      ].indexed)
+                        Container(
+                          decoration: i == 0
+                              ? null
+                              : BoxDecoration(border: Border(top: BorderSide(color: context.hairline))),
+                          child: InkWell(
+                            onTap: m.onTap,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: m.color.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(m.icon, size: 18, color: m.color),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(m.listLabel ?? m.label,
+                                                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+                                            ),
+                                            if (m.onSwitch != null) ...[
+                                              const SizedBox(width: 6),
+                                              GestureDetector(
+                                                behavior: HitTestBehavior.opaque,
+                                                onTap: () {
+                                                  m.onSwitch!();
+                                                  Future.microtask(() {
+                                                    if (ctx.mounted) setSheet(() {});
+                                                  });
+                                                },
+                                                child: Icon(Icons.swap_horiz_rounded, size: 18, color: context.dim),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                        const SizedBox(height: 1),
+                                        Text(m.sub, style: TextStyle(fontSize: 12, color: context.dim)),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(m.value,
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: m.valueColor)),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),

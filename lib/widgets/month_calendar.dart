@@ -237,13 +237,16 @@ class _MonthCalendarState extends State<MonthCalendar> {
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: 46,
-            child: Text(
-              l.date == null ? '≈' : _date(l.date!),
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: dim),
+          // Дата — только если известна. У ожидаемых выплат даты нет, и
+          // название начинается сразу от края: «≈» уже стоит у суммы.
+          if (l.date != null)
+            SizedBox(
+              width: 46,
+              child: Text(
+                _date(l.date!),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: dim),
+              ),
             ),
-          ),
           Expanded(
             child: Text(
               l.title,

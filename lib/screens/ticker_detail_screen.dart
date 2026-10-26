@@ -1314,7 +1314,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     String priceOf(double v) => Fmt.price(v, type: assetType);
 
     return AppCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 10, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

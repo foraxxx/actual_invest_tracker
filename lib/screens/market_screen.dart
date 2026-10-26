@@ -629,6 +629,8 @@ class _MarketScreenState extends State<MarketScreen> {
                               onPan: _viewSize < all.length ? _panChart : null,
                               onPanEnd: _loadOlderChart,
                             sideLabels: true,
+                              // У индекса — только целые числа.
+                              sideLabel: _chartKey == 'IMOEX' ? (v) => Fmt.group(v) : null,
                               inspection: AppearanceService.chartHints == ChartHints.above
                                   ? _chartInspect
                                   : null,

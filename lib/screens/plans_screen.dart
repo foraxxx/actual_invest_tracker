@@ -1122,7 +1122,7 @@ class _PlansScreenState extends State<PlansScreen> {
           ),
           ClipRRect(
             borderRadius: AppRadius.all(AppRadius.md),
-            child: Container(color: surface, child: _rowsBlock(g.plans)),
+            child: Material(color: surface, child: _rowsBlock(g.plans)),
           ),
         ],
       ),
@@ -1144,7 +1144,7 @@ class _PlansScreenState extends State<PlansScreen> {
       padding: const EdgeInsets.only(top: 12),
       child: ClipRRect(
         borderRadius: AppRadius.all(AppRadius.md),
-        child: Container(
+        child: Material(
           color: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

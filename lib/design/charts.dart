@@ -239,6 +239,9 @@ class Sparkline extends StatefulWidget {
   /// высоте. Подпись опорного уровня тогда на самом графике не рисуется.
   final bool sideLabels;
 
+  /// Как писать цены в колонке справа. Не задано — как [priceLabel].
+  final String Function(double value)? sideLabel;
+
   const Sparkline({
     super.key,
     required this.values,
@@ -259,6 +262,7 @@ class Sparkline extends StatefulWidget {
     this.referenceValue,
     this.referenceLabel,
     this.sideLabels = false,
+    this.sideLabel,
   });
 
   /// Ширина колонки с ценами справа.
@@ -520,12 +524,13 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final side = widget.sideLabels ? Sparkline.sideWidth : 0.0;
         // Средняя выше (1) или ниже (−1) видимого периода — тогда её плашка
         // стоит над или под графиком.
         var outside = 0;
         final refValue = widget.referenceValue;
-        if (widget.sideLabels && refValue != null) {
+        final sideFmt = widget.sideLabel ?? widget.priceLabel ?? ((double v) => v.toStringAsFixed(2));
+        var side = 0.0;
+        if (widget.sideLabels) {
           final first = widget.windowStart.floor().clamp(0, values.length - 1);
           final last = (widget.windowStart + _visible).ceil().clamp(0, values.length - 1);
           var lo = values[first], hi = values[first];
@@ -533,7 +538,18 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
             if (values[i] < lo) lo = values[i];
             if (values[i] > hi) hi = values[i];
           }
-          outside = refValue > hi ? 1 : (refValue < lo ? -1 : 0);
+          if (refValue != null) outside = refValue > hi ? 1 : (refValue < lo ? -1 : 0);
+          // Колонка справа — ровно по ширине самой длинной плашки: график
+          // занимает всё остальное место.
+          double widthOf(String t) => (TextPainter(
+                text: TextSpan(text: t, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                textDirection: TextDirection.ltr,
+                textScaler: MediaQuery.textScalerOf(context),
+              )..layout())
+                  .width;
+          var widest = math.max(widthOf(_sideText(hi, sideFmt)), widthOf(_sideText(lo, sideFmt)));
+          if (refValue != null && outside == 0) widest = math.max(widest, widthOf(_sideText(refValue, sideFmt)));
+          side = widest + 12 + 6;
         }
         final w = constraints.maxWidth - side;
         final touchedX =
@@ -642,7 +658,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                         referenceValue: widget.referenceValue,
                         referenceLabel: widget.referenceLabel,
                         sideWidth: side,
-                        sideFormat: widget.priceLabel ?? ((double v) => v.toStringAsFixed(2)),
+                        sideFormat: sideFmt,
                         labelBackground: context.isDark ? AppColors.darkSurfaceTop : Colors.white,
                         labelText: context.isDark ? Colors.white : const Color(0xFF1D2434),
                       ),
@@ -696,7 +712,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(color: AppColors.violet, borderRadius: BorderRadius.circular(6)),
             child: Text(
-              '${_sideText(ref, widget.priceLabel ?? ((double v) => v.toStringAsFixed(2)))} ${outside > 0 ? '↑' : '↓'}',
+              '${_sideText(ref, widget.sideLabel ?? widget.priceLabel ?? ((double v) => v.toStringAsFixed(2)))} ${outside > 0 ? '↑' : '↓'}',
               style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white),
             ),
           ),
@@ -814,6 +830,56 @@ class _Tooltip extends StatelessWidget {
   }
 }
 
+/// Кривая через все точки (Фритч — Карлсон): не выходит за пределы
+/// соседних значений и не «промахивается» мимо точек.
+Path _monotonePath(List<Offset> p) {
+  final path = Path()..moveTo(p.first.dx, p.first.dy);
+  final n = p.length;
+  if (n < 3) {
+    for (var i = 1; i < n; i++) {
+      path.lineTo(p[i].dx, p[i].dy);
+    }
+    return path;
+  }
+  final d = List<double>.generate(n - 1, (i) {
+    final dx = p[i + 1].dx - p[i].dx;
+    return dx.abs() < 1e-9 ? 0 : (p[i + 1].dy - p[i].dy) / dx;
+  });
+  final m = List<double>.filled(n, 0);
+  m[0] = d[0];
+  m[n - 1] = d[n - 2];
+  for (var i = 1; i < n - 1; i++) {
+    m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+  }
+  for (var i = 0; i < n - 1; i++) {
+    if (d[i] == 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    final a = m[i] / d[i];
+    final b = m[i + 1] / d[i];
+    final s = a * a + b * b;
+    if (s > 9) {
+      final t = 3 / math.sqrt(s);
+      m[i] = t * a * d[i];
+      m[i + 1] = t * b * d[i];
+    }
+  }
+  for (var i = 0; i < n - 1; i++) {
+    final h = p[i + 1].dx - p[i].dx;
+    path.cubicTo(
+      p[i].dx + h / 3,
+      p[i].dy + m[i] * h / 3,
+      p[i + 1].dx - h / 3,
+      p[i + 1].dy - m[i + 1] * h / 3,
+      p[i + 1].dx,
+      p[i + 1].dy,
+    );
+  }
+  return path;
+}
+
 class _SparklinePainter extends CustomPainter {
   final List<double> values;
   final Color color;
@@ -921,14 +987,10 @@ class _SparklinePainter extends CustomPainter {
     // Сглаживание через квадратичные кривые по серединам отрезков — линия
     // получается мягкой, но не «уезжает» за пределы реальных значений, как
     // это делают кубические сплайны на резких скачках.
-    final line = Path()..moveTo(points.first.dx, points.first.dy);
-    for (int i = 1; i < points.length; i++) {
-      final prev = points[i - 1];
-      final cur = points[i];
-      final mid = Offset((prev.dx + cur.dx) / 2, (prev.dy + cur.dy) / 2);
-      line.quadraticBezierTo(prev.dx, prev.dy, mid.dx, mid.dy);
-    }
-    line.lineTo(points.last.dx, points.last.dy);
+    // Монотонная кубическая кривая: плавная, без выбросов за значения и,
+    // главное, проходит точно через каждую точку — подсветка под пальцем
+    // всегда лежит на линии.
+    final line = _monotonePath(points);
 
     // Частичный путь для анимации «прочерчивания»
     final drawn = Path();
@@ -1145,8 +1207,9 @@ class _SparklinePainter extends CustomPainter {
     double yOf(double v) => padTop + (1 - (v - minV) / (maxV - minV)) * usable;
     final neutralBg = labelText.withOpacity(0.1);
     final items = <(double, String, Color, Color)>[
-      (yOf(maxV), _sideText(maxV, sideFormat), neutralBg, labelText),
-      (yOf(minV), _sideText(minV, sideFormat), neutralBg, labelText),
+      // Максимум — зелёным, минимум — красным.
+      (yOf(maxV), _sideText(maxV, sideFormat), neutralBg, AppColors.positive),
+      (yOf(minV), _sideText(minV, sideFormat), neutralBg, AppColors.negative),
     ];
     final ref = referenceValue;
     // Средняя вне периода рисуется не здесь, а плашкой над или под графиком.
@@ -1162,7 +1225,7 @@ class _SparklinePainter extends CustomPainter {
         textDirection: TextDirection.ltr,
         maxLines: 1,
         ellipsis: '…',
-      )..layout(maxWidth: sideWidth - 16);
+      )..layout(maxWidth: math.max(10, sideWidth - 18));
       var top = (y - h / 2).clamp(0.0, chart.height - h).toDouble();
       // Сдвигаем от уже поставленных плашек.
       for (var guard = 0; guard < 4; guard++) {
@@ -1177,11 +1240,11 @@ class _SparklinePainter extends CustomPainter {
     }
     for (final (top, tp, bg) in painted) {
       final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(chart.width + 6, top, tp.width + 12, h),
+        Rect.fromLTWH(chart.width + sideWidth - tp.width - 12, top, tp.width + 12, h),
         const Radius.circular(6),
       );
       canvas.drawRRect(rect, Paint()..color = bg);
-      tp.paint(canvas, Offset(chart.width + 12, top + (h - tp.height) / 2));
+      tp.paint(canvas, Offset(chart.width + sideWidth - tp.width - 6, top + (h - tp.height) / 2));
     }
   }
 
