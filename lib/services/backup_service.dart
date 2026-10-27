@@ -604,7 +604,8 @@ class BackupService {
       // Бюджет заменяется целиком. Если в бэкапе он старее того, что сейчас в
       // приложении, — сначала спрашиваем, чтобы не потерять свежие отметки.
       final backupAt = BudgetService.updatedIn(budget);
-      final currentAt = BudgetService.started ? BudgetService.updatedAt : null;
+      // Пустой бюджет (вкладку открывали, но не заполняли) заменяется молча.
+      final currentAt = BudgetService.started && BudgetService.hasData ? BudgetService.updatedAt : null;
       var replace = true;
       if (confirmBudget != null && currentAt != null && (backupAt == null || backupAt.isBefore(currentAt))) {
         replace = await confirmBudget(backupAt, currentAt);

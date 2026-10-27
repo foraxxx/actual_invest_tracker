@@ -138,7 +138,7 @@ class PayoutCalendarService {
         // Мосбиржа пишет рубль как SUR — переводим в понятный приложению код.
         final raw = p.currency.toUpperCase();
         final currency = (raw == 'SUR' || raw.isEmpty) ? 'RUB' : raw;
-        final rub = CurrencyService.toRub(perUnit * qty * PayoutForecastService.netFactor, currency);
+        final rub = CurrencyService.toRub(perUnit * qty * PayoutForecastService.netFactorFor(p.kind), currency);
         result[entry.key] = (result[entry.key] ?? 0) + rub;
       }
     }

@@ -136,7 +136,10 @@ class PayoutForecastService {
 
   /// Ожидаемые выплаты по одной бумаге за 12 полных месяцев, начиная со
   /// следующего, — в рублях на всю текущую позицию.
-  /// Биржа публикует выплаты до налога. В прогнозе показываем, сколько
+  /// Налог удерживается только с дивидендов: купоны приходят целиком.
+  static double netFactorFor(String kind) => kind == 'Дивиденд' ? netFactor : 1;
+
+  /// Биржа публикует дивиденды до налога. В прогнозе показываем, сколько
   /// придёт на счёт: за вычетом НДФЛ по ставке из настроек (13% или 15%).
   static double get netFactor {
     // Налог с выплат удерживается всегда, независимо от того, показывать ли
@@ -164,7 +167,7 @@ class PayoutForecastService {
     if (perUnit.value > 0) {
       final currency = _payoutCurrency(list);
       // Умножаем на количество бумаг, которое есть сейчас, а не на прошлое.
-      return (rub: CurrencyService.toRub(perUnit.value * holding.qty * netFactor, currency), source: perUnit.source);
+      return (rub: CurrencyService.toRub(perUnit.value * holding.qty * (coupons.isEmpty ? netFactor : 1), currency), source: perUnit.source);
     }
 
     // Запасной вариант — только когда биржевой истории по бумаге нет вообще
@@ -558,7 +561,7 @@ class PayoutForecastService {
       final currency = _payoutCurrency(list);
       for (final payout in list) {
         if (!isRestOfMonth(payout, now)) continue;
-        final rub = CurrencyService.toRub(payout.amount * holding.qty * netFactor, currency);
+        final rub = CurrencyService.toRub(payout.amount * holding.qty * netFactorFor(payout.kind), currency);
         total += rub;
         byTicker[entry.key] = (byTicker[entry.key] ?? 0) + rub;
         count++;

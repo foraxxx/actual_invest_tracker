@@ -470,6 +470,16 @@ class BudgetService {
   /// Начат ли бюджет: пользователь хоть раз его открывал.
   static bool get started => _box.containsKey('cats');
 
+  /// Заполнен ли бюджет: есть хоть один месяц с суммами. Просто открытая
+  /// и не заполненная вкладка не считается.
+  static bool get hasData {
+    try {
+      return _months().any((d) => d.filled);
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Переносить выплату с выходного или праздника на рабочий день раньше.
   static bool get shiftToWorkday {
     try {

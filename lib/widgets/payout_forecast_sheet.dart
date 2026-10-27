@@ -47,11 +47,13 @@ List<(String, String)> payoutForecastInfo() {
   final rate = (PayoutForecastService.netFactor < 1) ? '${((1 - PayoutForecastService.netFactor) * 100).round()}%' : null;
   return [
     ('Суммы', rate == null
-        ? 'как их объявляет компания, без вычета налога — расчёт налога выключен в настройках.'
-        : 'уже за вычетом налога $rate (ставка из настроек) — столько придёт на счёт.'),
+        ? 'как их объявляет компания.'
+        : 'дивиденды — уже за вычетом налога $rate, столько придёт на счёт. Купоны — целиком, '
+            'с них налог при выплате не удерживается.'),
     ('Когда придут', 'если компания объявила дату — по ней. Если нет — в тот месяц, в который она обычно платила раньше.'),
     ('Сколько', 'объявленные выплаты и прогноз по каждой бумаге, умноженные на то количество, что у вас сейчас.'),
-    ('Налог', 'ставка берётся из настроек счёта: для ИИС — та, что указана у счёта, иначе — из настроек налога (13% или 15%).'),
+    ('Налог с дивидендов', 'ставка берётся из настроек счёта: для ИИС — та, что указана у счёта, '
+        'иначе — из настроек налога (13% или 15%).'),
   ];
 }
 
@@ -78,7 +80,7 @@ class PayoutForecastBody extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                   'за 12 мес${yieldPct > 0 ? ' · ${Fmt.pct(yieldPct).replaceAll('+', '')}' : ''}'
-                  '${PayoutForecastService.netFactor < 1 ? ' · после налога ${((1 - PayoutForecastService.netFactor) * 100).round()}%' : ''}',
+                  '${PayoutForecastService.netFactor < 1 ? ' · дивиденды после налога ${((1 - PayoutForecastService.netFactor) * 100).round()}%' : ''}',
                   style: TextStyle(fontSize: 13, color: context.dim)),
             ),
           ],

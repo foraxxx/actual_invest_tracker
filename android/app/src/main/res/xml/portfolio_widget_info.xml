@@ -3,7 +3,7 @@
      цены подтягивает WidgetUpdateWorker раз в полчаса и только в торговые
      часы, а приложение присылает свежий снимок само.
      Наибольший размер — 4×2 ячейки: больше виджет не растягивается
-     (maxResizeWidth/Height, Android 12 и новее). -->
+     (maxResizeWidth/Height, Android 12 и новее; высота — не больше двух рядов). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
     android:minHeight="40dp"
@@ -12,7 +12,7 @@
     android:targetCellWidth="4"
     android:targetCellHeight="2"
     android:maxResizeWidth="350dp"
-    android:maxResizeHeight="210dp"
+    android:maxResizeHeight="165dp"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:initialLayout="@layout/widget_small"

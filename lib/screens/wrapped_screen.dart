@@ -136,7 +136,7 @@ class _WrappedScreenState extends State<WrappedScreen> with SingleTickerProvider
           value: income,
           color: AppColors.positive,
           subtitle: forecast > 0
-              ? '12 месяцев со следующего месяца: ≈ ${Fmt.money(forecast)}'
+              ? 'Прогноз выплат на следующие 12 месяцев: ≈ ${Fmt.money(forecast)}'
               : null,
         ),
       ),

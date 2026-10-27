@@ -836,11 +836,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
           // Стоимость в портфеле и прибыль — строкой ниже.
           if (big != null) ...[
             const SizedBox(height: 10),
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.end,
-              spacing: 12,
-              runSpacing: 2,
+            // Всегда столбиком: сверху сумма, под ней итог за всё время.
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 HiddenAmount.forText(
                   big,
@@ -849,7 +847,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                 ),
                 if (small != null)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
+                    padding: const EdgeInsets.only(top: 2),
                     child: Text.rich(
                       TextSpan(children: [
                         TextSpan(text: small, style: TextStyle(color: smallColor ?? context.dim)),
