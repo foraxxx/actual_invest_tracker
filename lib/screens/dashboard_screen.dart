@@ -2332,7 +2332,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Компактная: аватар поменьше и без звёздочки избранного (она есть в
   /// карточке бумаги) — иначе с мини-графиком рядом названию не хватало места.
   /// Доли бумаг здесь не показываются, они есть в «Распределении».
-  Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) {
+  Widget _holdingTile(BuildContext context, String ticker, HoldingInfo h, double weight) =>
+      // Суммы скрыты — в строке только проценты, и нажатие на них ничего
+      // не переключает.
+      ValueListenableBuilder<bool>(
+        valueListenable: AppearanceService.revealed,
+        builder: (context, _, __) => _holdingTileBody(context, ticker, h, weight),
+      );
+
+  Widget _holdingTileBody(BuildContext context, String ticker, HoldingInfo h, double weight) {
+    final hidden = AppearanceService.amountsHidden;
+    final rub = _pnlUnitsRub && !hidden;
     final pnlColor = AppColors.pnl(h.pnlRub);
     final density = AppearanceService.density.scale;
     final mini = MiniHistoryService.pointsFor(ticker);
@@ -2376,7 +2386,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 8),
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _togglePnlUnits,
+                onTap: hidden ? () {} : _togglePnlUnits,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 52, maxWidth: 80),
                   child: Column(
@@ -2388,7 +2398,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                       FittedBox(
                         fit: BoxFit.scaleDown,
-                        child: _pnlUnitsRub
+                        child: rub
                             ? HiddenAmount.forText(active: true,
                                 Fmt.signedMoney(h.pnlRub),
                                 fontSize: 11,
@@ -2416,7 +2426,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               // никогда не обрезается.
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _togglePnlUnits,
+                onTap: hidden ? () {} : _togglePnlUnits,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 132),
                   child: Padding(
@@ -2443,7 +2453,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerRight,
-                            child: _pnlUnitsRub
+                            child: rub
                                 ? HiddenAmount.forText(active: true,
                                     Fmt.signedMoney(day.rub),
                                     fontSize: 11,

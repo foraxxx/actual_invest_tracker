@@ -2070,7 +2070,11 @@ class MultiLineChart extends StatefulWidget {
 
 class _MultiLineChartState extends State<MultiLineChart> {
   int? _i;
-  static const _left = 6.0, _right = 54.0, _top = 10.0, _bottom = 22.0;
+  static const _left = 6.0, _top = 10.0, _bottom = 22.0;
+
+  /// Запас справа нужен только под подпись цели — без неё график во всю
+  /// ширину, как одиночный.
+  double get _right => widget.target != null && widget.targetLabel != null ? 54.0 : 6.0;
 
   int get _n => widget.series.fold(0, (a, s) => math.max(a, s.values.length));
 
@@ -2189,11 +2193,12 @@ class _MultiLineChartState extends State<MultiLineChart> {
                 ),
               if (widget.endLabel != null)
                 Positioned(
-                  left: x(n - 1) - 40,
+                  left: math.min(x(n - 1) - 40, width - 80),
                   width: 80,
                   bottom: 2,
                   child: Text(widget.endLabel!,
-                      textAlign: TextAlign.center, style: TextStyle(fontSize: 10.5, color: context.dim)),
+                      textAlign: _right > 10 ? TextAlign.center : TextAlign.right,
+                      style: TextStyle(fontSize: 10.5, color: context.dim)),
                 ),
               if (tip != null) tip,
             ],

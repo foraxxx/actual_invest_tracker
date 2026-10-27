@@ -204,7 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return '';
   }
 
-  Widget _navGroup(List<Widget> rows) {
+  Widget _navGroup(List<Widget> rows, {double indent = 52}) {
     final line = context.isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.06);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -213,7 +213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           children: [
             for (int i = 0; i < rows.length; i++) ...[
-              if (i > 0) Divider(height: 1, thickness: 1, indent: 52, color: line),
+              if (i > 0) Divider(height: 1, thickness: 1, indent: indent, color: line),
               rows[i],
             ],
           ],
@@ -279,7 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AppCard(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -289,19 +289,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       values: const [ThemeMode.system, ThemeMode.dark, ThemeMode.light],
                       selected: mode,
                       labelOf: (m) => switch (m) {
-                        ThemeMode.system => 'Как в системе',
+                        ThemeMode.system => 'Система',
                         ThemeMode.light => 'Светлая',
                         ThemeMode.dark => 'Тёмная',
                       },
                       onChanged: ThemeService.setThemeMode,
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
+                  // Цвета — одним рядом, лишние прокручиваются.
                   ValueListenableBuilder<Color>(
                     valueListenable: ThemeService.accentColor,
-                    builder: (context, current, _) => Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
+                    builder: (context, current, _) => SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+                      child: Row(
                       children: [
                         for (final p in kPalettes)
                           Tooltip(
@@ -309,8 +311,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: Pressable(
                               onTap: () => ThemeService.setAccentColor(p.color),
                               child: Container(
-                                width: 32,
-                                height: 32,
+                                width: 26,
+                                height: 26,
+                                margin: const EdgeInsets.only(right: 9),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: p.color,
@@ -325,20 +328,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                       ],
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            _navGroup([
+            const SizedBox(height: 10),
+            _navGroup(indent: 14, [
               _switchLine('Скрывать суммы', AppearanceService.hideAmounts, AppearanceService.setHideAmounts),
               _switchLine('Подписи в нижней панели', AppearanceService.showNavLabels, (v) async {
                 await AppearanceService.setShowNavLabels(v);
                 if (mounted) setState(() {});
               }),
-            ]),
-            _navGroup([
               _choiceLine<HoldingsGrouping>(
                 title: 'Состав портфеля',
                 hint: 'Бумаги на главной сгруппированы: акции, облигации, фонды.',
@@ -396,7 +398,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Строка с переключателем.
   Widget _switchLine(String title, bool value, ValueChanged<bool> onChanged) => Padding(
-        padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
+        padding: const EdgeInsets.fromLTRB(14, 0, 8, 0),
         child: Row(
           children: [
             Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),
@@ -442,7 +444,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (picked != null) await onChanged(picked);
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),

@@ -111,7 +111,7 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
   ForecastScenario _scenario = ForecastScenario.realistic;
 
   /// «Все» — три сценария на одном графике.
-  bool _all = false;
+  bool _all = true;
 
   @override
   void initState() {
@@ -234,7 +234,7 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
         ),
         const SizedBox(height: 8),
         SegmentedToggle<ForecastScenario?>(
-          values: const [...ForecastScenario.values, null],
+          values: const [null, ...ForecastScenario.values],
           selected: _all ? null : _scenario,
           labelOf: (v) => v == null ? 'Все' : _scenarioLabel(v),
           onChanged: (v) => setState(() {

@@ -10,6 +10,7 @@ import 'portfolio_history_service.dart';
 import 'portfolio_service.dart';
 import 'sector_service.dart';
 import 'storage_service.dart';
+import 'tax_service.dart';
 
 /// Запоминает результаты тяжёлых расчётов, пока не изменились исходные
 /// данные: сделки, цены, курсы, выбранный портфель.
@@ -38,6 +39,8 @@ class Memo {
       PayoutForecastService.version.value,
       DividendHistoryService.version.value,
       BetaService.version.value,
+      // Ставка налога меняет прогноз выплат (он после налога).
+      TaxService.version.value,
       identityHashCode(MoexSyncService.marketSnapshot.value),
       identityHashCode(PortfolioHistoryService.timeline.value),
       // Расчёты «на сегодня» должны обновиться и после полуночи.
