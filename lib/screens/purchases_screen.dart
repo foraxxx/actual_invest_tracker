@@ -13,7 +13,6 @@ import '../services/appearance_service.dart';
 import '../services/manual_price_service.dart';
 import '../services/plan_apply_service.dart';
 import '../services/price_sanity_service.dart';
-import '../services/portfolio_service.dart';
 import '../services/storage_service.dart';
 import '../services/tax_service.dart';
 import '../services/moex_sync_service.dart';

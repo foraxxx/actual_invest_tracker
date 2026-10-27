@@ -10,7 +10,6 @@ import '../models/plan.dart';
 import '../models/purchase.dart';
 import '../screens/ticker_detail_screen.dart';
 import '../services/favorites_service.dart';
-import '../services/passive_goal_service.dart';
 import '../services/payout_picker_service.dart';
 import '../services/storage_service.dart';
 import 'ticker_avatar.dart';

@@ -2125,7 +2125,7 @@ class _MultiLineChartState extends State<MultiLineChart> {
                   style: TextStyle(fontSize: 11, height: 1.3, color: s.color)),
         ];
         const tipW = 156.0;
-        final left = (x(i) - tipW / 2).clamp(0.0, math.max(0.0, width - tipW));
+        final left = (x(i) - tipW / 2).clamp(0.0, math.max(0.0, width - tipW)).toDouble();
         tip = Positioned(
           left: left,
           top: 0,

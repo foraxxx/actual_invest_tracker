@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 
 import '../design/charts.dart';
-import '../design/date_picker.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -399,10 +398,6 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
 
   double? parseText(String t) => double.tryParse(t.replaceAll(' ', '').replaceAll(' ', '').replaceAll(',', '.'));
   double? parse() => parseText(amountCtrl.text);
-  double? parseSaving() {
-    final v = parseText(savingCtrl.text);
-    return v == null || v < 0 ? null : v;
-  }
 
   return showAppSheet(
     context: context,

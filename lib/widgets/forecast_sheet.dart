@@ -66,8 +66,6 @@ class _ForecastSheetState extends State<_ForecastSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final payouts = payoutForecastTotal();
-    final value = ValueForecastService.realistic(_years).result.breakdown.end;
 
     return SafeArea(
       child: SingleChildScrollView(
