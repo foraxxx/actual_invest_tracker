@@ -401,7 +401,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.fromLTRB(14, 0, 8, 0),
         child: Row(
           children: [
-            Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              ),
+            ),
             Switch(value: value, onChanged: onChanged),
           ],
         ),
@@ -447,13 +455,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500))),
-            const SizedBox(width: 8),
-            Flexible(
+            // Название — всегда одной строкой; если тесно, сначала ужимается
+            // значение справа, потом название обрезается многоточием.
+            Expanded(
               child: Text(
-                labelOf(selected).toLowerCase(),
-                textAlign: TextAlign.right,
-                style: TextStyle(fontSize: 13.5, color: context.dim),
+                title,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  labelOf(selected).toLowerCase(),
+                  maxLines: 1,
+                  style: TextStyle(fontSize: 13.5, color: context.dim),
+                ),
               ),
             ),
             Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),

@@ -1262,7 +1262,8 @@ class _MarketScreenState extends State<MarketScreen> {
                     Flexible(
                       child: Text(
                         displayName.isNotEmpty ? displayName : q.ticker,
-                        maxLines: 2,
+                        maxLines: 1,
+                        softWrap: false,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                       ),
@@ -1276,7 +1277,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 const SizedBox(height: 3),
                 Text(
                   '${q.ticker} · ${q.kindLabel}',
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12.5, color: context.dim),
                 ),

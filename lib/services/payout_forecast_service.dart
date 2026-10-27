@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'iis_service.dart';
 import 'tax_service.dart';
 import 'currency_service.dart';
 import 'dividend_history_service.dart';
@@ -138,8 +139,12 @@ class PayoutForecastService {
   /// Биржа публикует выплаты до налога. В прогнозе показываем, сколько
   /// придёт на счёт: за вычетом НДФЛ по ставке из настроек (13% или 15%).
   static double get netFactor {
+    // Налог с выплат удерживается всегда, независимо от того, показывать ли
+    // налог с продаж. Ставка — из настроек ИИС этого портфеля, иначе общая.
     try {
-      return TaxService.enabled ? 1 - TaxService.rate : 1;
+      final iis = IisService.current;
+      final rate = iis != null ? iis.ratePct / 100 : TaxService.rate;
+      return 1 - rate.clamp(0.0, 0.3);
     } catch (_) {
       return 1; // настройки налога ещё не загружены
     }
