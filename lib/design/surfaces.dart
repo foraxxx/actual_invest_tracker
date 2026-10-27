@@ -834,21 +834,29 @@ class HiddenAmount extends StatelessWidget {
   /// явно: стоимость портфелей, прибыль, сумма цели, итоги групп.
   final bool active;
 
+  /// Нажатие показывает или прячет все суммы. Только у стоимости портфеля
+  /// (и общей стоимости на списке портфелей) — остальные суммы на нажатие
+  /// не реагируют.
+  final bool toggles;
+
   const HiddenAmount({
     super.key,
     required this.child,
     this.width = 90,
     this.height = 16,
     this.active = false,
+    this.toggles = false,
   });
 
   /// Удобный конструктор для денежных строк: ширина подбирается по тексту.
-  factory HiddenAmount.forText(String text, {required Widget child, double? fontSize, bool active = false}) {
+  factory HiddenAmount.forText(String text,
+      {required Widget child, double? fontSize, bool active = false, bool toggles = false}) {
     final size = fontSize ?? 14;
     return HiddenAmount(
       width: text.length * size * 0.56,
       height: size * 1.05,
       active: active,
+      toggles: toggles,
       child: child,
     );
   }
@@ -864,8 +872,8 @@ class HiddenAmount extends StatelessWidget {
           if (!AppearanceService.hideAmounts) return child;
 
           return GestureDetector(
-            onTap: AppearanceService.toggleReveal,
-            behavior: HitTestBehavior.opaque,
+            onTap: toggles ? AppearanceService.toggleReveal : null,
+            behavior: toggles ? HitTestBehavior.opaque : HitTestBehavior.deferToChild,
             child: revealed
                 ? child
                 : SizedBox(
@@ -914,4 +922,51 @@ class FoldArrow extends StatelessWidget {
         duration: AppDuration.fast,
         child: Icon(Icons.expand_more_rounded, size: 22, color: context.dim),
       );
+}
+
+
+/// Подсказка «Как считается» — всегда нижней панелью, как в «Из чего прибыль».
+/// [parts] — пары «заголовок — пояснение», [footer] — мелкий текст внизу.
+Future<void> showInfoSheet(
+  BuildContext context, {
+  String title = 'Как считается',
+  List<(String, String)> parts = const [],
+  String? text,
+  String? footer,
+}) {
+  Widget part(String t, String body) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text.rich(
+          TextSpan(children: [
+            TextSpan(text: '$t — ', style: const TextStyle(fontWeight: FontWeight.w700)),
+            TextSpan(text: body),
+          ]),
+          style: const TextStyle(fontSize: 13, height: 1.45),
+        ),
+      );
+  return showAppSheet(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SheetHeader(
+              title: title,
+              trailing: IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+            ),
+            const SizedBox(height: 12),
+            if (text != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(text, style: const TextStyle(fontSize: 13, height: 1.45)),
+              ),
+            for (final p in parts) part(p.$1, p.$2),
+            if (footer != null) Text(footer, style: TextStyle(fontSize: 12, height: 1.4, color: ctx.dim)),
+          ],
+        ),
+      ),
+    ),
+  );
 }

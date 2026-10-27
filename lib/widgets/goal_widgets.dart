@@ -1,14 +1,13 @@
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../design/charts.dart';
 import '../design/date_picker.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
-import '../services/appearance_service.dart';
 import '../services/goal_service.dart';
 import '../services/iis_service.dart';
 import '../services/passive_goal_service.dart';
@@ -397,10 +396,6 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
         withdrawFrom: withdrawOn ? withdrawFrom : null,
       );
 
-  const monthNames = [
-    'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
-    'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
-  ];
 
   double? parseText(String t) => double.tryParse(t.replaceAll(' ', '').replaceAll(' ', '').replaceAll(',', '.'));
   double? parse() => parseText(amountCtrl.text);
@@ -476,32 +471,16 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: AppDropdown<int>(
-                      value: month,
-                      label: 'Месяц',
-                      items: [
-                        for (int i = 1; i <= 12; i++) DropdownMenuItem(value: i, child: Text(monthNames[i - 1])),
-                      ],
-                      onChanged: (v) => setSheet(() => month = v ?? month),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 2,
-                    child: AppDropdown<int>(
-                      value: year,
-                      label: 'Год',
-                      items: [
-                        for (int y = now.year; y <= now.year + 40; y++) DropdownMenuItem(value: y, child: Text('$y')),
-                      ],
-                      onChanged: (v) => setSheet(() => year = v ?? year),
-                    ),
-                  ),
-                ],
+              AppDateField(
+                monthOnly: true,
+                label: 'К какому сроку',
+                value: DateTime(year, month),
+                firstDate: DateTime(now.year, now.month),
+                lastDate: DateTime(now.year + 40, 12),
+                onPicked: (d) => setSheet(() {
+                  year = d.year;
+                  month = d.month;
+                }),
               ),
               const SizedBox(height: 12),
               AppTextField(
@@ -567,21 +546,15 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
                     style: TextStyle(fontSize: 12, color: ctx.dim),
                   ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(child: Text('Начиная с', style: TextStyle(fontSize: 13, color: ctx.dim))),
-                    TextButton(
-                      onPressed: () async {
-                        final d = await showAppMonthPicker(context: ctx, initial: withdrawFrom);
-                        if (d != null) {
-                          final m = DateTime(d.year, d.month);
-                          setSheet(() => withdrawFrom = m.isBefore(earliest) ? earliest : m);
-                        }
-                      },
-                      child: Text('${_monthNom[withdrawFrom.month - 1]} ${withdrawFrom.year}'),
-                    ),
-                  ],
+                AppDateField(
+                  monthOnly: true,
+                  label: 'Начиная с',
+                  value: withdrawFrom,
+                  firstDate: earliest,
+                  lastDate: DateTime(now.year + 40, 12),
+                  onPicked: (d) => setSheet(() => withdrawFrom = d),
                 ),
+                const SizedBox(height: 4),
                 if (iisFrom != null && iisFrom.isAfter(now))
                   Text(
                     'Это ИИС: снимать без потери вычета можно с ${_monthNom[iisFrom.month - 1]} ${iisFrom.year}.',
@@ -790,32 +763,20 @@ Widget _passiveForm(
         Row(
           children: [
             Expanded(
-              flex: 3,
-              child: AppDropdown<int>(
-                value: deadline?.month ?? 0,
-                label: 'Срок: месяц',
-                items: [
-                  const DropdownMenuItem(value: 0, child: Text('без срока')),
-                  for (int i = 1; i <= 12; i++) DropdownMenuItem(value: i, child: Text(_monthNom[i - 1])),
-                ],
-                onChanged: (v) => onDeadline(
-                  v == null || v == 0 ? null : DateTime(deadline?.year ?? now.year + 5, v),
-                ),
+              child: AppDateField(
+                monthOnly: true,
+                label: 'Срок',
+                emptyLabel: 'без срока',
+                value: deadline,
+                firstDate: DateTime(now.year, now.month),
+                lastDate: DateTime(now.year + 40, 12),
+                onPicked: onDeadline,
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 2,
-              child: AppDropdown<int>(
-                value: deadline?.year ?? 0,
-                label: 'год',
-                items: [
-                  const DropdownMenuItem(value: 0, child: Text('—')),
-                  for (int y = now.year; y <= now.year + 40; y++) DropdownMenuItem(value: y, child: Text('$y')),
-                ],
-                onChanged: (v) => onDeadline(v == null || v == 0 ? null : DateTime(v, deadline?.month ?? 12)),
-              ),
-            ),
+            if (deadline != null) ...[
+              const SizedBox(width: 6),
+              TextButton(onPressed: () => onDeadline(null), child: const Text('Без срока')),
+            ],
           ],
         ),
         const SizedBox(height: 4),
@@ -928,19 +889,23 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
             ),
             const SizedBox(height: 14),
             if (p.monthsLeft > 0) ...[
-              _GoalChart(
-                plan: p,
-                child: CustomPaint(
-                  painter: _GoalChartPainter(
-                    needed: p.monthly > 0.5 ? p.pathWith : const [],
-                    saving: p.saving > 0 ? p.pathSaving : const [],
-                    without: p.pathWithout,
-                    target: goal.amount,
-                    grid: ctx.hairline,
-                    hidden: false,
-                  ),
-                  size: Size.infinite,
-                ),
+              MultiLineChart(
+                height: 190,
+                series: [
+                  if (p.monthly > 0.5) ChartSeries(label: 'нужно', values: p.pathWith, color: _gold),
+                  if (p.saving > 0) ChartSeries(label: 'ваши', values: p.pathSaving, color: _savingColor),
+                  ChartSeries(label: 'без взносов', values: p.pathWithout, color: AppColors.violet, dashed: true),
+                ],
+                dateOf: (i) {
+                  final now = DateTime.now();
+                  final d = DateTime(now.year, now.month + i);
+                  return '${_monthNom[d.month - 1]} ${d.year}';
+                },
+                format: (v) => Fmt.money(v),
+                target: goal.amount,
+                targetLabel: Fmt.compact(goal.amount),
+                startLabel: 'сейчас',
+                endLabel: '${Fmt.monthShort(goal.deadline.month)} ${goal.deadline.year}',
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -1119,204 +1084,7 @@ Widget _legend(BuildContext context, Color color, String text, {required bool da
 
 const _savingColor = AppColors.info;
 
-class _GoalChartPainter extends CustomPainter {
-  /// Нужный путь к цели (с нужными взносами). Пусто — успеваете и так.
-  final List<double> needed;
-
-  /// Путь с тем, что человек откладывает. Пусто — взносы не указаны.
-  final List<double> saving;
-  final List<double> without;
-  final double target;
-  final Color grid;
-  final bool hidden;
-
-  _GoalChartPainter({
-    required this.needed,
-    required this.saving,
-    required this.without,
-    required this.target,
-    required this.grid,
-    required this.hidden,
-  });
-
-  static const _labelSpace = 66.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (without.length < 2) return;
-    // Справа оставляем место под подписи сумм у концов линий.
-    final w = size.width - _labelSpace;
-    final all = [...needed, ...saving, ...without, target];
-    final lo = all.reduce(math.min) * 0.95;
-    final hi = all.reduce(math.max) * 1.05;
-    double y(double v) => size.height - (v - lo) / (hi - lo) * size.height;
-    double x(int i) => i / (without.length - 1) * w;
-
-    final dashH = Paint()
-      ..color = _gold.withOpacity(0.9)
-      ..strokeWidth = 1.4;
-    for (double xx = 0; xx < w; xx += 10) {
-      canvas.drawLine(Offset(xx, y(target)), Offset(math.min(xx + 6, w), y(target)), dashH);
-    }
-
-    Path pathOf(List<double> v) {
-      final path = Path()..moveTo(x(0), y(v[0]));
-      for (int i = 1; i < v.length; i++) {
-        path.lineTo(x(i), y(v[i]));
-      }
-      return path;
-    }
-
-    // Без взносов — пунктиром.
-    final dashPaint = Paint()
-      ..color = AppColors.violet.withOpacity(0.85)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    for (final m in pathOf(without).computeMetrics()) {
-      for (double d = 0; d < m.length; d += 9) {
-        canvas.drawPath(m.extractPath(d, math.min(d + 5, m.length)), dashPaint);
-      }
-    }
-    Paint solid(Color c, double width) => Paint()
-      ..color = c
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = width
-      ..strokeCap = StrokeCap.round;
-    if (needed.length > 1) canvas.drawPath(pathOf(needed), solid(_gold, 2.6));
-    if (saving.length > 1) canvas.drawPath(pathOf(saving), solid(_savingColor, 2.4));
-    canvas.drawCircle(Offset(x(0), y(without.first)), 4.5, Paint()..color = Colors.white);
-
-    // Подписи у концов линий: цель, с вашими взносами, без взносов. Если
-    // концы рядом, подписи раздвигаются, чтобы не налезать друг на друга.
-    final labels = <({double value, String text, Color color})>[
-      (value: target, text: goalShort(target), color: _gold),
-      if (saving.length > 1 && (saving.last - target).abs() > (hi - lo) * 0.02)
-        (value: saving.last, text: '≈${goalShort(saving.last)}', color: _savingColor),
-      (value: without.last, text: '≈${goalShort(without.last)}', color: AppColors.violet),
-    ];
-    final painters = [
-      for (final l in labels)
-        TextPainter(
-          text: TextSpan(
-            text: hidden ? '•••' : l.text,
-            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: l.color),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout(maxWidth: _labelSpace - 6),
-    ];
-    final order = List.generate(labels.length, (i) => i)..sort((a, b) => y(labels[a].value).compareTo(y(labels[b].value)));
-    final tops = List<double>.filled(labels.length, 0);
-    const gap = 2.0;
-    double prevBottom = -double.infinity;
-    for (final i in order) {
-      final h = painters[i].height;
-      var top = (y(labels[i].value) - h / 2).clamp(0.0, size.height - h).toDouble();
-      if (top < prevBottom + gap) top = prevBottom + gap;
-      tops[i] = top;
-      prevBottom = top + h;
-    }
-    // Если вылезли за низ — сдвигаем всю стопку вверх.
-    final overflow = prevBottom - size.height;
-    if (overflow > 0) {
-      for (int i = 0; i < tops.length; i++) {
-        tops[i] = math.max(0, tops[i] - overflow);
-      }
-    }
-    for (int i = 0; i < labels.length; i++) {
-      painters[i].paint(canvas, Offset(w + 6, tops[i]));
-    }
-  }
-
-  @override
-  bool shouldRepaint(_GoalChartPainter old) =>
-      old.target != target ||
-      old.hidden != hidden ||
-      old.needed.length != needed.length ||
-      old.saving.length != saving.length ||
-      old.without.length != without.length;
-}
 
 
 Widget _plain(String _, {double? fontSize, required Widget child}) => child;
 
-/// График цели с подсказкой: ведёте пальцем — видно месяц и суммы по линиям.
-class _GoalChart extends StatefulWidget {
-  final GoalPlan plan;
-  final Widget child;
-  const _GoalChart({required this.plan, required this.child});
-
-  @override
-  State<_GoalChart> createState() => _GoalChartState();
-}
-
-class _GoalChartState extends State<_GoalChart> {
-  int? _i;
-
-  void _at(double dx, double width) {
-    final n = widget.plan.pathWithout.length;
-    if (n < 2 || width <= 0) return;
-    setState(() => _i = (dx / width * (n - 1)).round().clamp(0, n - 1));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.plan;
-    final i = _i;
-    String? tip;
-    if (i != null) {
-      final now = DateTime.now();
-      final d = DateTime(now.year, now.month + i);
-      final parts = <String>[
-        '${_monthNom[d.month - 1]} ${d.year}',
-        if (p.monthly > 0.5 && i < p.pathWith.length) 'нужно: ${Fmt.money(p.pathWith[i])}',
-        if (p.saving > 0 && i < p.pathSaving.length) 'с вашими: ${Fmt.money(p.pathSaving[i])}',
-        'без взносов: ${Fmt.money(p.pathWithout[i])}',
-      ];
-      tip = parts.join('\n');
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 64,
-          child: tip == null
-              ? Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Text('Проведите по графику пальцем', style: TextStyle(fontSize: 11.5, color: context.dim)),
-                )
-              : Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Text(tip, style: const TextStyle(fontSize: 11.5, height: 1.3, fontWeight: FontWeight.w600)),
-                ),
-        ),
-        const SizedBox(height: 4),
-        LayoutBuilder(
-          builder: (context, c) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (e) => _at(e.localPosition.dx, c.maxWidth),
-            onHorizontalDragStart: (e) => _at(e.localPosition.dx, c.maxWidth),
-            onHorizontalDragUpdate: (e) => _at(e.localPosition.dx, c.maxWidth),
-            onHorizontalDragEnd: (_) => setState(() => _i = null),
-            onTapUp: (_) => setState(() => _i = null),
-            child: SizedBox(
-              height: 170,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  widget.child,
-                  if (i != null && p.pathWithout.length > 1)
-                    Positioned(
-                      left: i / (p.pathWithout.length - 1) * c.maxWidth - 0.5,
-                      top: 0,
-                      bottom: 0,
-                      child: Container(width: 1, color: context.dim.withOpacity(0.6)),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}

@@ -6,6 +6,7 @@ import '../design/format.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../models/purchase.dart';
+import '../services/analytics_service.dart';
 import '../services/favorites_service.dart';
 import '../services/moex_sync_service.dart';
 import '../services/storage_service.dart';
@@ -20,11 +21,15 @@ class SecurityPickerField extends StatelessWidget {
   /// Какие бумаги показывать. Не задан — все.
   final bool Function(SecurityInfo)? filter;
 
+  /// Только бумаги, которые есть в портфеле, — для продажи.
+  final bool holdingsOnly;
+
   const SecurityPickerField({
     super.key,
     required this.onSelected,
     this.hintText = 'Выбрать бумагу',
     this.filter,
+    this.holdingsOnly = false,
   });
 
   @override
@@ -35,7 +40,7 @@ class SecurityPickerField extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () async {
-          final s = await showSecurityPicker(context, filter: filter);
+          final s = await showSecurityPicker(context, filter: filter, holdingsOnly: holdingsOnly);
           if (s != null) onSelected(s);
         },
         child: Container(
@@ -59,12 +64,13 @@ class SecurityPickerField extends StatelessWidget {
 }
 
 /// Лист выбора бумаги. Возвращает выбранную или null.
-Future<SecurityInfo?> showSecurityPicker(BuildContext context, {bool Function(SecurityInfo)? filter}) {
+Future<SecurityInfo?> showSecurityPicker(BuildContext context,
+    {bool Function(SecurityInfo)? filter, bool holdingsOnly = false}) {
   return showAppSheet<SecurityInfo>(
     context: context,
     builder: (ctx) => SizedBox(
       height: MediaQuery.of(ctx).size.height * 0.86,
-      child: _PickerSheet(filter: filter),
+      child: _PickerSheet(filter: filter, holdingsOnly: holdingsOnly),
     ),
   );
 }
@@ -73,7 +79,8 @@ enum _Tab { all, favorites, stocks, bonds, funds }
 
 class _PickerSheet extends StatefulWidget {
   final bool Function(SecurityInfo)? filter;
-  const _PickerSheet({this.filter});
+  final bool holdingsOnly;
+  const _PickerSheet({this.filter, this.holdingsOnly = false});
 
   @override
   State<_PickerSheet> createState() => _PickerSheetState();
@@ -90,6 +97,9 @@ class _PickerSheetState extends State<_PickerSheet> {
   late final List<SecurityInfo> _recent;
   late final Map<String, double> _prices;
 
+  /// Сколько штук каждой бумаги в портфеле — для режима продажи.
+  Map<String, double> _qty = const {};
+
   @override
   void initState() {
     super.initState();
@@ -97,7 +107,25 @@ class _PickerSheetState extends State<_PickerSheet> {
     final snapshot = MoexSyncService.marketSnapshot.value;
     _prices = {for (final e in snapshot.entries) e.key: e.value.price};
     final turnover = {for (final e in snapshot.entries) e.key: e.value.turnover};
-    final pool = fits == null ? SecuritiesDatabase.all.toList() : SecuritiesDatabase.all.where(fits).toList();
+    final List<SecurityInfo> pool;
+    if (widget.holdingsOnly) {
+      // Продать можно только то, что есть: список — бумаги портфеля.
+      final names = {for (final p in StorageService.purchases) p.ticker.toUpperCase(): p};
+      final holdings = AnalyticsService.currentHoldings();
+      _qty = {for (final e in holdings.entries) if (e.value.qty > 1e-9) e.key.toUpperCase(): e.value.qty};
+      pool = [
+        for (final t in _qty.keys)
+          SecuritiesDatabase.byTicker(t) ??
+              SecurityInfo(
+                ticker: names[t]?.ticker ?? t,
+                name: names[t]?.name ?? t,
+                type: names[t]?.type ?? AssetType.stock,
+                sector: names[t]?.sector ?? '',
+              ),
+      ];
+    } else {
+      pool = fits == null ? SecuritiesDatabase.all.toList() : SecuritiesDatabase.all.where(fits).toList();
+    }
     pool.sort((a, b) =>
         (turnover[b.ticker.toUpperCase()] ?? 0).compareTo(turnover[a.ticker.toUpperCase()] ?? 0));
     _byTurnover = pool;
@@ -134,6 +162,12 @@ class _PickerSheetState extends State<_PickerSheet> {
       };
 
   List<SecurityInfo> _items() {
+    if (widget.holdingsOnly) {
+      final q = _q.trim().toLowerCase();
+      return _byTurnover
+          .where((s) => _typeOk(s) && (q.isEmpty || s.ticker.toLowerCase().contains(q) || s.name.toLowerCase().contains(q)))
+          .toList();
+    }
     if (_q.trim().isNotEmpty) {
       final fits = widget.filter;
       return SecuritiesDatabase.search(
@@ -201,7 +235,10 @@ class _PickerSheetState extends State<_PickerSheet> {
                 ],
               ),
             ),
-            if (price != null && price > 0) ...[
+            if (widget.holdingsOnly) ...[
+              const SizedBox(width: 8),
+              Text('${Fmt.qty(_qty[s.ticker.toUpperCase()] ?? 0)} шт', style: const TextStyle(fontSize: 13.5)),
+            ] else if (price != null && price > 0) ...[
               const SizedBox(width: 8),
               Text(Fmt.price(price, type: s.type), style: const TextStyle(fontSize: 13.5)),
             ],
@@ -214,13 +251,14 @@ class _PickerSheetState extends State<_PickerSheet> {
   @override
   Widget build(BuildContext context) {
     final items = _items();
-    final showRecent = _tab == _Tab.favorites && _q.trim().isEmpty && _recent.isNotEmpty;
+    final showRecent = !widget.holdingsOnly && _tab == _Tab.favorites && _q.trim().isEmpty && _recent.isNotEmpty;
+    final types = {for (final s in _byTurnover) s.type};
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).viewInsets.bottom),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SheetHeader(title: 'Выбор бумаги'),
+          SheetHeader(title: widget.holdingsOnly ? 'Что продаёте' : 'Выбор бумаги'),
           const SizedBox(height: 10),
           TextField(
             controller: _ctrl,
@@ -237,10 +275,10 @@ class _PickerSheetState extends State<_PickerSheet> {
             child: Row(
               children: [
                 _chip('Все', _Tab.all),
-                _chip('Избранное', _Tab.favorites),
-                _chip('Акции', _Tab.stocks),
-                _chip('Облигации', _Tab.bonds),
-                _chip('Фонды', _Tab.funds),
+                if (!widget.holdingsOnly) _chip('Избранное', _Tab.favorites),
+                if (!widget.holdingsOnly || types.contains(AssetType.stock)) _chip('Акции', _Tab.stocks),
+                if (!widget.holdingsOnly || types.contains(AssetType.bond)) _chip('Облигации', _Tab.bonds),
+                if (!widget.holdingsOnly || types.contains(AssetType.etf)) _chip('Фонды', _Tab.funds),
               ],
             ),
           ),
@@ -256,7 +294,11 @@ class _PickerSheetState extends State<_PickerSheet> {
                   return Padding(
                     padding: const EdgeInsets.only(top: 30),
                     child: Text(
-                      _tab == _Tab.favorites ? 'В избранном пока ничего нет' : 'Ничего не найдено',
+                      widget.holdingsOnly && _byTurnover.isEmpty
+                          ? 'В портфеле пока нет бумаг'
+                          : _tab == _Tab.favorites
+                              ? 'В избранном пока ничего нет'
+                              : 'Ничего не найдено',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: context.dim),
                     ),

@@ -137,6 +137,9 @@ class AppDateField extends StatelessWidget {
   final DateTime? firstDate;
   final DateTime? lastDate;
 
+  /// Выбор только месяца и года — например, срок цели.
+  final bool monthOnly;
+
   const AppDateField({
     super.key,
     required this.value,
@@ -145,10 +148,17 @@ class AppDateField extends StatelessWidget {
     this.emptyLabel = 'Не выбрана',
     this.firstDate,
     this.lastDate,
+    this.monthOnly = false,
   });
 
-  String _fmt(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  static const _months = [
+    'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+    'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
+  ];
+
+  String _fmt(DateTime d) => monthOnly
+      ? '${_months[d.month - 1]} ${d.year}'
+      : '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
   @override
   Widget build(BuildContext context) {
@@ -156,6 +166,17 @@ class AppDateField extends StatelessWidget {
       borderRadius: AppRadius.all(AppRadius.sm),
       onTap: () async {
         final now = DateTime.now();
+        if (monthOnly) {
+          final m = await showAppMonthPicker(context: context, initial: value ?? now);
+          if (m == null) return;
+          var d = DateTime(m.year, m.month);
+          final f = firstDate;
+          final l = lastDate;
+          if (f != null && d.isBefore(DateTime(f.year, f.month))) d = DateTime(f.year, f.month);
+          if (l != null && d.isAfter(DateTime(l.year, l.month))) d = DateTime(l.year, l.month);
+          onPicked(d);
+          return;
+        }
         final picked = await showAppDatePicker(
           context: context,
           initialDate: value ?? now,

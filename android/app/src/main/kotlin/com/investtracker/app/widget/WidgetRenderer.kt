@@ -294,7 +294,7 @@ object WidgetRenderer {
             v.setViewVisibility(R.id.time, View.VISIBLE)
             v.setTextViewText(R.id.time, timeText(s.updatedAt))
         }
-        v.setTextViewText(R.id.value, if (s.hidden) "••••••₽" else money(s.value))
+        v.setTextViewText(R.id.value, if (s.hidden) "••••••" else money(s.value))
         v.setImageViewResource(R.id.eye, if (s.hidden) R.drawable.weye_off else R.drawable.weye_on)
         v.setInt(R.id.eye, "setColorFilter", c.dim)
 

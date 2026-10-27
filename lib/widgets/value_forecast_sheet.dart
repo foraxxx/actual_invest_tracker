@@ -46,15 +46,22 @@ void showValueForecastSheet(BuildContext context) {
 const valueForecastSubtitle = 'Три сценария для текущего портфеля';
 
 /// Пояснение к прогнозу стоимости — за значком ⓘ.
-String valueForecastInfo() {
+List<(String, String)> valueForecastInfo() {
   final m = ValueForecastService.assumptions;
   String p(double? v) => v == null ? '—' : '${(v * 100).round()}%';
-  return 'Только то, что уже есть в портфеле, без плановых покупок. '
-      'Акции: медианный рост ${Fmt.pct(m.stockMedianGrowthPct)} в год, разброс '
-      '${(m.stockVolatility * 100).round()}% — ${m.source}. '
-      'Деньги после погашения облигаций: ${p(m.reinvestYield[ForecastScenario.pessimistic])} / '
-      '${p(m.reinvestYield[ForecastScenario.realistic])} / ${p(m.reinvestYield[ForecastScenario.optimistic])} годовых. '
-      'Купоны и дивиденды вкладываются в ту же бумагу. Это расчёт по допущениям, а не предсказание.';
+  return [
+    ('Что считаем', 'только бумаги, которые уже лежат в портфеле. Новые покупки и планы не учитываются.'),
+    ('Акции', 'в среднем дорожают на ${Fmt.pct(m.stockMedianGrowthPct).replaceAll('+', '')} в год, '
+        'но год на год не приходится — цена может отклоняться примерно на ${(m.stockVolatility * 100).round()}%. '
+        'Откуда цифры: ${m.source}.'),
+    ('Облигации', 'приносят купоны, а при погашении возвращают номинал. Эти деньги снова вкладываются — '
+        'под ${p(m.reinvestYield[ForecastScenario.pessimistic])} в плохом сценарии, '
+        '${p(m.reinvestYield[ForecastScenario.realistic])} в среднем и '
+        '${p(m.reinvestYield[ForecastScenario.optimistic])} в хорошем.'),
+    ('Выплаты', 'дивиденды и купоны после налога сразу докупают ту же бумагу.'),
+    ('Сценарии', 'плохой — рынок растёт слабо, средний — как обычно бывало раньше, хороший — лучше обычного. '
+        '«Все» показывает три линии сразу.'),
+  ];
 }
 
 String yearsLabel(int n) => _yearsLabel(n);
@@ -103,6 +110,9 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
   int get _years => widget.years;
   ForecastScenario _scenario = ForecastScenario.realistic;
 
+  /// «Все» — три сценария на одном графике.
+  bool _all = false;
+
   @override
   void initState() {
     super.initState();
@@ -133,7 +143,7 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
   Widget build(BuildContext context) {
     final bundle = ValueForecastService.build(_years);
     final results = bundle.results;
-    final selected = results[_scenario]!;
+    final selected = results[_all ? ForecastScenario.realistic : _scenario]!;
     final b = selected.breakdown;
     final points = selected.points;
     final color = _scenarioColor(_scenario);
@@ -142,7 +152,7 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('через ${_yearsLabel(_years)} · ${_scenarioLabel(_scenario).toLowerCase()} сценарий',
+        Text('через ${_yearsLabel(_years)} · ${_all ? 'средний сценарий' : '${_scenarioLabel(_scenario).toLowerCase()} сценарий'}',
             style: TextStyle(fontSize: 12.5, color: context.dim)),
         const SizedBox(height: 2),
         Wrap(
@@ -160,15 +170,52 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
         ),
         const SizedBox(height: 10),
         // Интерактивная линия: палец по графику — сумма на дату.
-        if (points.length >= 2)
+        if (_all && points.length >= 2) ...[
+          MultiLineChart(
+            height: 180,
+            series: [
+              for (final sc in ForecastScenario.values.reversed)
+                ChartSeries(
+                  label: _scenarioLabel(sc).toLowerCase(),
+                  values: [for (final p in results[sc]!.points) p.value],
+                  color: _scenarioColor(sc),
+                  dashed: sc != ForecastScenario.realistic,
+                ),
+            ],
+            dateOf: (i) => '${Fmt.monthShort(points[i].date.month)} ${points[i].date.year}',
+            format: (v) => Fmt.money(v),
+            startLabel: 'сейчас',
+            endLabel: '${Fmt.monthShort(points.last.date.month)} ${points.last.date.year}',
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final sc in ForecastScenario.values)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_scenarioLabel(sc), style: TextStyle(fontSize: 11, color: context.dim)),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(Fmt.money(results[sc]!.breakdown.end),
+                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _scenarioColor(sc))),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ] else if (points.length >= 2)
           Sparkline(
             values: [for (final p in points) p.value],
             color: color,
             height: 160,
             tooltipBuilder: (i, v) => '${Fmt.monthShort(points[i].date.month)} ${points[i].date.year}\n${Fmt.money(v)}',
           ),
-        const SizedBox(height: 4),
-        Row(
+        if (!_all) const SizedBox(height: 4),
+        if (!_all) Row(
           children: [
             Text('сейчас', style: TextStyle(fontSize: 10.5, color: context.dim)),
             const Spacer(),
@@ -186,11 +233,14 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
           padding: EdgeInsets.zero,
         ),
         const SizedBox(height: 8),
-        SegmentedToggle<ForecastScenario>(
-          values: ForecastScenario.values,
-          selected: _scenario,
-          labelOf: _scenarioLabel,
-          onChanged: (v) => setState(() => _scenario = v),
+        SegmentedToggle<ForecastScenario?>(
+          values: const [...ForecastScenario.values, null],
+          selected: _all ? null : _scenario,
+          labelOf: (v) => v == null ? 'Все' : _scenarioLabel(v),
+          onChanged: (v) => setState(() {
+            _all = v == null;
+            if (v != null) _scenario = v;
+          }),
           height: 40,
         ),
         const SizedBox(height: 12),

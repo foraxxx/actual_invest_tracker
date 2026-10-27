@@ -946,6 +946,7 @@ class _PositionCard extends StatelessWidget {
               )
             else ...[
               SecurityPickerField(
+                holdingsOnly: draft.isSell,
                 onSelected: (s) {
                   draft.manual = false;
                   draft.tickerCtrl.text = s.ticker;

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'tax_service.dart';
 import 'currency_service.dart';
 import 'dividend_history_service.dart';
 import 'memo.dart';
@@ -134,6 +135,16 @@ class PayoutForecastService {
 
   /// Ожидаемые выплаты по одной бумаге за 12 полных месяцев, начиная со
   /// следующего, — в рублях на всю текущую позицию.
+  /// Биржа публикует выплаты до налога. В прогнозе показываем, сколько
+  /// придёт на счёт: за вычетом НДФЛ по ставке из настроек (13% или 15%).
+  static double get netFactor {
+    try {
+      return TaxService.enabled ? 1 - TaxService.rate : 1;
+    } catch (_) {
+      return 1; // настройки налога ещё не загружены
+    }
+  }
+
   static ({double rub, String source}) forecastForTicker(String ticker) {
     final holding = AnalyticsService.currentHoldings()[ticker];
     if (holding == null || holding.qty <= 0) return (rub: 0, source: 'нет позиции');
@@ -148,7 +159,7 @@ class PayoutForecastService {
     if (perUnit.value > 0) {
       final currency = _payoutCurrency(list);
       // Умножаем на количество бумаг, которое есть сейчас, а не на прошлое.
-      return (rub: CurrencyService.toRub(perUnit.value * holding.qty, currency), source: perUnit.source);
+      return (rub: CurrencyService.toRub(perUnit.value * holding.qty * netFactor, currency), source: perUnit.source);
     }
 
     // Запасной вариант — только когда биржевой истории по бумаге нет вообще
@@ -542,7 +553,7 @@ class PayoutForecastService {
       final currency = _payoutCurrency(list);
       for (final payout in list) {
         if (!isRestOfMonth(payout, now)) continue;
-        final rub = CurrencyService.toRub(payout.amount * holding.qty, currency);
+        final rub = CurrencyService.toRub(payout.amount * holding.qty * netFactor, currency);
         total += rub;
         byTicker[entry.key] = (byTicker[entry.key] ?? 0) + rub;
         count++;

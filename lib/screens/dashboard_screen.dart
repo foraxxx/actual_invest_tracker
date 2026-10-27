@@ -350,7 +350,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        HiddenAmount.forText(active: true, 
+                        HiddenAmount.forText(active: true, toggles: true,
                           Fmt.money(currentValue),
                           fontSize: 40,
                           child: RollingNumber(
@@ -1859,7 +1859,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           ],
                                         ),
                                         const SizedBox(height: 1),
-                                        Text(m.sub, style: TextStyle(fontSize: 12, color: context.dim)),
+                                        _metricSub(m, Text(m.sub, style: TextStyle(fontSize: 12, color: context.dim))),
                                       ],
                                     ),
                                   ),
@@ -1901,13 +1901,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// Подпись под показателем прячется вместе с суммой, если в ней есть деньги.
+  Widget _metricSub(_Metric m, Widget child) =>
+      m.money && m.sub.contains('₽') ? HiddenAmount.forText(active: true, m.sub, fontSize: 12, child: child) : child;
+
   Widget _metricValue(_Metric m, double fontSize) {
     final text = Text(
       m.value,
       maxLines: 1,
       style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w700, color: m.valueColor),
     );
-    return m.money ? HiddenAmount.forText(m.value, fontSize: fontSize, child: text) : text;
+    return m.money ? HiddenAmount.forText(active: true, m.value, fontSize: fontSize, child: text) : text;
   }
 
   /// [compact] — только значок ⇄: в строке списка рядом с длинным
@@ -1990,10 +1994,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                         const SizedBox(height: 1),
-                        Text(m.sub,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11, color: context.dim)),
+                        _metricSub(
+                            m,
+                            Text(m.sub,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11, color: context.dim))),
                       ],
                     ),
                   ),
@@ -2383,7 +2389,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         child: _pnlUnitsRub
-                            ? HiddenAmount.forText(
+                            ? HiddenAmount.forText(active: true,
                                 Fmt.signedMoney(h.pnlRub),
                                 fontSize: 11,
                                 child: Text(
@@ -2418,7 +2424,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        HiddenAmount.forText(
+                        HiddenAmount.forText(active: true,
                           Fmt.money(h.valueRub),
                           fontSize: 14,
                           child: FittedBox(
@@ -2438,7 +2444,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerRight,
                             child: _pnlUnitsRub
-                                ? HiddenAmount.forText(
+                                ? HiddenAmount.forText(active: true,
                                     Fmt.signedMoney(day.rub),
                                     fontSize: 11,
                                     child: Text(

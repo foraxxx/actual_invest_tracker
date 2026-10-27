@@ -43,8 +43,17 @@ void showPayoutForecastSheet(BuildContext context) {
   );
 }
 
-const payoutForecastInfo = 'Месяцы — по объявленному графику выплат, а если его ещё нет — '
-    'по исторической сезонности. Суммы после налога. Это прогноз, а не гарантия.';
+List<(String, String)> payoutForecastInfo() {
+  final rate = (PayoutForecastService.netFactor < 1) ? '${((1 - PayoutForecastService.netFactor) * 100).round()}%' : null;
+  return [
+    ('Суммы', rate == null
+        ? 'как их объявляет компания, без вычета налога — расчёт налога выключен в настройках.'
+        : 'уже за вычетом налога $rate (ставка из настроек) — столько придёт на счёт.'),
+    ('Когда придут', 'если компания объявила дату — по ней. Если нет — в тот месяц, в который она обычно платила раньше.'),
+    ('Сколько', 'объявленные выплаты и прогноз по каждой бумаге, умноженные на то количество, что у вас сейчас.'),
+    ('Налог', 'ставка меняется в настройках налога: 13% или 15%. На ИИС с особыми условиями фактическая сумма может немного отличаться.'),
+  ];
+}
 
 /// Содержимое прогноза выплат: сумма за 12 месяцев и календарь.
 class PayoutForecastBody extends StatelessWidget {
@@ -67,7 +76,9 @@ class PayoutForecastBody extends StatelessWidget {
                 style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: AppColors.positive)),
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: Text('за 12 мес${yieldPct > 0 ? ' · ${Fmt.pct(yieldPct).replaceAll('+', '')}' : ''}',
+              child: Text(
+                  'за 12 мес${yieldPct > 0 ? ' · ${Fmt.pct(yieldPct).replaceAll('+', '')}' : ''}'
+                  '${PayoutForecastService.netFactor < 1 ? ' · после налога ${((1 - PayoutForecastService.netFactor) * 100).round()}%' : ''}',
                   style: TextStyle(fontSize: 13, color: context.dim)),
             ),
           ],

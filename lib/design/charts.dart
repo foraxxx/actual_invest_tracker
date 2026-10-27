@@ -2022,3 +2022,263 @@ class _MiniSparkPainter extends CustomPainter {
   bool shouldRepaint(_MiniSparkPainter old) =>
       !identical(old.values, values) || old.color != color || old.fill != fill || old.opacity != opacity;
 }
+
+/// Линия для [MultiLineChart].
+class ChartSeries {
+  final String label;
+  final List<double> values;
+  final Color color;
+  final bool dashed;
+  const ChartSeries({required this.label, required this.values, required this.color, this.dashed = false});
+}
+
+/// Несколько линий на одном графике с подсказкой «Г1»: ведёте пальцем —
+/// вертикальная линия, точки на линиях и плашка с датой и суммами внутри
+/// графика. Справа оставлен запас, чтобы последняя точка (например, срок
+/// цели) была внутри и палец до неё дотягивался.
+class MultiLineChart extends StatefulWidget {
+  final List<ChartSeries> series;
+  final String Function(int index) dateOf;
+  final String Function(double value) format;
+  final double height;
+
+  /// Горизонтальная пунктирная линия-цель и её подпись справа.
+  final double? target;
+  final String? targetLabel;
+  final Color targetColor;
+
+  /// Подписи под графиком слева и справа.
+  final String? startLabel;
+  final String? endLabel;
+
+  const MultiLineChart({
+    super.key,
+    required this.series,
+    required this.dateOf,
+    required this.format,
+    this.height = 180,
+    this.target,
+    this.targetLabel,
+    this.targetColor = AppColors.gold,
+    this.startLabel,
+    this.endLabel,
+  });
+
+  @override
+  State<MultiLineChart> createState() => _MultiLineChartState();
+}
+
+class _MultiLineChartState extends State<MultiLineChart> {
+  int? _i;
+  static const _left = 6.0, _right = 54.0, _top = 10.0, _bottom = 22.0;
+
+  int get _n => widget.series.fold(0, (a, s) => math.max(a, s.values.length));
+
+  void _at(double dx, double width) {
+    final n = _n;
+    if (n < 2) return;
+    final w = width - _left - _right;
+    final i = ((dx - _left) / w * (n - 1)).round().clamp(0, n - 1);
+    if (i != _i) {
+      HapticFeedback.selectionClick();
+      setState(() => _i = i);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, c) {
+      final width = c.maxWidth;
+      final n = _n;
+      double lo = double.infinity, hi = -double.infinity;
+      for (final s in widget.series) {
+        for (final v in s.values) {
+          lo = math.min(lo, v);
+          hi = math.max(hi, v);
+        }
+      }
+      if (widget.target != null) {
+        lo = math.min(lo, widget.target!);
+        hi = math.max(hi, widget.target!);
+      }
+      if (!lo.isFinite) {
+        lo = 0;
+        hi = 1;
+      }
+      if (hi - lo < 1) hi = lo + 1;
+      final pad = (hi - lo) * 0.06;
+      lo -= pad;
+      hi += pad;
+      final plotW = width - _left - _right;
+      final plotH = widget.height - _top - _bottom;
+      double x(int i) => _left + (n <= 1 ? 0 : i / (n - 1) * plotW);
+      double y(double v) => _top + (1 - (v - lo) / (hi - lo)) * plotH;
+
+      final i = _i;
+      Widget? tip;
+      if (i != null) {
+        final rows = <Widget>[
+          Text(widget.dateOf(i), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white)),
+          for (final s in widget.series)
+            if (i < s.values.length)
+              Text('${s.label} ${widget.format(s.values[i])}',
+                  style: TextStyle(fontSize: 11, height: 1.3, color: s.color)),
+        ];
+        const tipW = 156.0;
+        final left = (x(i) - tipW / 2).clamp(0.0, math.max(0.0, width - tipW));
+        tip = Positioned(
+          left: left,
+          top: 0,
+          width: tipW,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+              decoration: BoxDecoration(
+                color: const Color(0xF0222A44),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF2E3757)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: rows),
+            ),
+          ),
+        );
+      }
+
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (e) => _at(e.localPosition.dx, width),
+        onHorizontalDragStart: (e) => _at(e.localPosition.dx, width),
+        onHorizontalDragUpdate: (e) => _at(e.localPosition.dx, width),
+        onHorizontalDragEnd: (_) => setState(() => _i = null),
+        onTapUp: (_) => setState(() => _i = null),
+        child: SizedBox(
+          height: widget.height,
+          width: width,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _MultiLinePainter(
+                    series: widget.series,
+                    x: x,
+                    y: y,
+                    cursor: i,
+                    targetY: widget.target == null ? null : y(widget.target!),
+                    targetColor: widget.targetColor,
+                    endX: x(n - 1),
+                    top: _top,
+                    bottom: widget.height - _bottom,
+                    grid: context.hairline,
+                    dot: context.isDark ? const Color(0xFF141A2E) : Colors.white,
+                  ),
+                ),
+              ),
+              if (widget.target != null && widget.targetLabel != null)
+                Positioned(
+                  right: 0,
+                  top: y(widget.target!) - 8,
+                  child: Text(widget.targetLabel!,
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: widget.targetColor)),
+                ),
+              if (widget.startLabel != null)
+                Positioned(
+                  left: _left,
+                  bottom: 2,
+                  child: Text(widget.startLabel!, style: TextStyle(fontSize: 10.5, color: context.dim)),
+                ),
+              if (widget.endLabel != null)
+                Positioned(
+                  left: x(n - 1) - 40,
+                  width: 80,
+                  bottom: 2,
+                  child: Text(widget.endLabel!,
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 10.5, color: context.dim)),
+                ),
+              if (tip != null) tip,
+            ],
+          ),
+        ),
+      );
+    });
+  }
+}
+
+class _MultiLinePainter extends CustomPainter {
+  final List<ChartSeries> series;
+  final double Function(int) x;
+  final double Function(double) y;
+  final int? cursor;
+  final double? targetY;
+  final Color targetColor;
+  final double endX, top, bottom;
+  final Color grid, dot;
+
+  _MultiLinePainter({
+    required this.series,
+    required this.x,
+    required this.y,
+    required this.cursor,
+    required this.targetY,
+    required this.targetColor,
+    required this.endX,
+    required this.top,
+    required this.bottom,
+    required this.grid,
+    required this.dot,
+  });
+
+  void _dashed(Canvas canvas, Path path, Paint paint, {double on = 5, double off = 4}) {
+    for (final m in path.computeMetrics()) {
+      double d = 0;
+      while (d < m.length) {
+        canvas.drawPath(m.extractPath(d, math.min(d + on, m.length)), paint);
+        d += on + off;
+      }
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Срок — пунктир по вертикали в конце линий.
+    _dashed(canvas, Path()..moveTo(endX, top)..lineTo(endX, bottom), Paint()
+      ..color = grid
+      ..strokeWidth = 1, on: 2, off: 3);
+    if (targetY != null) {
+      _dashed(canvas, Path()..moveTo(0, targetY!)..lineTo(size.width - 50, targetY!), Paint()
+        ..color = targetColor.withOpacity(0.7)
+        ..strokeWidth = 1.2, on: 4, off: 4);
+    }
+    for (final s in series.reversed) {
+      if (s.values.length < 2) continue;
+      final pts = [for (int i = 0; i < s.values.length; i++) Offset(x(i), y(s.values[i]))];
+      final path = _monotonePath(pts);
+      final paint = Paint()
+        ..color = s.color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = s.dashed ? 2 : 2.4
+        ..strokeCap = StrokeCap.round;
+      if (s.dashed) {
+        _dashed(canvas, path, paint);
+      } else {
+        canvas.drawPath(path, paint);
+      }
+    }
+    final i = cursor;
+    if (i != null) {
+      canvas.drawLine(Offset(x(i), top - 4), Offset(x(i), bottom),
+          Paint()
+            ..color = Colors.white.withOpacity(0.45)
+            ..strokeWidth = 1);
+      for (final s in series) {
+        if (i >= s.values.length) continue;
+        final o = Offset(x(i), y(s.values[i]));
+        canvas.drawCircle(o, 5.5, Paint()..color = dot);
+        canvas.drawCircle(o, 4, Paint()..color = s.color);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MultiLinePainter old) => true;
+}

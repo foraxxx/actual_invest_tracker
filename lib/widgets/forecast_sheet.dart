@@ -115,13 +115,15 @@ class _ForecastSheetState extends State<_ForecastSheet> {
   }
 
   void _showInfo(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(_tab == 0 ? 'Прогноз выплат' : 'Прогноз стоимости'),
-        content: Text(_tab == 0 ? payoutForecastInfo : valueForecastInfo()),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Понятно'))],
-      ),
-    );
+    if (_tab == 0) {
+      showInfoSheet(context, title: 'Как считается прогноз выплат', parts: payoutForecastInfo());
+    } else {
+      showInfoSheet(
+        context,
+        title: 'Как считается прогноз стоимости',
+        parts: valueForecastInfo(),
+        footer: 'Это расчёт по допущениям, а не обещание: рынок может пойти иначе.',
+      );
+    }
   }
 }

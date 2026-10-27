@@ -1520,16 +1520,12 @@ class _BudgetScreenState extends State<BudgetScreen> {
                     const SizedBox(width: 8),
                     SizedBox(
                       width: 150,
-                      child: AppDropdown<int>(
-                        value: days[i],
+                      child: AppDateField(
+                        value: DateTime(_y, _m, days[i]),
                         label: days[i] == defaultDay(i) ? 'Когда приходит' : 'Только в этом месяце',
-                        items: [
-                          for (int d = 1; d <= dim; d++)
-                            DropdownMenuItem(value: d, child: Text('$d ${_monthsGen[_m - 1]}')),
-                        ],
-                        onChanged: (d) {
-                          if (d != null) setSheet(() => days[i] = d);
-                        },
+                        firstDate: DateTime(_y, _m, 1),
+                        lastDate: DateTime(_y, _m, dim),
+                        onPicked: (d) => setSheet(() => days[i] = d.day),
                       ),
                     ),
                   ],
@@ -1661,15 +1657,13 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   const SizedBox(width: 8),
                   SizedBox(
                     width: 150,
-                    child: AppDropdown<int>(
-                      value: day,
+                    child: AppDateField(
+                      value: DateTime(_y, _m, day),
                       label: 'Дата',
-                      items: [
-                        for (int d = 1; d <= dim; d++)
-                          DropdownMenuItem(value: d, child: Text('$d ${_monthsGen[_m - 1]}')),
-                      ],
-                      onChanged: (d) {
-                        if (d != null) setSheet(() => day = d);
+                      firstDate: DateTime(_y, _m, 1),
+                      lastDate: DateTime(_y, _m, dim),
+                      onPicked: (d) {
+                        setSheet(() => day = d.day);
                       },
                     ),
                   ),

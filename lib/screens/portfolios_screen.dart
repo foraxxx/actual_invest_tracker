@@ -328,7 +328,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
               child: Shimmer(width: 200, height: 38, radius: 10),
             )
           else
-            HiddenAmount.forText(active: true, 
+            HiddenAmount.forText(active: true, toggles: true,
               Fmt.money(value),
               fontSize: 34,
               child: RollingNumber(
