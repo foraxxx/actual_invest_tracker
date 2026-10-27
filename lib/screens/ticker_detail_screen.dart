@@ -877,8 +877,9 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
         : (now > prev ? AppColors.positive : AppColors.negative);
     final cells = [
       ('Количество', '${Fmt.qty(holding.qty)} шт', null),
-      ('Средняя цена', Fmt.price(holding.avgCost, type: type), null),
-      ('Сейчас', Fmt.price(now, type: type), nowColor),
+      // От 1 000 ₽ копейки не пишем.
+      ('Средняя цена', holding.avgCost >= 1000 ? Fmt.group(holding.avgCost) : Fmt.price(holding.avgCost, type: type), null),
+      ('Сейчас', now >= 1000 ? Fmt.group(now) : Fmt.price(now, type: type), nowColor),
     ];
     const labelStyle = TextStyle(fontFamily: 'Inter', fontSize: 12);
     const valueStyle = TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w600);
@@ -1361,8 +1362,10 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                   ],
                 ),
               ),
+              // Изменение за период — прижато к правому краю.
               if (visibleValues.length > 1)
-                Flexible(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 190),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
@@ -1434,6 +1437,8 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
                             referenceValue: avgPrice,
                             referenceLabel: avgPrice == null ? null : Fmt.price(avgPrice, type: assetType),
                             sideLabels: true,
+                            // От 1 000 ₽ — без копеек.
+                            sideLabel: (all.isNotEmpty && all.last.value >= 1000) ? (v) => Fmt.group(v) : null,
                           );
                         },
                       ),

@@ -205,7 +205,7 @@ class PassiveGoalService {
       months: forecastMonths(now: today),
       value: value,
       saving: saving,
-      rate: GoalService.monthlyGrowthRate(60, value),
+      rate: _rate(goal, value),
       // Доходность новых покупок всегда автоматически — по рынку.
       newYieldPct: market ?? fallbackNewYieldPct,
       newYieldAuto: true,
@@ -215,6 +215,16 @@ class PassiveGoalService {
     _cacheKey = key;
     _cache = result;
     return result;
+  }
+
+  /// Темп роста с учётом того, сколько выплат человек вкладывает обратно.
+  static double _rate(PassiveGoal goal, double value) {
+    final full = GoalService.stableGrowthRate(value);
+    if (goal.payoutShare >= 1 || value <= 0) return full;
+    final payouts = PayoutForecastService.portfolioForecastByMonth().values.fold(0.0, (a, b) => a + b);
+    final taken = (payouts / value).clamp(0.0, 0.3) * (1 - goal.payoutShare);
+    final yearly = math.pow(1 + full, 12).toDouble() - taken;
+    return math.pow(math.max(0.01, yearly), 1 / 12).toDouble() - 1;
   }
 
   static double _payingValue() {

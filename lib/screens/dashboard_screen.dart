@@ -350,7 +350,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        HiddenAmount.forText(
+                        HiddenAmount.forText(active: true, 
                           Fmt.money(currentValue),
                           fontSize: 40,
                           child: RollingNumber(
@@ -940,7 +940,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _cashSheet(CashSummary cash) {
     final years = cash.moves.map((move) => move.date.year).toSet().toList()
       ..sort((a, b) => b.compareTo(a));
-    int selectedYear = years.isEmpty ? DateTime.now().year : years.first;
+    // Открыт только текущий год (или последний, где есть операции).
+    final openYears = <int>{if (years.isNotEmpty) years.contains(DateTime.now().year) ? DateTime.now().year : years.first};
     final recordedDeposits = cash.invested - cash.autoInvested;
     final purchases = cash.moves
         .where((move) => move.kind == CashMoveKind.buy)
@@ -953,7 +954,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          final history = cash.moves.where((move) => move.date.year == selectedYear).toList();
           return DraggableScrollableSheet(
             initialChildSize: 0.8,
             minChildSize: 0.5,
@@ -1062,21 +1062,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 18),
             SectionTitle(
-              title: 'История за $selectedYear год',
-              subtitle: '${history.length} ${Fmt.plural(history.length, "операция", "операции", "операций")}',
+              title: 'История',
+              subtitle: '${cash.moves.length} ${Fmt.plural(cash.moves.length, "операция", "операции", "операций")}',
               padding: const EdgeInsets.only(bottom: 10),
             ),
-            if (years.length > 1) ...[
-              PillTabs<int>(
-                values: years,
-                selected: selectedYear,
-                labelOf: (year) => '$year',
-                onChanged: (year) => setSheetState(() => selectedYear = year),
-                padding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 14),
-            ],
-            ...history.map((move) => _cashRow(ctx, move)),
+            for (final year in years) ...() {
+              final list = cash.moves.where((move) => move.date.year == year).toList();
+              final deposited = list.where((m) => m.kind == CashMoveKind.deposit || m.kind == CashMoveKind.autoDeposit).fold(0.0, (a, m) => a + m.amountRub);
+              final open = openYears.contains(year);
+              return <Widget>[
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setSheetState(() => open ? openYears.remove(year) : openYears.add(year)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                    child: Row(
+                      children: [
+                        Text('$year', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${list.length} ${Fmt.plural(list.length, "операция", "операции", "операций")}',
+                            style: TextStyle(fontSize: 12, color: ctx.dim),
+                          ),
+                        ),
+                        if (deposited > 0)
+                          Text('+${Fmt.money(deposited)}',
+                              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.positive)),
+                        const SizedBox(width: 6),
+                        FoldArrow(open: open),
+                      ],
+                    ),
+                  ),
+                ),
+                if (open) ...list.map((move) => _cashRow(ctx, move)),
+                Divider(height: 1, color: ctx.hairline),
+              ];
+            }(),
               ],
             ),
           );
@@ -1424,7 +1446,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Builder(builder: (context) {
       Widget amount(double rub) {
         final text = Fmt.signedMoney(rub);
-        return HiddenAmount.forText(
+        return HiddenAmount.forText(active: true, 
           text,
           fontSize: 14,
           child: Text(
@@ -2252,7 +2274,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        HiddenAmount.forText(
+        HiddenAmount.forText(active: true, 
           money,
           fontSize: 13.5,
           child: Text(money, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),

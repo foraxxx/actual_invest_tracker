@@ -156,6 +156,18 @@ class AppTheme {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         shape: RoundedRectangleBorder(borderRadius: AppRadius.all(AppRadius.xl)),
       ),
+      // Переключатели всегда зелёные — не зависят от цвета темы.
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected) ? Colors.white : null,
+        ),
+        trackColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected) ? AppColors.positive : null,
+        ),
+        trackOutlineColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected) ? AppColors.positive : null,
+        ),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         // Основное действие везде одного вида: светлая кнопка на тёмной
         // теме, тёмная — на светлой.

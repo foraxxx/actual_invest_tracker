@@ -130,8 +130,20 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
     }
 
     return PageTour(
-      pageId: 'portfolios',
-      steps: const [
+      // Пока портфелей нет, показываем только кнопку создания; полный тур —
+      // когда появится первый портфель.
+      key: ValueKey(list.isEmpty),
+      pageId: list.isEmpty ? 'portfolios_empty' : 'portfolios',
+      steps: list.isEmpty
+          ? const [
+              PageTourStep(
+                anchor: 'fab',
+                title: 'Начните с портфеля',
+                text: 'Портфель — это отдельный счёт: брокерский или ИИС. Создайте первый, '
+                    'и внутри появятся сделки, выплаты и планы. Можно и загрузить отчёт брокера.',
+              ),
+            ]
+          : const [
         PageTourStep(
           anchor: 'summary',
           title: 'Сводка по всем портфелям',
@@ -160,7 +172,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
               ? EmptyState(
                   icon: Icons.folder_off_outlined,
                   title: 'Портфелей нет',
-                  subtitle: 'Создайте первый портфель — в нём будут храниться сделки, выплаты и планы.',
+                  subtitle: 'Создайте первый портфель кнопкой «Портфель» внизу — в нём будут храниться сделки, выплаты и планы.',
                 )
               : RefreshIndicator(
                   onRefresh: _pullToRefresh,
@@ -316,7 +328,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
               child: Shimmer(width: 200, height: 38, radius: 10),
             )
           else
-            HiddenAmount.forText(
+            HiddenAmount.forText(active: true, 
               Fmt.money(value),
               fontSize: 34,
               child: RollingNumber(
@@ -344,12 +356,17 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
+                HiddenAmount.forText(
+                  active: true,
                   Fmt.signedMoney(profit),
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.pnl(profit),
+                  fontSize: 15,
+                  child: Text(
+                    Fmt.signedMoney(profit),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.pnl(profit),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -456,7 +473,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    HiddenAmount.forText(
+                    HiddenAmount.forText(active: true, 
                       Fmt.money(stat.valueRub),
                       fontSize: 14.5,
                       child: Text(

@@ -32,6 +32,16 @@ class PortfolioWidgetProvider : AppWidgetProvider() {
         render(context, manager, id)
     }
 
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_TOGGLE_HIDDEN) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean(KEY_HIDDEN, !prefs.getBoolean(KEY_HIDDEN, false)).apply()
+            updateAll(context)
+            return
+        }
+        super.onReceive(context, intent)
+    }
+
     override fun onEnabled(context: Context) {
         WidgetUpdateWorker.schedule(context)
     }
@@ -41,6 +51,14 @@ class PortfolioWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
+        const val ACTION_TOGGLE_HIDDEN = "com.investtracker.app.widget.TOGGLE_HIDDEN"
+        private const val PREFS = "widget_local"
+        private const val KEY_HIDDEN = "hidden"
+
+        /** Суммы на виджете скрыты — переключается кнопкой-глазом на самом виджете. */
+        fun hidden(context: Context): Boolean =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_HIDDEN, false)
+
         fun ids(context: Context): IntArray =
             AppWidgetManager.getInstance(context)
                 .getAppWidgetIds(ComponentName(context, PortfolioWidgetProvider::class.java))
@@ -64,6 +82,11 @@ class PortfolioWidgetProvider : AppWidgetProvider() {
                 },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
+            val eye = PendingIntent.getBroadcast(
+                context, 1,
+                Intent(context, PortfolioWidgetProvider::class.java).setAction(ACTION_TOGGLE_HIDDEN),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
             val views: RemoteViews
             if (Build.VERSION.SDK_INT >= 31) {
                 @Suppress("DEPRECATION")
@@ -76,14 +99,14 @@ class PortfolioWidgetProvider : AppWidgetProvider() {
                     sizes
                 }
                 val map = LinkedHashMap<SizeF, RemoteViews>()
-                for (s in list) map[s] = WidgetRenderer.build(context, s.width, s.height, state, click, true)
+                for (s in list) map[s] = WidgetRenderer.build(context, s.width, s.height, state, click, true, eye)
                 views = if (map.size == 1) map.values.first() else RemoteViews(map)
             } else {
                 // Старые версии: ширина в портретной ориентации — минимальная,
                 // высота — максимальная.
                 val w = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 160).toFloat()
                 val h = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 82).toFloat()
-                views = WidgetRenderer.build(context, w, h, state, click, false)
+                views = WidgetRenderer.build(context, w, h, state, click, false, eye)
             }
             manager.updateAppWidget(id, views)
         }

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../design/charts.dart';
@@ -16,6 +17,7 @@ import '../services/moex_sync_service.dart';
 import '../services/online_price_service.dart';
 import '../services/plan_filter_service.dart';
 import '../widgets/security_picker_field.dart';
+import '../widgets/selected_security_card.dart';
 import '../widgets/ticker_avatar.dart';
 import '../widgets/undo_snack.dart';
 import 'home_screen.dart';
@@ -413,8 +415,9 @@ class _PlansScreenState extends State<PlansScreen> {
                                     overdue: overdueCount,
                                   ),
                                 ),
-                              for (final g in groups) _monthGroup(g),
+                              // Просроченные — сверху, над ожидающими, свёрнутым блоком.
                               if (overdueGroups.isNotEmpty) _foldSection(_overdueKey, overdueGroups),
+                              for (final g in groups) _monthGroup(g),
                               if (doneGroups.isNotEmpty) _foldSection(_doneKey, doneGroups),
                               const SizedBox(height: kListBottomPadding),
                             ],
@@ -752,19 +755,8 @@ class _PlansScreenState extends State<PlansScreen> {
     required int count,
     required int overdue,
   }) {
-    final accent = context.accent;
-    final hidden = AppearanceService.amountsHidden;
     final progress = total <= 0 ? 0.0 : (purchasedMoney / total).clamp(0.0, 1.0);
-    Widget stat(String label, String value, Color? color) => Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: TextStyle(fontSize: 12, color: context.dim)),
-              const SizedBox(height: 2),
-              Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: color)),
-            ],
-          ),
-        );
+    final left = math.max(0.0, total - purchasedMoney);
     return AppCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -772,38 +764,57 @@ class _PlansScreenState extends State<PlansScreen> {
           Pressable(
             onTap: () => setState(() => _summaryExpanded = !_summaryExpanded),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
-                        child: Text('Нужно ${_periodPhrase()}', style: TextStyle(fontSize: 13, color: context.dim)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Осталось пополнить ${_periodPhrase()}',
+                                style: TextStyle(fontSize: 12.5, color: context.dim)),
+                            const SizedBox(height: 2),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                total <= 0 ? '—' : '≈ ${Fmt.money(left)}',
+                                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.6),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      Text('${(progress * 100).round()}%', style: TextStyle(fontSize: 13, color: context.dim)),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('всего планов', style: TextStyle(fontSize: 12, color: context.dim)),
+                          Text(total <= 0 ? '—' : Fmt.money(total),
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    total <= 0 ? '—' : (hidden ? '••• ₽' : '≈ ${Fmt.money(total)}'),
-                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.6),
                   ),
                   if (total > 0 && !allHavePrice)
                     Text('цена указана не у всех', style: TextStyle(fontSize: 11.5, color: context.dim)),
                   const SizedBox(height: 10),
                   MiniProgressBar(value: progress, color: AppColors.positive),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
-                      stat('Куплено', hidden ? '••• ₽' : Fmt.money(purchasedMoney), AppColors.positive),
-                      stat('Покупок', '$count', null),
-                      stat('Просрочено', '$overdue', overdue > 0 ? AppColors.negative : null),
-                      AnimatedRotation(
-                        turns: _summaryExpanded ? 0.5 : 0,
-                        duration: AppDuration.fast,
-                        child: Icon(Icons.expand_more_rounded, color: context.dim),
+                      Expanded(
+                        child: Text(
+                          '$count ${Fmt.purchases(count)}'
+                          '${overdue > 0 ? ' · просрочено $overdue' : ''} · по бумагам',
+                          style: TextStyle(fontSize: 12.5, color: overdue > 0 ? AppColors.negative : context.dim),
+                        ),
                       ),
+                      FoldArrow(open: _summaryExpanded),
                     ],
                   ),
                 ],
@@ -813,12 +824,12 @@ class _PlansScreenState extends State<PlansScreen> {
           AnimatedCrossFade(
             firstChild: const SizedBox(width: double.infinity, height: 0),
             secondChild: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Column(
                 children: [
                   Divider(color: context.hairline, height: 1),
-                  const SizedBox(height: 6),
-                  ...byTicker.map((t) => _summaryRow(t, accent)),
+                  const SizedBox(height: 4),
+                  ...byTicker.map(_summaryRow),
                 ],
               ),
             ),
@@ -831,63 +842,74 @@ class _PlansScreenState extends State<PlansScreen> {
     );
   }
 
-  Widget _summaryRow(_TickerPlanSummary t, Color accent) {
+  /// Тип бумаги — буква на логотипе: «А», «О», «Ф».
+  static (String, Color) _typeMark(AssetType t) => switch (t) {
+        AssetType.stock => ('А', AppColors.info),
+        AssetType.bond => ('О', AppColors.violet),
+        AssetType.etf => ('Ф', AppColors.cyan),
+        AssetType.currency => ('В', AppColors.gold),
+        AssetType.other => ('П', AppColors.neutral),
+      };
+
+  Widget _summaryRow(_TickerPlanSummary t) {
+    final (letter, color) = _typeMark(t.type);
+    final left = math.max(0.0, t.totalEstimated - t.purchasedMoney);
+    final surface = context.isDark ? AppColors.darkSurface : AppColors.lightSurface;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
-          TickerAvatar(ticker: t.ticker, size: 30, glow: false),
+          SizedBox(
+            width: 34,
+            height: 34,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                TickerAvatar(ticker: t.ticker, size: 30, glow: false),
+                Positioned(
+                  right: -1,
+                  bottom: -1,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(color: surface, width: 2),
+                    ),
+                    child: Text(letter,
+                        style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white, height: 1)),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  t.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
-                ),
-                Text(
-                  // Без упоминания числа планов: сколько раз бумага
-                  // встречается в планах, при взгляде на прогресс не помогает.
-                  t.purchasedQty > 0
-                      ? '${Fmt.assetType(t.type)} · куплено ${Fmt.qty(t.purchasedQty)} из ${Fmt.qty(t.totalQty)} шт'
-                      : '${Fmt.assetType(t.type)} · ${Fmt.qty(t.totalQty)} шт',
-                  style: TextStyle(fontSize: 11, color: context.dim),
-                ),
-                if (t.purchasedQty > 0) ...[
-                  const SizedBox(height: 5),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: t.progress,
-                      minHeight: 4,
-                      backgroundColor: accent.withOpacity(0.15),
-                      valueColor: const AlwaysStoppedAnimation(AppColors.positive),
-                    ),
-                  ),
-                ],
+                Text(t.name,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                Text('${Fmt.qty(t.purchasedQty)} из ${Fmt.qty(t.totalQty)} шт',
+                    style: TextStyle(fontSize: 11.5, color: context.dim)),
+                const SizedBox(height: 4),
+                MiniProgressBar(value: t.progress, color: AppColors.positive),
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                t.totalEstimated > 0 ? '≈${Fmt.money(t.totalEstimated)}' : '—',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: accent),
-              ),
-              if (t.purchasedQty > 0)
-                Text(
-                  '${(t.progress * 100).round()}%',
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.positive,
-                  ),
-                ),
+              Text(t.totalEstimated > 0 ? Fmt.money(left) : '—',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              if (t.totalEstimated > 0)
+                Text('из ${Fmt.group(t.totalEstimated)}', style: TextStyle(fontSize: 11, color: context.dim)),
             ],
           ),
         ],
@@ -996,7 +1018,7 @@ class _PlansScreenState extends State<PlansScreen> {
   /// Группа по сроку. Открытая — заголовок и карточка с покупками;
   /// свёрнутая — одна карточка со сводкой.
   Widget _monthGroup(_PlanGroup g) {
-    final hidden = AppearanceService.amountsHidden;
+    const hidden = false;
     final foldKey = _foldKey('a', g);
     final open = _isOpen(foldKey);
     final title = _titleOf(g);
@@ -1132,7 +1154,7 @@ class _PlansScreenState extends State<PlansScreen> {
   /// «Просрочено» и «Выполнено» (с отменёнными) — внизу, свёрнутым блоком.
   /// Внутри — те же группы по срокам, каждая сворачивается.
   Widget _foldSection(String section, List<_PlanGroup> groups) {
-    final hidden = AppearanceService.amountsHidden;
+    const hidden = false;
     final overdue = section == _overdueKey;
     final uiKey = 'plansFold$section';
     final open = _isOpen(uiKey, byDefault: false);
@@ -1185,7 +1207,7 @@ class _PlansScreenState extends State<PlansScreen> {
 
   /// Группа по сроку внутри «Просрочено» или «Выполнено».
   Widget _subGroup(String section, _PlanGroup g) {
-    final hidden = AppearanceService.amountsHidden;
+    const hidden = false;
     final foldKey = _foldKey(section, g);
     final open = _isOpen(foldKey);
     final sum = g.totalEstimated;
@@ -1525,7 +1547,21 @@ class _PlansScreenState extends State<PlansScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                SecurityPickerField(
+                // Выбранная бумага — карточкой, как в форме сделки.
+                if (tickerCtrl.text.isNotEmpty)
+                  SelectedSecurityCard(
+                    ticker: tickerCtrl.text,
+                    name: nameCtrl.text,
+                    type: type,
+                    lotSize: lotSize,
+                    onChange: () => setSheetState(() {
+                      tickerCtrl.clear();
+                      nameCtrl.clear();
+                      selectedTicker = '';
+                    }),
+                  )
+                else
+                  SecurityPickerField(
                   onSelected: (s) async {
                     final key = s.ticker.toUpperCase();
                     selectedTicker = key;
@@ -1559,80 +1595,32 @@ class _PlansScreenState extends State<PlansScreen> {
                 ),
                 const SizedBox(height: 12),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
-                      child: AppTextField(
-                        controller: tickerCtrl,
-                        label: 'Тикер',
-                        upperCase: true,
-                        onChanged: (value) => setSheetState(() {
-                          lotSize = MoexSyncService
-                                  .marketSnapshot.value[value.trim().toUpperCase()]?.lotSize ??
-                              1;
-                        }),
+                      flex: 5,
+                      child: LotStepper(
+                        controller: qtyCtrl,
+                        lotSize: lotSize,
+                        onChanged: () => setSheetState(() {}),
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(flex: 2, child: AppTextField(controller: nameCtrl, label: 'Название')),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                AppDropdown<AssetType>(
-                  value: type,
-                  label: 'Тип актива',
-                  icon: Icons.category_outlined,
-                  items: AssetType.values
-                      .map((t) => DropdownMenuItem(value: t, child: Text(Fmt.assetType(t))))
-                      .toList(),
-                  onChanged: (v) => setSheetState(() => type = v ?? AssetType.stock),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    IconButton.filledTonal(
-                      tooltip: 'Уменьшить на один лот',
-                      icon: const Icon(Icons.remove_rounded),
-                      onPressed: () => setSheetState(() {
-                        qtyCtrl.text = '${((int.tryParse(qtyCtrl.text) ?? 0) - 1).clamp(1, 1000000)}';
-                      }),
-                    ),
-                    const SizedBox(width: 8),
                     Expanded(
+                      flex: 4,
                       child: AppTextField(
-                        controller: qtyCtrl,
-                        label: 'Количество лотов',
+                        controller: priceCtrl,
+                        label: 'Цена за бумагу',
                         number: true,
-                        integerOnly: true,
-                        suffixText: '× $lotSize шт.',
-                        onChanged: (_) => setSheetState(() {}),
+                        onChanged: (_) {
+                          priceEdited = true;
+                          setSheetState(() {});
+                        },
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton.filledTonal(
-                      tooltip: 'Добавить один лот',
-                      icon: const Icon(Icons.add_rounded),
-                      onPressed: () => setSheetState(() {
-                        qtyCtrl.text = '${((int.tryParse(qtyCtrl.text) ?? 0) + 1).clamp(1, 1000000)}';
-                      }),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                InfoBanner(
-                  icon: Icons.inventory_2_outlined,
-                  color: AppColors.info,
-                  text: '$lots лот. × $lotSize шт. = ${Fmt.qty(qty)} шт.',
-                ),
-                const SizedBox(height: 12),
-                AppTextField(
-                  controller: priceCtrl,
-                  label: 'Желаемая цена за одну бумагу',
-                  number: true,
-                  onChanged: (_) {
-                    priceEdited = true;
-                    setSheetState(() {});
-                  },
-                ),
+                LotCaption(lots: lots, lotSize: lotSize),
                 if (estimated > 0) ...[
                   const SizedBox(height: 12),
                   InfoBanner(

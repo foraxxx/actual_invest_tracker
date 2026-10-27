@@ -81,7 +81,7 @@ class PayoutYearsChart extends StatelessWidget {
                 text: Theme.of(context).colorScheme.onSurface,
                 grid: context.hairline,
                 surface: context.isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                hideAmounts: AppearanceService.amountsHidden,
+                hideAmounts: false,
                 xOf: (i) => _x(i, width),
               ),
             ),

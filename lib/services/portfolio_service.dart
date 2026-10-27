@@ -66,9 +66,16 @@ class PortfolioService {
 
   static Future<void> init() async {
     _box = await Hive.openBox<String>(_boxName);
-    if (list.isEmpty) {
-      await _saveList([PortfolioMeta(id: defaultId, name: 'Основной', createdAt: DateTime.now())]);
-      await _box.put(_activeKey, defaultId);
+    // При первом запуске портфелей нет — человек создаёт первый сам.
+    // Но если на телефоне остались данные старой версии без списка
+    // портфелей, они показываются как «Основной».
+    if (_box.get(_listKey) == null) {
+      if (await Hive.boxExists('purchases')) {
+        await _saveList([PortfolioMeta(id: defaultId, name: 'Основной', createdAt: DateTime.now())]);
+        await _box.put(_activeKey, defaultId);
+      } else {
+        await _saveList([]);
+      }
     }
   }
 
@@ -87,15 +94,19 @@ class PortfolioService {
 
   static PortfolioMeta get active {
     final l = list;
+    if (l.isEmpty) return PortfolioMeta(id: defaultId, name: 'Портфель', createdAt: DateTime.now());
     return l.firstWhere((p) => p.id == activeId, orElse: () => l.first);
   }
 
   /// Создаёт новый (пустой) портфель. Не переключает на него автоматически —
   /// вызови switchTo, если нужно сразу перейти.
   static Future<PortfolioMeta> create(String name) async {
-    final meta = PortfolioMeta(id: const Uuid().v4(), name: name.trim(), createdAt: DateTime.now());
+    final first = list.isEmpty;
+    // Первый портфель занимает боксы без суффикса — они уже открыты.
+    final meta = PortfolioMeta(id: first ? defaultId : const Uuid().v4(), name: name.trim(), createdAt: DateTime.now());
     final l = list..add(meta);
     await _saveList(l);
+    if (first) await _box.put(_activeKey, defaultId);
     version.value++;
     return meta;
   }

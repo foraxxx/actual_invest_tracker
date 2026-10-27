@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../design/charts.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/surfaces.dart';
@@ -43,6 +44,18 @@ void showValueForecastSheet(BuildContext context) {
 }
 
 const valueForecastSubtitle = 'Три сценария для текущего портфеля';
+
+/// Пояснение к прогнозу стоимости — за значком ⓘ.
+String valueForecastInfo() {
+  final m = ValueForecastService.assumptions;
+  String p(double? v) => v == null ? '—' : '${(v * 100).round()}%';
+  return 'Только то, что уже есть в портфеле, без плановых покупок. '
+      'Акции: медианный рост ${Fmt.pct(m.stockMedianGrowthPct)} в год, разброс '
+      '${(m.stockVolatility * 100).round()}% — ${m.source}. '
+      'Деньги после погашения облигаций: ${p(m.reinvestYield[ForecastScenario.pessimistic])} / '
+      '${p(m.reinvestYield[ForecastScenario.realistic])} / ${p(m.reinvestYield[ForecastScenario.optimistic])} годовых. '
+      'Купоны и дивиденды вкладываются в ту же бумагу. Это расчёт по допущениям, а не предсказание.';
+}
 
 String yearsLabel(int n) => _yearsLabel(n);
 
@@ -120,174 +133,81 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
   Widget build(BuildContext context) {
     final bundle = ValueForecastService.build(_years);
     final results = bundle.results;
-    final maturities = bundle.maturities;
-    final coverage = bundle.coverage;
-    final withPlans = ValueForecastService.withPlans;
     final selected = results[_scenario]!;
     final b = selected.breakdown;
-    final market = ValueForecastService.assumptions;
-    final endDate = selected.points.last.date;
+    final points = selected.points;
+    final color = _scenarioColor(_scenario);
 
     return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('через ${_yearsLabel(_years)} · ${_scenarioLabel(_scenario).toLowerCase()} сценарий',
+            style: TextStyle(fontSize: 12.5, color: context.dim)),
+        const SizedBox(height: 2),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.end,
+          spacing: 8,
           children: [
-            PillTabs<int>(
-              values: ValueForecastService.horizons,
-              selected: _years,
-              labelOf: _yearsLabel,
-              onChanged: widget.onYears,
-            ),
-            if (coverage.hasAny) ...[
-              const SizedBox(height: 12),
-              AppCheckRow(
-                value: withPlans,
-                title: 'Учесть плановые покупки',
-                subtitle: _plansSubtitle(coverage, results[ForecastScenario.realistic]!.plannedSpent),
-                onChanged: (v) => ValueForecastService.setWithPlans(v),
+            Text('≈ ${Fmt.money(b.end)}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+            if (b.start > 0)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(Fmt.pct((b.end / b.start - 1) * 100),
+                    style: TextStyle(fontSize: 13, color: AppColors.pnl(b.end - b.start))),
               ),
-              if (withPlans && coverage.skipped > 0) ...[
-                const SizedBox(height: 6),
-                Text(
-                  _skippedText(coverage),
-                  style: TextStyle(fontSize: 11, color: context.dim, height: 1.3),
-                ),
-              ],
-            ],
-            const SizedBox(height: 14),
-            AppCard(
-              padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: 180,
-                    child: CustomPaint(
-                      painter: _ForecastChartPainter(
-                        series: {for (final e in results.entries) e.key: e.value.points},
-                        selected: _scenario,
-                        maturities: maturities,
-                        grid: context.hairline,
-                        dotColor: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text('сейчас', style: TextStyle(fontSize: 10.5, color: context.dim)),
-                      const Spacer(),
-                      Text(
-                        '${Fmt.monthShort(endDate.month)} ${endDate.year}',
-                        style: TextStyle(fontSize: 10.5, color: context.dim),
-                      ),
-                    ],
-                  ),
-                  if (withPlans && selected.breakdown.plannedInvested > 0) ...[
-                    const SizedBox(height: 6),
-                    // Ступенька вверх в месяц плановой покупки — это внесённые
-                    // деньги, а не рост, и без подписи её легко принять за него.
-                    Text(
-                      'Ступеньки вверх — месяцы плановых покупок: это внесённые деньги, а не рост.',
-                      style: TextStyle(fontSize: 10.5, color: context.dim, height: 1.3),
-                    ),
-                  ],
-                  if (maturities.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    // Пунктир — граница, после которой облигация больше не
-                    // считается по своему графику, а деньги от неё идут под
-                    // допущение. Правее неё прогноз заметно менее точен.
-                    Text(
-                      'Пунктир — погашение облигаций. Дальше деньги от них '
-                      'вкладываются под допущенную доходность.',
-                      style: TextStyle(fontSize: 10.5, color: context.dim, height: 1.3),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            SegmentedToggle<ForecastScenario>(
-              values: ForecastScenario.values,
-              selected: _scenario,
-              labelOf: _scenarioLabel,
-              colorOf: _scenarioColor,
-              onChanged: (v) => setState(() => _scenario = v),
-            ),
-            const SizedBox(height: 12),
-            AppCard(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              child: Column(
-                children: [
-                  _row(context, 'Сейчас', Fmt.money(b.start)),
-                  // Новые деньги идут сразу под «Сейчас»: это взнос, а не
-                  // результат вложений, и от строк доходности его отделяет
-                  // цвет.
-                  if (b.plannedInvested.abs() >= 1)
-                    _delta(context, 'Вложено по планам', b.plannedInvested, color: AppColors.info),
-                  if (b.coupons.abs() >= 1) _delta(context, 'Купоны', b.coupons),
-                  if (b.bondsToPar.abs() >= 1) _delta(context, 'Облигации к номиналу', b.bondsToPar),
-                  if (b.stockGrowth.abs() >= 1) _delta(context, 'Рост акций', b.stockGrowth),
-                  if (b.dividends.abs() >= 1) _delta(context, 'Дивиденды', b.dividends),
-                  if (b.reinvestment.abs() >= 1) _delta(context, 'Эффект реинвестирования', b.reinvestment),
-                  if (b.plannedIncome.abs() >= 1) _delta(context, 'Доход с плановых покупок', b.plannedIncome),
-                  const SizedBox(height: 6),
-                  Divider(height: 1, color: context.hairline),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Через ${_yearsLabel(_years)}',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '≈${Fmt.money(b.end)}',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: _scenarioColor(_scenario),
-                            ),
-                          ),
-                          if (b.start > 0)
-                            Text(
-                              Fmt.pct((b.end / b.start - 1) * 100),
-                              style: TextStyle(fontSize: 11, color: context.dim),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            InfoBanner(
-              icon: Icons.tune_rounded,
-              color: AppColors.info,
-              text: 'Акции: медианный рост ${Fmt.pct(market.stockMedianGrowthPct)} в год, '
-                  'разброс ${(market.stockVolatility * 100).round()}% — ${market.source}. '
-                  'Коридор между крайними сценариями — это 80% вероятных исходов по этой модели. '
-                  'Деньги после погашения облигаций: '
-                  '${_pct(market.reinvestYield[ForecastScenario.pessimistic])} / '
-                  '${_pct(market.reinvestYield[ForecastScenario.realistic])} / '
-                  '${_pct(market.reinvestYield[ForecastScenario.optimistic])} годовых. '
-                  'Купоны и дивиденды вкладываются в ту же бумагу, суммы до налогов.',
-            ),
-            const SizedBox(height: 10),
-            const InfoBanner(
-              icon: Icons.info_outline_rounded,
-              color: AppColors.warning,
-              text: 'Это расчёт по допущениям, а не предсказание. Облигации '
-                  'считаются почти точно по графику выплат, акции — по поведению '
-                  'индекса в прошлом, которое не обязано повториться.',
-            ),
           ],
-        );
+        ),
+        const SizedBox(height: 10),
+        // Интерактивная линия: палец по графику — сумма на дату.
+        if (points.length >= 2)
+          Sparkline(
+            values: [for (final p in points) p.value],
+            color: color,
+            height: 160,
+            tooltipBuilder: (i, v) => '${Fmt.monthShort(points[i].date.month)} ${points[i].date.year}\n${Fmt.money(v)}',
+          ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Text('сейчас', style: TextStyle(fontSize: 10.5, color: context.dim)),
+            const Spacer(),
+            if (points.isNotEmpty)
+              Text('${Fmt.monthShort(points.last.date.month)} ${points.last.date.year}',
+                  style: TextStyle(fontSize: 10.5, color: context.dim)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        PillTabs<int>(
+          values: ValueForecastService.horizons,
+          selected: _years,
+          labelOf: _yearsLabel,
+          onChanged: widget.onYears,
+          padding: EdgeInsets.zero,
+        ),
+        const SizedBox(height: 8),
+        SegmentedToggle<ForecastScenario>(
+          values: ForecastScenario.values,
+          selected: _scenario,
+          labelOf: _scenarioLabel,
+          onChanged: (v) => setState(() => _scenario = v),
+          height: 40,
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+          child: Column(
+            children: [
+              _row(context, 'Сейчас', Fmt.money(b.start)),
+              if (b.stockGrowth.abs() >= 1) _delta(context, 'Рост акций', b.stockGrowth),
+              if ((b.dividends + b.coupons).abs() >= 1) _delta(context, 'Дивиденды и купоны', b.dividends + b.coupons),
+              if (b.bondsToPar.abs() >= 1) _delta(context, 'Облигации к номиналу', b.bondsToPar),
+              if (b.reinvestment.abs() >= 1) _delta(context, 'Реинвестирование', b.reinvestment),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   static String _pct(double? v) => v == null ? '—' : '${(v * 100).round()}%';

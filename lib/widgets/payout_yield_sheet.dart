@@ -4,7 +4,6 @@ import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
-import '../services/appearance_service.dart';
 import '../services/payout_calendar_service.dart';
 import '../services/payout_yield_service.dart';
 import 'ticker_avatar.dart';
@@ -60,7 +59,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
     final now = DateTime.now().year;
     final rows = _all ? s.rows : s.rows.take(6).toList();
     final maxYield = s.rows.isEmpty ? 1.0 : s.rows.first.toCost;
-    final hidden = AppearanceService.amountsHidden;
+    const hidden = false;
     String money(double v) => hidden ? '••• ₽' : Fmt.money(v);
 
     return SafeArea(

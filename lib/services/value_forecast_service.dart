@@ -279,7 +279,8 @@ class ValueForecastService {
   /// Учитывать ли плановые покупки. Хранится между запусками, и карточка на
   /// главной следует тому же значению, что и форма: иначе число на карточке и
   /// в форме расходились бы.
-  static bool get withPlans => AppearanceService.forecastWithPlans;
+  /// Прогноз стоимости — только по тому, что уже есть, без плановых покупок.
+  static bool get withPlans => false;
 
   static Future<void> setWithPlans(bool value) async {
     await AppearanceService.setForecastWithPlans(value);

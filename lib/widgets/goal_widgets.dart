@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../design/date_picker.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
 import '../design/motion.dart';
@@ -9,6 +10,7 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/appearance_service.dart';
 import '../services/goal_service.dart';
+import '../services/iis_service.dart';
 import '../services/passive_goal_service.dart';
 
 const _gold = AppColors.gold;
@@ -70,7 +72,7 @@ String goalAdvice(GoalPlan p) {
   return '$deadline · будет ${goalWillHave(p)}';
 }
 
-double _round100(double v) => (v / 100).ceil() * 100.0;
+double _round100(double v) => v <= 0 ? 0 : (v / 1000).ceil() * 1000.0;
 
 String _capital(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
@@ -116,9 +118,6 @@ class GoalCard extends StatelessWidget {
     }
 
     final color = p.reached ? AppColors.positive : _gold;
-    final title = p.goal.name.trim().isEmpty
-        ? 'Цель · ${Fmt.money(p.goal.amount)}'
-        : '${p.goal.name.trim()} · ${Fmt.money(p.goal.amount)}';
     final percent = '${(p.progress * 100).floor()}%';
     final subtitle = goalAdvice(p);
 
@@ -138,16 +137,34 @@ class GoalCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                HiddenAmount.forText(
-                  title,
-                  fontSize: 15,
-                  child: AdaptiveSingleLineText(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                // Название видно всегда, при скрытии сумм прячется только число.
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${p.goal.name.trim().isEmpty ? 'Цель' : p.goal.name.trim()} · ',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    HiddenAmount.forText(
+                      active: true,
+                      Fmt.money(p.goal.amount),
+                      fontSize: 15,
+                      child: Text(
+                        Fmt.money(p.goal.amount),
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 1),
                 // Названия месяцев не обрезаются: если строка длинная, текст
                 // немного уменьшается.
                 if (collapsed && !p.reached)
-                  HiddenAmount.forText(
+                  _plain(
                     subtitle,
                     fontSize: 11.5,
                     child: AdaptiveSingleLineText(
@@ -233,7 +250,7 @@ class GoalCard extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: HiddenAmount.forText(
+              child: _plain(
                 now,
                 fontSize: 11.5,
                 child: AdaptiveSingleLineText('$now сейчас', style: TextStyle(fontSize: 11.5, color: context.dim)),
@@ -241,7 +258,7 @@ class GoalCard extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             if (!p.reached)
-              HiddenAmount.forText(
+              _plain(
                 left,
                 fontSize: 11.5,
                 child: Text('осталось $left', style: TextStyle(fontSize: 11.5, color: context.dim)),
@@ -270,7 +287,7 @@ Widget _advice(BuildContext context, GoalPlan p, Color color) {
   final dim = TextStyle(fontSize: 11.5, height: 1.35, color: context.dim);
   final growth = 'с ростом по прогнозу ≈${p.annualGrowthPct.toStringAsFixed(0)}% годовых';
 
-  Widget line(String text, TextStyle style) => HiddenAmount.forText(
+  Widget line(String text, TextStyle style) => _plain(
         text,
         fontSize: style.fontSize,
         child: Text(text, style: style),
@@ -338,6 +355,7 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
   final passiveNameCtrl = TextEditingController(text: existingPassive?.name ?? '');
   var passiveMode = existingPassive?.mode ?? PassiveMode.average;
   DateTime? passiveDeadline = existingPassive?.deadline;
+  var payoutShare = existingPassive?.payoutShare ?? 1.0;
   PassiveGoalService.refreshInBackground();
   final amountCtrl = TextEditingController(
     text: existing == null ? '' : existing.amount.toStringAsFixed(0),
@@ -351,6 +369,33 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
   var month = existing?.deadline.month ?? 12;
   var year = existing?.deadline.year ?? now.year + 2;
   String? error;
+  var reinvest = existing?.reinvest ?? true;
+  var withdrawMode = existing?.withdrawMode ?? WithdrawMode.none;
+  var withdrawOn = withdrawMode != WithdrawMode.none;
+  var withdrawKind = withdrawMode == WithdrawMode.none ? WithdrawMode.sum : withdrawMode;
+  final withdrawSumCtrl = TextEditingController(
+    text: (existing?.withdrawAmount ?? 0) > 0 ? existing!.withdrawAmount.toStringAsFixed(0) : '',
+  );
+  final withdrawPctCtrl = TextEditingController(
+    text: (existing?.withdrawPct ?? 0) > 0 ? Fmt.group(existing!.withdrawPct) : '4',
+  );
+  // На ИИС снимать без потери вычета можно только после минимального срока.
+  final iis = IisService.current;
+  final iisFrom = iis == null ? null : IisService.minTermEnd(iis);
+  final earliest = iisFrom != null && iisFrom.isAfter(now) ? DateTime(iisFrom.year, iisFrom.month) : DateTime(now.year, now.month);
+  var withdrawFrom = existing?.withdrawFrom ?? earliest;
+  if (withdrawFrom.isBefore(earliest)) withdrawFrom = earliest;
+  FinancialGoal build(double a) => FinancialGoal(
+        amount: a,
+        deadline: DateTime(year, month),
+        name: nameCtrl.text.trim(),
+        monthlySaving: parseSavingOuter(savingCtrl.text),
+        reinvest: withdrawOn && withdrawKind == WithdrawMode.payouts ? false : reinvest,
+        withdrawMode: withdrawOn ? withdrawKind : WithdrawMode.none,
+        withdrawAmount: double.tryParse(withdrawSumCtrl.text.replaceAll(RegExp(r'[\s ]'), '').replaceAll(',', '.')) ?? 0,
+        withdrawPct: double.tryParse(withdrawPctCtrl.text.replaceAll(RegExp(r'[\s ]'), '').replaceAll(',', '.')) ?? 0,
+        withdrawFrom: withdrawOn ? withdrawFrom : null,
+      );
 
   const monthNames = [
     'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
@@ -387,16 +432,15 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
             error: error,
             parseText: parseText,
             onError: (e) => setSheet(() => error = e),
+            payoutShare: payoutShare,
+            onPayoutShare: (v) => setSheet(() => payoutShare = v),
           );
         }
         final amount = parse();
         final preview = amount != null && amount > 0
-            ? GoalService.plan(FinancialGoal(
-                amount: amount,
-                deadline: DateTime(year, month),
-                monthlySaving: parseSaving() ?? 0,
-              ))
+            ? GoalService.plan(build(amount))
             : null;
+        final payoutsOnly = withdrawOn && withdrawKind == WithdrawMode.payouts;
         return SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(20, 14, 20, keyboard + 24),
           child: Column(
@@ -473,6 +517,77 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
                   style: TextStyle(fontSize: 11.5, color: ctx.dim),
                 ),
               ],
+              const SizedBox(height: 8),
+              _switchRow(
+                ctx,
+                title: 'Реинвестировать выплаты',
+                subtitle: payoutsOnly
+                    ? 'Выплаты снимаются — реинвестировать нечего'
+                    : 'Дивиденды и купоны покупают ещё бумаги',
+                value: reinvest && !payoutsOnly,
+                onChanged: payoutsOnly ? null : (v) => setSheet(() => reinvest = v),
+              ),
+              _switchRow(
+                ctx,
+                title: 'Снимать из портфеля',
+                subtitle: 'Учесть, что часть денег забираете',
+                value: withdrawOn,
+                onChanged: (v) => setSheet(() => withdrawOn = v),
+              ),
+              if (withdrawOn) ...[
+                const SizedBox(height: 6),
+                SegmentedToggle<WithdrawMode>(
+                  values: const [WithdrawMode.sum, WithdrawMode.pct, WithdrawMode.payouts],
+                  selected: withdrawKind,
+                  labelOf: (m) => switch (m) {
+                    WithdrawMode.sum => 'Сумму в год',
+                    WithdrawMode.pct => '% портфеля',
+                    _ => 'Только выплаты',
+                  },
+                  onChanged: (m) => setSheet(() => withdrawKind = m),
+                ),
+                const SizedBox(height: 10),
+                if (withdrawKind == WithdrawMode.sum)
+                  AppTextField(
+                    controller: withdrawSumCtrl,
+                    label: 'Снимать в год, ₽',
+                    number: true,
+                    onChanged: (_) => setSheet(() {}),
+                  )
+                else if (withdrawKind == WithdrawMode.pct)
+                  AppTextField(
+                    controller: withdrawPctCtrl,
+                    label: 'Снимать в год, % портфеля',
+                    number: true,
+                    onChanged: (_) => setSheet(() {}),
+                  )
+                else
+                  Text(
+                    'Дивиденды и купоны выводятся, бумаги не продаются.',
+                    style: TextStyle(fontSize: 12, color: ctx.dim),
+                  ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: Text('Начиная с', style: TextStyle(fontSize: 13, color: ctx.dim))),
+                    TextButton(
+                      onPressed: () async {
+                        final d = await showAppMonthPicker(context: ctx, initial: withdrawFrom);
+                        if (d != null) {
+                          final m = DateTime(d.year, d.month);
+                          setSheet(() => withdrawFrom = m.isBefore(earliest) ? earliest : m);
+                        }
+                      },
+                      child: Text('${_monthNom[withdrawFrom.month - 1]} ${withdrawFrom.year}'),
+                    ),
+                  ],
+                ),
+                if (iisFrom != null && iisFrom.isAfter(now))
+                  Text(
+                    'Это ИИС: снимать без потери вычета можно с ${_monthNom[iisFrom.month - 1]} ${iisFrom.year}.',
+                    style: TextStyle(fontSize: 11.5, color: ctx.dim),
+                  ),
+              ],
               const SizedBox(height: 12),
               AppTextField(controller: nameCtrl, label: 'Название (необязательно)', hint: 'Например, «Квартира»'),
               if (preview != null) ...[
@@ -489,6 +604,13 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
                     style: const TextStyle(fontSize: 13, height: 1.4),
                   ),
                 ),
+                if (!preview.reached && preview.monthsLeft > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _growthBreakdown(preview),
+                    style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
+                  ),
+                ],
               ],
               if (error != null) ...[
                 const SizedBox(height: 10),
@@ -508,12 +630,7 @@ Future<void> showGoalEditSheet(BuildContext context, {GoalKind? kind}) {
                     setSheet(() => error = 'Срок уже прошёл — выберите месяц позже');
                     return;
                   }
-                  await GoalService.save(FinancialGoal(
-                    amount: a,
-                    deadline: DateTime(year, month),
-                    name: nameCtrl.text.trim(),
-                    monthlySaving: parseSaving() ?? 0,
-                  ));
+                  await GoalService.save(build(a));
                   // Цель одна — прежняя цель по доходу заменяется.
                   await GoalService.savePassive(null);
                   if (ctx.mounted) Navigator.pop(ctx);
@@ -531,6 +648,46 @@ const _monthNom = [
   'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
   'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
 ];
+
+double parseSavingOuter(String t) {
+  final v = double.tryParse(t.replaceAll(' ', '').replaceAll(' ', '').replaceAll(',', '.'));
+  return v == null || v < 0 ? 0 : v;
+}
+
+/// Из чего складывается рост: цены и выплаты, плюс снятия.
+String _growthBreakdown(GoalPlan p) {
+  final total = p.annualGrowthPct;
+  final pay = p.payoutPartPct;
+  final parts = <String>[
+    pay > 0
+        ? 'Рост ≈${total.toStringAsFixed(0)}% в год: цены ≈${(total - pay).toStringAsFixed(0)}%, выплаты ≈${pay.toStringAsFixed(0)}%'
+        : 'Рост ≈${total.toStringAsFixed(0)}% в год — только цены, выплаты не реинвестируются',
+  ];
+  if (p.withdrawPerYear > 0) parts.add('снимаете ≈${Fmt.money(p.withdrawPerYear)} в год');
+  return '${parts.join(' · ')}. Пересчёт раз в день.';
+}
+
+Widget _switchRow(
+  BuildContext context, {
+  required String title,
+  required String subtitle,
+  required bool value,
+  required ValueChanged<bool>? onChanged,
+}) =>
+    Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              Text(subtitle, style: TextStyle(fontSize: 11.5, color: context.dim)),
+            ],
+          ),
+        ),
+        Switch(value: value, onChanged: onChanged),
+      ],
+    );
 
 Widget _kindToggle(GoalKind selected, ValueChanged<GoalKind> onChanged) => SegmentedToggle<GoalKind>(
       values: GoalKind.values,
@@ -557,6 +714,8 @@ Widget _passiveForm(
   required String? error,
   required double? Function(String) parseText,
   required ValueChanged<String> onError,
+  required double payoutShare,
+  required ValueChanged<double> onPayoutShare,
 }) {
   final income = parseText(incomeCtrl.text);
   final saving = parseText(savingCtrl.text);
@@ -566,6 +725,7 @@ Widget _passiveForm(
           mode: mode,
           monthlySaving: saving == null || saving < 0 ? 0 : saving,
           deadline: deadline,
+          payoutShare: payoutShare,
         ))
       : null;
   final now = DateTime.now();
@@ -600,6 +760,15 @@ Widget _passiveForm(
           label: 'Доход в месяц, ₽',
           number: true,
           onChanged: (_) => onChanged(),
+        ),
+        const SizedBox(height: 12),
+        Text('Выплаты, пока копите', style: TextStyle(fontSize: 12, color: ctx.dim)),
+        const SizedBox(height: 6),
+        SegmentedToggle<double>(
+          values: const [1, 0, 0.5],
+          selected: payoutShare,
+          labelOf: (v) => v == 1 ? 'Вкладывать' : v == 0 ? 'Забирать' : 'Половину',
+          onChanged: onPayoutShare,
         ),
         const SizedBox(height: 12),
         Text('Как считать', style: TextStyle(fontSize: 12, color: ctx.dim)),
@@ -706,6 +875,7 @@ Widget _passiveForm(
               monthlySaving: sv == null || sv < 0 ? 0 : sv,
               name: nameCtrl.text.trim(),
               deadline: deadline,
+              payoutShare: payoutShare,
             ));
             // Цель одна — прежняя цель накопить сумму заменяется.
             await GoalService.delete();
@@ -734,7 +904,7 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
         child: Row(
           children: [
             Expanded(child: Text(label, style: TextStyle(fontSize: 12.5, color: ctx.dim))),
-            HiddenAmount.forText(
+            _plain(
               value,
               fontSize: 14,
               child: Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
@@ -758,8 +928,8 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
             ),
             const SizedBox(height: 14),
             if (p.monthsLeft > 0) ...[
-              SizedBox(
-                height: 170,
+              _GoalChart(
+                plan: p,
                 child: CustomPaint(
                   painter: _GoalChartPainter(
                     needed: p.monthly > 0.5 ? p.pathWith : const [],
@@ -767,7 +937,7 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
                     without: p.pathWithout,
                     target: goal.amount,
                     grid: ctx.hairline,
-                    hidden: AppearanceService.amountsHidden,
+                    hidden: false,
                   ),
                   size: Size.infinite,
                 ),
@@ -794,7 +964,7 @@ Future<void> showGoalDetailsSheet(BuildContext context) {
             ],
             const SizedBox(height: 4),
             Text(
-              'Рост — по реалистичному сценарию прогноза стоимости (≈${p.annualGrowthPct.toStringAsFixed(1)}% годовых): '
+              '${_growthBreakdown(p)}\nПо реалистичному сценарию прогноза стоимости: '
               'купоны, погашения, дивиденды, рост акций. До налогов. Не гарантия.',
               style: TextStyle(fontSize: 11.5, height: 1.4, color: ctx.dim),
             ),
@@ -867,7 +1037,7 @@ Widget _savingScale(BuildContext context, GoalPlan p, double needed) {
         Row(
           children: [
             Expanded(child: Text('Взнос в месяц', style: TextStyle(fontSize: 12.5, color: context.dim))),
-            HiddenAmount.forText(
+            _plain(
               top,
               fontSize: 14,
               child: Text.rich(
@@ -904,7 +1074,7 @@ Widget _savingScale(BuildContext context, GoalPlan p, double needed) {
             Expanded(
               child: Align(
                 alignment: Alignment.centerRight,
-                child: HiddenAmount.forText(
+                child: _plain(
                   bottom,
                   fontSize: 11.5,
                   child: AdaptiveSingleLineText(
@@ -1064,4 +1234,89 @@ class _GoalChartPainter extends CustomPainter {
       old.needed.length != needed.length ||
       old.saving.length != saving.length ||
       old.without.length != without.length;
+}
+
+
+Widget _plain(String _, {double? fontSize, required Widget child}) => child;
+
+/// График цели с подсказкой: ведёте пальцем — видно месяц и суммы по линиям.
+class _GoalChart extends StatefulWidget {
+  final GoalPlan plan;
+  final Widget child;
+  const _GoalChart({required this.plan, required this.child});
+
+  @override
+  State<_GoalChart> createState() => _GoalChartState();
+}
+
+class _GoalChartState extends State<_GoalChart> {
+  int? _i;
+
+  void _at(double dx, double width) {
+    final n = widget.plan.pathWithout.length;
+    if (n < 2 || width <= 0) return;
+    setState(() => _i = (dx / width * (n - 1)).round().clamp(0, n - 1));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.plan;
+    final i = _i;
+    String? tip;
+    if (i != null) {
+      final now = DateTime.now();
+      final d = DateTime(now.year, now.month + i);
+      final parts = <String>[
+        '${_monthNom[d.month - 1]} ${d.year}',
+        if (p.monthly > 0.5 && i < p.pathWith.length) 'нужно: ${Fmt.money(p.pathWith[i])}',
+        if (p.saving > 0 && i < p.pathSaving.length) 'с вашими: ${Fmt.money(p.pathSaving[i])}',
+        'без взносов: ${Fmt.money(p.pathWithout[i])}',
+      ];
+      tip = parts.join('\n');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 64,
+          child: tip == null
+              ? Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Text('Проведите по графику пальцем', style: TextStyle(fontSize: 11.5, color: context.dim)),
+                )
+              : Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Text(tip, style: const TextStyle(fontSize: 11.5, height: 1.3, fontWeight: FontWeight.w600)),
+                ),
+        ),
+        const SizedBox(height: 4),
+        LayoutBuilder(
+          builder: (context, c) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (e) => _at(e.localPosition.dx, c.maxWidth),
+            onHorizontalDragStart: (e) => _at(e.localPosition.dx, c.maxWidth),
+            onHorizontalDragUpdate: (e) => _at(e.localPosition.dx, c.maxWidth),
+            onHorizontalDragEnd: (_) => setState(() => _i = null),
+            onTapUp: (_) => setState(() => _i = null),
+            child: SizedBox(
+              height: 170,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  widget.child,
+                  if (i != null && p.pathWithout.length > 1)
+                    Positioned(
+                      left: i / (p.pathWithout.length - 1) * c.maxWidth - 0.5,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(width: 1, color: context.dim.withOpacity(0.6)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

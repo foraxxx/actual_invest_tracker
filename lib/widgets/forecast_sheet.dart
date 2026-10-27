@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../design/format.dart';
+import '../design/fields.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/payout_forecast_service.dart';
 import '../services/value_forecast_service.dart';
-import 'choice_cards.dart';
 import 'payout_forecast_sheet.dart';
 import 'value_forecast_sheet.dart';
 
@@ -72,45 +71,32 @@ class _ForecastSheetState extends State<_ForecastSheet> {
 
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            SheetHeader(
-              title: 'Прогноз',
-              trailing: IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            const SizedBox(height: 4),
-            ChoiceCards(
-              selected: _tab,
-              onSelect: _select,
-              items: [
-                ChoiceCard(
-                  label: 'Выплаты',
-                  value: '~${Fmt.money(payouts)}',
-                  sub: 'за 12 месяцев',
-                  color: AppColors.violet,
-                  money: true,
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Прогноз', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
                 ),
-                ChoiceCard(
-                  label: 'Стоимость',
-                  value: '~${Fmt.money(value)}',
-                  sub: 'через ${yearsLabel(_years)} · средний сценарий',
-                  color: AppColors.info,
-                  money: true,
+                IconButton(
+                  tooltip: 'Как считается',
+                  icon: Icon(Icons.info_outline_rounded, color: context.dim),
+                  onPressed: () => _showInfo(context),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              _tab == 0 ? payoutForecastSubtitle : valueForecastSubtitle,
-              style: TextStyle(fontSize: 12.5, color: context.dim),
+            const SizedBox(height: 6),
+            SegmentedToggle<int>(
+              values: const [0, 1],
+              selected: _tab,
+              labelOf: (v) => v == 0 ? 'Выплаты' : 'Стоимость',
+              onChanged: _select,
+              height: 40,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               layoutBuilder: (current, previous) => current ?? const SizedBox.shrink(),
@@ -124,6 +110,17 @@ class _ForecastSheetState extends State<_ForecastSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showInfo(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(_tab == 0 ? 'Прогноз выплат' : 'Прогноз стоимости'),
+        content: Text(_tab == 0 ? payoutForecastInfo : valueForecastInfo()),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Понятно'))],
       ),
     );
   }

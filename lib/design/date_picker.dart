@@ -270,7 +270,24 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
             AnimatedSize(
               duration: AppDuration.fast,
               alignment: Alignment.topCenter,
-              child: _pickMonth ? _monthsGrid() : _daysGrid(),
+              // Свайп влево-вправо листает месяцы (в выборе месяца — годы).
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v.abs() < 150) return;
+                  final step = v < 0 ? 1 : -1;
+                  setState(() {
+                    if (_pickMonth) {
+                      final y = _month.year + step;
+                      if (y >= widget.first.year && y <= widget.last.year) _month = DateTime(y, _month.month);
+                    } else if (step > 0 ? _canNext : _canPrev) {
+                      _month = DateTime(_month.year, _month.month + step);
+                    }
+                  });
+                },
+                child: _pickMonth ? _monthsGrid() : _daysGrid(),
+              ),
             ),
             const SizedBox(height: 12),
             GradientButton(
@@ -365,7 +382,14 @@ class _MonthSheetState extends State<_MonthSheet> {
               ],
             ),
             const SizedBox(height: 12),
-            GridView.count(
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragEnd: (d) {
+                final v = d.primaryVelocity ?? 0;
+                if (v.abs() < 150) return;
+                setState(() => _year += v < 0 ? 1 : -1);
+              },
+              child: GridView.count(
               crossAxisCount: 3,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -398,6 +422,7 @@ class _MonthSheetState extends State<_MonthSheet> {
                     );
                   }),
               ],
+            ),
             ),
             const SizedBox(height: 12),
             GradientButton(
@@ -545,7 +570,14 @@ class _RangeSheetState extends State<_RangeSheet> {
                 ),
               ],
             ),
-            GridView.count(
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragEnd: (d) {
+                final v = d.primaryVelocity ?? 0;
+                if (v.abs() < 150) return;
+                setState(() => _month = DateTime(_month.year, _month.month + (v < 0 ? 1 : -1)));
+              },
+              child: GridView.count(
               crossAxisCount: 7,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -595,6 +627,7 @@ class _RangeSheetState extends State<_RangeSheet> {
                     );
                   }),
               ],
+            ),
             ),
             const SizedBox(height: 12),
             GradientButton(

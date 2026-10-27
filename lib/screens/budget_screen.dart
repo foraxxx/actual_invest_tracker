@@ -34,7 +34,7 @@ String _cap(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}
 String _monthTitle(int y, int m) => '${_cap(_monthsNom[m - 1])} $y';
 
 /// Суммы прячутся вместе со всем приложением («Скрывать суммы»).
-bool get _hidden => AppearanceService.amountsHidden;
+bool get _hidden => false;
 String _num(double v) => _hidden ? '•••' : Fmt.group(v);
 String _rub(double v) => _hidden ? '••• ₽' : Fmt.money(v);
 
@@ -245,7 +245,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              if (AppearanceService.hideAmounts) ...[
+              if (_hidden) ...[
                 _iconButton(
                   AppearanceService.revealed.value ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                   AppearanceService.toggleReveal,

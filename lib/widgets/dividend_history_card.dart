@@ -92,7 +92,7 @@ class _DividendHistoryCardState extends State<DividendHistoryCard> {
   @override
   Widget build(BuildContext context) {
     final h = DividendHistoryService.of(widget.ticker);
-    final hidden = AppearanceService.amountsHidden;
+    const hidden = false;
     final avg = widget.holding?.avgCost;
     final price = widget.price;
 

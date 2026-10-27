@@ -5,7 +5,6 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../models/income.dart';
 import '../services/analytics_service.dart';
-import '../services/appearance_service.dart';
 import '../services/dividend_history_service.dart';
 import '../services/dividend_tax_service.dart';
 import '../services/payout_forecast_service.dart';
@@ -100,7 +99,7 @@ class ExpectedPayoutTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hidden = AppearanceService.amountsHidden;
+    const hidden = false;
     final p = payout;
     final net = p.net(defaultTaxRate(p.isBond));
     final color = confirm ? AppColors.warning : AppColors.info;

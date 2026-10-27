@@ -305,7 +305,7 @@ object WidgetData {
             profit = profit,
             profitPct = if (invested > 1) profit / invested * 100 else null,
             updatedAt = maxOf(snap.pricesAt, liveAt),
-            hidden = snap.hidden,
+            hidden = PortfolioWidgetProvider.hidden(context),
             chart = chart,
             payouts = snap.payouts,
             month = snap.month,

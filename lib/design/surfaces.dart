@@ -830,25 +830,32 @@ class HiddenAmount extends StatelessWidget {
   final double width;
   final double height;
 
+  /// Прятать ли эту сумму. Скрытие работает только там, где оно отмечено
+  /// явно: стоимость портфелей, прибыль, сумма цели, итоги групп.
+  final bool active;
+
   const HiddenAmount({
     super.key,
     required this.child,
     this.width = 90,
     this.height = 16,
+    this.active = false,
   });
 
   /// Удобный конструктор для денежных строк: ширина подбирается по тексту.
-  factory HiddenAmount.forText(String text, {required Widget child, double? fontSize}) {
+  factory HiddenAmount.forText(String text, {required Widget child, double? fontSize, bool active = false}) {
     final size = fontSize ?? 14;
     return HiddenAmount(
       width: text.length * size * 0.56,
       height: size * 1.05,
+      active: active,
       child: child,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!active) return child;
     return ValueListenableBuilder<int>(
       valueListenable: AppearanceService.version,
       builder: (context, _, __) => ValueListenableBuilder<bool>(

@@ -80,10 +80,12 @@ object WidgetRenderer {
         state: WidgetState?,
         click: PendingIntent,
         modern: Boolean,
+        eye: PendingIntent? = null,
     ): RemoteViews {
         val name = sizeName(widthDp, heightDp)
         val v = RemoteViews(context.packageName, layoutOf(name))
         v.setOnClickPendingIntent(R.id.root, click)
+        if (eye != null) v.setOnClickPendingIntent(R.id.eye, eye)
         val st = state?.style ?: StyleCfg()
         val sc = state?.size(name) ?: SizeCfg.defaults(name)
         val c = Colors(st)
@@ -292,7 +294,9 @@ object WidgetRenderer {
             v.setViewVisibility(R.id.time, View.VISIBLE)
             v.setTextViewText(R.id.time, timeText(s.updatedAt))
         }
-        v.setTextViewText(R.id.value, if (s.hidden) "••• ••• ₽" else money(s.value))
+        v.setTextViewText(R.id.value, if (s.hidden) "••••••₽" else money(s.value))
+        v.setImageViewResource(R.id.eye, if (s.hidden) R.drawable.weye_off else R.drawable.weye_on)
+        v.setInt(R.id.eye, "setColorFilter", c.dim)
 
         if (!sc.today) {
             v.setViewVisibility(R.id.day, View.GONE)

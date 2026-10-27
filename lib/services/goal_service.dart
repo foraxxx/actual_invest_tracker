@@ -8,7 +8,11 @@ import 'analytics_service.dart';
 import 'memo.dart';
 import 'cash_service.dart';
 import 'portfolio_service.dart';
+import 'payout_forecast_service.dart';
 import 'value_forecast_service.dart';
+
+/// Что снимать из портфеля, пока копим.
+enum WithdrawMode { none, sum, pct, payouts }
 
 /// Финансовая цель портфеля: накопить [amount] к концу месяца [deadline].
 class FinancialGoal {
@@ -22,7 +26,29 @@ class FinancialGoal {
   /// подсказка по прошлым пополнениям (см. GoalService.suggestedMonthlySaving).
   final double? monthlySaving;
 
-  const FinancialGoal({required this.amount, required this.deadline, this.name = '', this.monthlySaving});
+  /// Реинвестировать выплаты: дивиденды и купоны покупают ещё бумаги.
+  final bool reinvest;
+
+  /// Снятия из портфеля: сумма в год, процент портфеля в год или только
+  /// выплаты (тогда бумаги не продаются, а реинвестирования нет).
+  final WithdrawMode withdrawMode;
+  final double withdrawAmount;
+  final double withdrawPct;
+
+  /// С какого месяца снимать. null — сразу.
+  final DateTime? withdrawFrom;
+
+  const FinancialGoal({
+    required this.amount,
+    required this.deadline,
+    this.name = '',
+    this.monthlySaving,
+    this.reinvest = true,
+    this.withdrawMode = WithdrawMode.none,
+    this.withdrawAmount = 0,
+    this.withdrawPct = 0,
+    this.withdrawFrom,
+  });
 
   Map<String, dynamic> toJson() => {
         'a': amount,
@@ -30,6 +56,11 @@ class FinancialGoal {
         'm': deadline.month,
         if (name.isNotEmpty) 'n': name,
         if (monthlySaving != null) 's': monthlySaving,
+        if (!reinvest) 'r': false,
+        if (withdrawMode != WithdrawMode.none) 'wm': withdrawMode.name,
+        if (withdrawAmount > 0) 'wa': withdrawAmount,
+        if (withdrawPct > 0) 'wp': withdrawPct,
+        if (withdrawFrom != null) 'wf': withdrawFrom!.toIso8601String(),
       };
 
   static FinancialGoal? fromJson(Map<String, dynamic> j) {
@@ -43,6 +74,11 @@ class FinancialGoal {
       deadline: DateTime(y, m),
       name: '${j['n'] ?? ''}',
       monthlySaving: saving == null || saving < 0 ? null : saving,
+      reinvest: j['r'] != false,
+      withdrawMode: WithdrawMode.values.firstWhere((m) => m.name == j['wm'], orElse: () => WithdrawMode.none),
+      withdrawAmount: (j['wa'] as num?)?.toDouble() ?? 0,
+      withdrawPct: (j['wp'] as num?)?.toDouble() ?? 0,
+      withdrawFrom: DateTime.tryParse('${j['wf'] ?? ''}'),
     );
   }
 }
@@ -66,6 +102,10 @@ class PassiveGoal {
   /// облигаций.
   final double? newYieldPct;
 
+  /// Что делать с выплатами, пока копите: 1 — вкладывать, 0 — забирать,
+  /// 0.5 — половину.
+  final double payoutShare;
+
   const PassiveGoal({
     required this.monthly,
     this.mode = PassiveMode.average,
@@ -73,6 +113,7 @@ class PassiveGoal {
     this.name = '',
     this.deadline,
     this.newYieldPct,
+    this.payoutShare = 1,
   });
 
   Map<String, dynamic> toJson() => {
@@ -83,6 +124,7 @@ class PassiveGoal {
         if (deadline != null) 'y': deadline!.year,
         if (deadline != null) 'm': deadline!.month,
         if (newYieldPct != null) 'r': newYieldPct,
+        if (payoutShare < 1) 'pu': payoutShare,
       };
 
   static PassiveGoal? fromJson(Map<String, dynamic> j) {
@@ -99,6 +141,7 @@ class PassiveGoal {
       name: '${j['n'] ?? ''}',
       deadline: y == null || m == null ? null : DateTime(y, m),
       newYieldPct: r == null || r <= 0 ? null : r,
+      payoutShare: ((j['pu'] as num?)?.toDouble() ?? 1).clamp(0.0, 1.0).toDouble(),
     );
   }
 }
@@ -122,6 +165,16 @@ class GoalPlan {
 
   /// Среднегодовой рост, заложенный в расчёт, в процентах.
   final double annualGrowthPct;
+
+  /// Из него: выплаты, вложенные обратно, в процентах в год (0 — если
+  /// выплаты не реинвестируются).
+  final double payoutPartPct;
+
+  /// Сколько в год будет сниматься (в первый год снятий).
+  final double withdrawPerYear;
+
+  /// Когда считали.
+  final DateTime computedAt;
 
   /// Сколько человек откладывает в месяц: из цели или подсказка.
   final double saving;
@@ -147,6 +200,9 @@ class GoalPlan {
     required this.withoutContributions,
     required this.monthly,
     required this.annualGrowthPct,
+    this.payoutPartPct = 0,
+    this.withdrawPerYear = 0,
+    required this.computedAt,
     required this.saving,
     required this.pathWithout,
     required this.pathWith,
@@ -272,7 +328,7 @@ class GoalService {
     final today = DateTime.now();
     // Memo.stamp — любые изменения исходных данных (сделки, выплаты, прогноз,
     // импорт бэкапа): тогда темп роста считается заново.
-    final key = '${Memo.stamp}|${goal.amount}|${goal.deadline}|${goal.monthlySaving}|${(current / 1000).round()}|'
+    final key = '${Memo.stamp}|${jsonEncode(goal.toJson())}|${(current / 10000).round()}|'
         '${today.year}-${today.month}-${today.day}';
     if (key == _cacheKey && _cache != null && _cache!.goal.name == goal.name) return _cache!;
     final result = _plan(goal, current);
@@ -283,45 +339,142 @@ class GoalService {
 
   static GoalPlan _plan(FinancialGoal goal, double current) {
     final months = monthsUntil(goal.deadline);
+    final now = DateTime.now();
 
     // Рост — по реалистичному сценарию прогноза на то, что уже есть в
-    // портфеле: купоны, погашения, дивиденды, рост акций. Берём из него
-    // среднемесячный темп и применяем к текущей стоимости.
-    final rate = monthlyGrowthRate(months, current);
-    final growth = math.pow(1 + rate, months).toDouble();
-    final monthly = requiredMonthly(current: current, target: goal.amount, months: months, rate: rate);
+    // портфеле: купоны, погашения, дивиденды, рост акций.
+    final fullRate = stableGrowthRate(current);
+    // Доля выплат в росте: выплаты за 12 месяцев к стоимости портфеля.
+    final payoutYield = current <= 0
+        ? 0.0
+        : (PayoutForecastService.portfolioForecastByMonth().values.fold(0.0, (a, b) => a + b) / current)
+            .clamp(0.0, 0.3)
+            .toDouble();
+    final reinvest = goal.reinvest && goal.withdrawMode != WithdrawMode.payouts;
+    final yearly = math.pow(1 + fullRate, 12).toDouble();
+    final rate = reinvest ? fullRate : math.pow(math.max(0.01, yearly - payoutYield), 1 / 12).toDouble() - 1;
+
+    // С какого месяца (от сегодня) начинаются снятия.
+    final from = goal.withdrawFrom;
+    final startIdx = from == null ? 0 : math.max(0, (from.year - now.year) * 12 + from.month - now.month);
+    double withdraw(int i, double v) {
+      if (i < startIdx) return 0;
+      return switch (goal.withdrawMode) {
+        WithdrawMode.sum => goal.withdrawAmount / 12,
+        WithdrawMode.pct => v * goal.withdrawPct / 100 / 12,
+        _ => 0,
+      };
+    }
+
+    double step(int i, double v, double contrib) => math.max(0, v * (1 + rate) + contrib - withdraw(i, v));
+
+    double after(double contrib) {
+      var v = current;
+      for (int i = 0; i < months; i++) {
+        v = step(i, v, contrib);
+      }
+      return v;
+    }
+
+    // Нужный взнос — подбором: со снятиями формулы уже не работают.
+    double monthly = 0;
+    if (months > 0 && after(0) < goal.amount) {
+      double lo = 0, hi = goal.amount;
+      for (int k = 0; k < 50; k++) {
+        final mid = (lo + hi) / 2;
+        if (after(mid) >= goal.amount) {
+          hi = mid;
+        } else {
+          lo = mid;
+        }
+      }
+      monthly = hi;
+    } else if (months <= 0) {
+      monthly = math.max(0, goal.amount - current);
+    }
 
     final saving = goal.monthlySaving ?? suggestedMonthlySaving();
 
     final without = <double>[];
     final withContrib = <double>[];
     final withSaving = <double>[];
-    var a = current;
-    var b = current;
-    var c = current;
+    var x = current;
+    var y = current;
+    var z = current;
     for (int i = 0; i <= months; i++) {
-      without.add(a);
-      withContrib.add(b);
-      withSaving.add(c);
-      a *= 1 + rate;
-      b = b * (1 + rate) + monthly;
-      c = c * (1 + rate) + saving;
+      without.add(x);
+      withContrib.add(y);
+      withSaving.add(z);
+      x = step(i, x, 0);
+      y = step(i, y, monthly);
+      z = step(i, z, saving);
     }
+
+    int? reach(double contrib) {
+      var v = current;
+      for (int i = 0; i <= 600; i++) {
+        if (v >= goal.amount - 1) return i;
+        v = step(i, v, contrib);
+      }
+      return null;
+    }
+
+    final firstWithdraw = switch (goal.withdrawMode) {
+      WithdrawMode.sum => goal.withdrawAmount,
+      WithdrawMode.pct => current * goal.withdrawPct / 100,
+      WithdrawMode.payouts => current * payoutYield,
+      WithdrawMode.none => 0.0,
+    };
 
     return GoalPlan(
       goal: goal,
       current: current,
       monthsLeft: months,
-      withoutContributions: current * growth,
+      withoutContributions: without.isEmpty ? current : without.last,
       monthly: monthly,
       annualGrowthPct: (math.pow(1 + rate, 12).toDouble() - 1) * 100,
+      payoutPartPct: reinvest ? payoutYield * 100 : 0,
+      withdrawPerYear: firstWithdraw,
+      computedAt: _rateAt ?? now,
       saving: saving,
       pathWithout: without,
       pathWith: withContrib,
       pathSaving: withSaving,
-      reachMonths: monthsToReach(current: current, target: goal.amount, monthly: saving, rate: rate),
-      reachWithoutMonths: monthsToReach(current: current, target: goal.amount, monthly: 0, rate: rate),
+      reachMonths: reach(saving),
+      reachWithoutMonths: reach(0),
     );
+  }
+
+  static DateTime? _rateAt;
+
+  /// Темп роста для цели — устойчивый: считается раз в день и только когда
+  /// загружена история индекса. Пока данных нет, берётся прошлый расчёт —
+  /// так нужная сумма не прыгает при каждом запуске.
+  static double stableGrowthRate(double current) {
+    final today = DateTime.now();
+    final day = '${today.year}-${today.month}-${today.day}';
+    Map<String, dynamic>? saved;
+    try {
+      final raw = meta('growthRate');
+      if (raw != null) saved = jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {}
+    final savedRate = (saved?['r'] as num?)?.toDouble();
+    final savedAt = DateTime.tryParse('${saved?['at'] ?? ''}');
+    if (savedRate != null && saved?['d'] == day) {
+      _rateAt = savedAt;
+      return savedRate;
+    }
+    final ready = !identical(ValueForecastService.assumptions, ValueForecastService.fallback);
+    if (!ready && savedRate != null) {
+      _rateAt = savedAt;
+      return savedRate;
+    }
+    final rate = monthlyGrowthRate(60, current);
+    if (ready) {
+      _rateAt = today;
+      setMeta('growthRate', jsonEncode({'d': day, 'r': rate, 'at': today.toIso8601String()}));
+    }
+    return rate;
   }
 
   /// Среднемесячный темп роста по реалистичному сценарию прогноза стоимости

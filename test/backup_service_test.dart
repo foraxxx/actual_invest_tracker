@@ -56,6 +56,8 @@ void main() {
     Hive.init(hiveDir.path);
     StorageService.registerAdapters();
     await PortfolioService.init();
+    // При первом запуске портфелей нет — заводим основной, как сделал бы человек.
+    if (PortfolioService.list.isEmpty) await PortfolioService.create('Основной');
     await StorageService.init();
     await CurrencyService.init();
     await ManualPriceService.init();
