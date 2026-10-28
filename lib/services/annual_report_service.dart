@@ -1,5 +1,6 @@
 import '../models/purchase.dart';
 import 'analytics_service.dart';
+import 'tax_service.dart';
 import 'moex_sync_service.dart';
 import 'portfolio_history_service.dart';
 import 'cash_service.dart';
@@ -146,6 +147,9 @@ class AnnualReport {
   /// Стоимость портфеля по дням за год — для линии.
   final List<MapEntry<DateTime, double>> valueSeries;
 
+  /// Налоги за год: с дивидендов, купонов и продаж.
+  final YearTaxes? taxes;
+
   const AnnualReport({
     required this.year,
     required this.rows,
@@ -167,6 +171,7 @@ class AnnualReport {
     this.withdrawnRub = 0,
     this.feesRub = 0,
     this.valueSeries = const [],
+    this.taxes,
   });
 
   /// Бумаги, купленные впервые в этом году.
@@ -403,7 +408,16 @@ class AnnualReportService {
       withdrawnRub: withdrawn,
       feesRub: fees,
       valueSeries: valueSeries,
+      taxes: _taxes(year),
     );
+  }
+
+  static YearTaxes? _taxes(int year) {
+    try {
+      return TaxService.yearTaxes(year);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Прибыль от продаж внутри периода. Себестоимость списывается по средней —

@@ -6,6 +6,7 @@ import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/payout_calendar_service.dart';
 import '../services/payout_forecast_service.dart';
+import '../services/tax_service.dart';
 import 'payout_calendar.dart';
 
 const payoutForecastSubtitle = 'Прогноз выплат на следующие 12 месяцев';
@@ -85,10 +86,53 @@ class PayoutForecastBody extends StatelessWidget {
             ),
           ],
         ),
+        _couponTax(context, total),
         const SizedBox(height: 12),
         // Нажатие на месяц показывает, от каких бумаг ждать деньги.
         PayoutCalendar(cells: PayoutCalendarService.next12()),
       ],
     );
   }
+}
+
+
+/// Налог с купонов на обычном брокерском счёте: купоны приходят целиком,
+/// а налог брокер спишет потом.
+Widget _couponTax(BuildContext context, double total) {
+  if (TaxService.regime != TaxRegime.regular) return const SizedBox.shrink();
+  final coupons = PayoutForecastService.couponForecastTotal();
+  if (coupons <= 0.5) return const SizedBox.shrink();
+  final tax = coupons * TaxService.rate;
+  Widget row(String title, String value, {String? sub, Color? color}) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 13)),
+                  if (sub != null) Text(sub, style: TextStyle(fontSize: 11, height: 1.3, color: context.dim)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: color)),
+          ],
+        ),
+      );
+  return Padding(
+    padding: const EdgeInsets.only(top: 6),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        row('Купоны придут целиком', Fmt.money(coupons)),
+        row('Налог с купонов за год', '≈ −${Fmt.money(tax)}',
+            sub: 'брокер спишет со счёта, если там будут свободные рубли; если нет — придёт уведомление из налоговой',
+            color: AppColors.negative),
+        row('После налога', '≈ ${Fmt.money(total - tax)}', color: AppColors.positive),
+      ],
+    ),
+  );
 }

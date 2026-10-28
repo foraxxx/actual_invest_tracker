@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../widgets/tax_widgets.dart';
+import '../services/currency_service.dart';
+import '../services/iis_service.dart';
 import 'package:uuid/uuid.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
@@ -618,12 +621,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
     );
   }
 
-  String? _taxLabel(SaleTaxResult r) {
-    if (r.realizedGainRub <= 0) return 'без налога (убыток)';
-    if (r.taxableGainRub <= 0 && r.hasLdvPortion) return 'без налога (ЛДВ)';
-    if (r.taxRub > 0) return 'налог ~${Fmt.money(r.taxRub)}';
-    return null;
-  }
+  String? _taxLabel(SaleTaxResult r) => saleTaxLabel(r);
 
   Future<bool> _confirmDelete(BuildContext context) async {
     return await showDialog<bool>(
@@ -1083,9 +1081,33 @@ class _PositionCard extends StatelessWidget {
               isSell: draft.isSell,
             ),
             if (!draft.isSell && draft.tickerCtrl.text.isNotEmpty) _planSection(context),
+            if (draft.isSell) _iisSellHint(),
           ],
         ),
       ),
+    );
+  }
+
+  /// Подсказка при продаже на ИИС: налог сейчас не удержат.
+  Widget _iisSellHint() {
+    final regime = TaxService.regime;
+    if (regime == TaxRegime.regular) return const SizedBox.shrink();
+    final t = draft.tickerCtrl.text.toUpperCase();
+    final h = AnalyticsService.currentHoldings()[t];
+    final price = double.tryParse(draft.priceCtrl.text.replaceAll(' ', '').replaceAll(',', '.')) ?? 0;
+    if (h == null || price <= 0) return const SizedBox.shrink();
+    final gain = CurrencyService.toRub((price - h.avgCost) * draft.securityQuantity, draft.currency);
+    if (gain <= 0.5) return const SizedBox.shrink();
+    final tax = gain * TaxService.rate;
+    final iis = IisService.current;
+    final term = iis == null ? null : IisService.minTermEnd(iis);
+    final text = TaxService.exemptAtTermFor(regime)
+        ? 'Налог сейчас не удержат. Его посчитают, только если закрыть ИИС раньше '
+            '${term == null ? 'срока' : Fmt.date(term)} — тогда ≈ ${Fmt.money(tax)}.'
+        : 'Налог ≈ ${Fmt.money(tax)} сейчас не удержат — его посчитают при закрытии ИИС.';
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: TaxNote(text: text),
     );
   }
 

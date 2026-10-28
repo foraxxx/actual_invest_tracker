@@ -1632,12 +1632,7 @@ class _TickerDetailScreenState extends State<TickerDetailScreen> {
     );
   }
 
-  String? _taxLabel(SaleTaxResult r) {
-    if (r.realizedGainRub <= 0) return 'без налога (убыток)';
-    if (r.taxableGainRub <= 0 && r.hasLdvPortion) return 'без налога (ЛДВ)';
-    if (r.taxRub > 0) return 'налог ~${Fmt.money(r.taxRub)}';
-    return null;
-  }
+  String? _taxLabel(SaleTaxResult r) => saleTaxLabel(r);
 
   // ---------------------------------------------------------------------------
   // Действия

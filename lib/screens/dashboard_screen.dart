@@ -263,7 +263,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final twr = AnalyticsService.twrPercent();
     final benchmark = BenchmarkService.returnPercent.value;
     final benchmarkError = BenchmarkService.error.value;
-    final taxDue = TaxService.enabled ? TaxService.totalTaxDue() : 0.0;
+    // На ИИС налог с продаж не удерживается сразу — он в карточке ИИС.
+    final taxDue = TaxService.enabled && TaxService.regime == TaxRegime.regular ? TaxService.totalTaxDue() : 0.0;
     final periodChange = AnalyticsService.portfolioChangeForPeriod(_period);
     final dayChange = AnalyticsService.portfolioDayChange();
     final accent = context.accent;

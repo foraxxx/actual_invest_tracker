@@ -171,6 +171,21 @@ class ReportPdfService {
                     _kv('Индекс Мосбиржи', imoexPct == null ? '—' : Fmt.pct(imoexPct)),
                     _kv('Инфляция', inflationPct == null ? '—' : Fmt.pct(inflationPct)),
                     _kv('Вклад под ключевую', keyRatePct == null ? '—' : '≈ ${Fmt.pct(keyRatePct)}'),
+                    if (report.taxes != null &&
+                        (report.taxes!.dividends + report.taxes!.coupons + report.taxes!.sales) > 0.5) ...[
+                      pw.SizedBox(height: 10),
+                      _h('Налоги за год'),
+                      if (report.taxes!.dividends > 0.5) _kv('С дивидендов — удержано', Fmt.money(report.taxes!.dividends)),
+                      if (report.taxes!.coupons > 0.5)
+                        _kv(report.taxes!.deferred ? 'С купонов — при закрытии ИИС' : 'С купонов — брокер удержит',
+                            '≈ ${Fmt.money(report.taxes!.coupons)}'),
+                      if (report.taxes!.sales > 0.5)
+                        _kv(report.taxes!.deferred ? 'С продаж — при закрытии ИИС' : 'С продаж',
+                            '≈ ${Fmt.money(report.taxes!.sales)}'),
+                      _kv('Итого', '≈ ${Fmt.money(report.taxes!.total)}', color: _negative, bold: true, top: true),
+                      if (report.taxes!.saved > 0.5)
+                        _kv('ИИС сэкономил', '≈ ${Fmt.money(report.taxes!.saved)}', color: _positive),
+                    ],
                     pw.SizedBox(height: 10),
                     _h('Сделки'),
                     _kv('Куплено', Fmt.money(report.boughtRub)),

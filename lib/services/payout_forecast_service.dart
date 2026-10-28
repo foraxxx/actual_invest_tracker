@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import '../models/plan.dart';
 import '../models/purchase.dart';
 import 'analytics_service.dart';
-import 'iis_service.dart';
 import 'tax_service.dart';
 import 'currency_service.dart';
 import 'dividend_history_service.dart';
@@ -145,9 +144,7 @@ class PayoutForecastService {
     // Налог с выплат удерживается всегда, независимо от того, показывать ли
     // налог с продаж. Ставка — из настроек ИИС этого портфеля, иначе общая.
     try {
-      final iis = IisService.current;
-      final rate = iis != null ? iis.ratePct / 100 : TaxService.rate;
-      return 1 - rate.clamp(0.0, 0.3);
+      return 1 - TaxService.rate.clamp(0.0, 0.3);
     } catch (_) {
       return 1; // настройки налога ещё не загружены
     }
@@ -354,6 +351,16 @@ class PayoutForecastService {
     final raw = list.first.currency.toUpperCase();
     return (raw == 'SUR' || raw.isEmpty) ? 'RUB' : raw;
   }
+
+  /// Купоны в прогнозе на 12 месяцев (они приходят целиком, без налога).
+  static double couponForecastTotal() => Memo.get('couponForecast', () {
+        double total = 0;
+        for (final ticker in AnalyticsService.currentHoldings().keys) {
+          if (!payoutsFor(ticker).any((p) => p.kind == 'Купон')) continue;
+          total += forecastForTicker(ticker).rub;
+        }
+        return total;
+      });
 
   /// Прогноз по всему портфелю.
   static ({double total, int fromExchange, int fromHistory}) portfolioForecast() =>

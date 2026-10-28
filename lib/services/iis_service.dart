@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'cash_service.dart';
 import 'portfolio_service.dart';
+import 'tax_service.dart';
 
 /// Тип ИИС.
 enum IisType { newType, oldA, oldB }
@@ -199,7 +200,8 @@ class IisService {
   static IisYear yearSummary(IisSettings s, int year, {Map<DateTime, double>? byMonth}) {
     final months = byMonth ?? contributionsByMonth();
     final contributed = months.entries.where((e) => e.key.year == year).fold(0.0, (a, e) => a + e.value);
-    final rate = s.ratePct / 100;
+    // Ставка — общая, из настроек налога.
+    final rate = TaxService.rate;
     final hasDeduction = s.type.hasContributionDeduction;
     final limit = hasDeduction ? deductionBase : oldContributionLimit;
     return IisYear(

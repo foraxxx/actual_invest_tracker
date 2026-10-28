@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../widgets/tax_widgets.dart';
+import '../services/tax_service.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../design/charts.dart';
@@ -116,6 +118,38 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
           ],
         ),
       );
+
+  /// Налоги за год: что удержано, что удержат, и сколько сэкономил ИИС.
+  Widget _taxesBlock(YearTaxes t) {
+    final rate = '${(TaxService.rate * 100).round()}%';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _title('Налоги за $_year'),
+        if (t.dividends > 0.5) _line('С дивидендов — удержано', Fmt.money(t.dividends)),
+        if (t.coupons > 0.5)
+          _line(
+            t.deferred ? 'С купонов — при закрытии ИИС' : 'С купонов — брокер удержит',
+            '≈ ${Fmt.money(t.coupons)}',
+            color: t.deferred ? context.dim : null,
+          ),
+        if (t.sales > 0.5)
+          _line(t.deferred ? 'С продаж — при закрытии ИИС' : 'С продаж', '≈ ${Fmt.money(t.sales)}',
+              color: t.deferred ? context.dim : null),
+        _line('Итого за год', '≈ ${Fmt.money(t.total)}', color: AppColors.negative, bold: true, divider: true),
+        if (t.saved > 0.5) ...[
+          const SizedBox(height: 8),
+          TaxNote(
+            color: AppColors.positive,
+            text: 'ИИС сэкономил ≈ ${Fmt.money(t.saved)} налога в этом году — если закрыть счёт после минимального срока.',
+          ),
+        ],
+        const SizedBox(height: 6),
+        Text('Ставка $rate — из настроек налога. С купонов и продаж — оценка.',
+            style: TextStyle(fontSize: 11, color: context.dim)),
+      ],
+    );
+  }
 
   Widget _line(String label, String value, {Color? color, bool bold = false, bool divider = false}) => Container(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -450,6 +484,10 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                 ],
               ),
             ),
+
+            // --- Налоги за год ---
+            if (report.taxes != null && (report.taxes!.dividends + report.taxes!.coupons + report.taxes!.sales) > 0.5)
+              _card(child: _taxesBlock(report.taxes!)),
 
             // --- Доходность в сравнении ---
             _card(

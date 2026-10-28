@@ -8,6 +8,8 @@ import '../design/motion.dart';
 import '../design/surfaces.dart';
 import '../design/tokens.dart';
 import '../services/iis_service.dart';
+import '../services/tax_service.dart';
+import 'tax_widgets.dart';
 import '../services/portfolio_service.dart';
 import '../services/storage_service.dart';
 import '../models/deposit.dart';
@@ -233,16 +235,8 @@ class IisCard extends StatelessWidget {
             ],
           ),
         ],
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(child: Text('До минимального срока', style: TextStyle(fontSize: 12, color: context.dim))),
-            Text(
-              termEnd.isAfter(now) ? '${monthsText(_monthsBetween(now, termEnd))} · ${Fmt.date(termEnd)}' : 'пройден',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
-          ],
-        ),
+        const SizedBox(height: 12),
+        _IisTaxBlock(settings: settings, termEnd: termEnd, now: now),
         if (withDeduction) ...[
           const SizedBox(height: 6),
           Text(
@@ -482,19 +476,9 @@ List<Widget> _iisFields(BuildContext ctx, StateSetter setSheet, _IisDraft d) => 
           onPicked: (v) => setSheet(() => d.opened = v),
         ),
         if (d.type.hasContributionDeduction) ...[
-          const SizedBox(height: 12),
-          Text('Ставка вычета', style: TextStyle(fontSize: 12, color: ctx.dim)),
-          const SizedBox(height: 6),
-          SegmentedToggle<int>(
-            values: const [13, 15],
-            selected: d.rate,
-            labelOf: (r) => '$r%',
-            onChanged: (r) => setSheet(() => d.rate = r),
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
-            '15% — если ваш доход за год больше 2,4 млн ₽. Вычет возвращается по той ставке, '
-            'по которой вы платили налог.',
+            'Вычет считается по ставке НДФЛ из настроек налога (13% или 15%).',
             style: TextStyle(fontSize: 11.5, height: 1.35, color: ctx.dim),
           ),
         ],
@@ -856,14 +840,41 @@ class _IisDetails extends StatelessWidget {
                 ctx,
                 Row(
                   children: [
-                    Expanded(child: Text('Доход по счёту', style: TextStyle(fontSize: 12.5, color: ctx.dim))),
+                    Expanded(
+                      child: Text('Купоны и продажи', style: TextStyle(fontSize: 12.5, color: ctx.dim)),
+                    ),
                     const Text(
-                      'без налога',
+                      'без налога после срока',
                       style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.positive),
                     ),
                   ],
                 ),
               ),
+            Builder(builder: (_) {
+              final tax = TaxService.taxIfClosedNow();
+              if (tax <= 0.5) return const SizedBox.shrink();
+              final early = s.type != IisType.oldA;
+              return _box(
+                ctx,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(early ? 'Налог при досрочном закрытии' : 'Налог при закрытии счёта',
+                              style: TextStyle(fontSize: 12.5, color: ctx.dim)),
+                          Text('${(TaxService.rate * 100).round()}% с купонов и прибыли от продаж',
+                              style: TextStyle(fontSize: 10.5, color: ctx.dim)),
+                        ],
+                      ),
+                    ),
+                    Text('≈ ${Fmt.money(tax)}',
+                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.negative)),
+                  ],
+                ),
+              );
+            }),
             const SizedBox(height: 6),
             Text(
               '${withDeduction ? 'Нажмите на полученный год, чтобы изменить или снять отметку. ' : ''}'
@@ -883,6 +894,91 @@ class _IisDetails extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// Срок счёта и налоги в развёрнутой карточке ИИС: сколько налога не
+/// платится и сколько будет, если закрыть счёт раньше срока.
+class _IisTaxBlock extends StatelessWidget {
+  final IisSettings settings;
+  final DateTime termEnd;
+  final DateTime now;
+
+  const _IisTaxBlock({required this.settings, required this.termEnd, required this.now});
+
+  @override
+  Widget build(BuildContext context) {
+    final opened = settings.openedAt;
+    final total = termEnd.difference(opened).inDays;
+    final passed = now.difference(opened).inDays;
+    final share = total <= 0 ? 1.0 : (passed / total).clamp(0.0, 1.0).toDouble();
+    final termPassed = !termEnd.isAfter(now);
+    final regime = TaxService.regime;
+    final exempt = TaxService.exemptAtTermFor(regime);
+    final tax = TaxService.taxIfClosedNow();
+    final returnDeductions = settings.type.hasContributionDeduction ? IisService.totalReceived(settings) : 0.0;
+
+    Widget line(String title, String value, {String? sub, Color? color}) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 13)),
+                    if (sub != null) Text(sub, style: TextStyle(fontSize: 11, color: context.dim)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: color)),
+            ],
+          ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Expanded(child: Text('До минимального срока', style: TextStyle(fontSize: 12, color: context.dim))),
+            Text(
+              termPassed ? 'пройден' : '${monthsText(_monthsBetween(now, termEnd))} · ${Fmt.date(termEnd)}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: share,
+            minHeight: 6,
+            backgroundColor: context.hairline,
+            valueColor: const AlwaysStoppedAnimation(AppColors.positive),
+          ),
+        ),
+        if (exempt && tax > 0.5) ...[
+          line('Налог не платится', '≈ ${Fmt.money(tax)}',
+              sub: 'с купонов и продаж на сегодня', color: AppColors.positive),
+          if (!termPassed)
+            line('Если закрыть раньше', '≈ ${Fmt.money(tax + returnDeductions)}',
+                sub: returnDeductions > 0 ? 'налог и возврат полученных вычетов' : 'налог с купонов и продаж',
+                color: AppColors.negative),
+        ] else if (!exempt && tax > 0.5)
+          line('Налог при закрытии счёта', '≈ ${Fmt.money(tax)}',
+              sub: 'с купонов и продаж — удержат при закрытии', color: AppColors.negative),
+        if (settings.type == IisType.newType) ...[
+          const SizedBox(height: 10),
+          const TaxNote(text: 'Дивиденды можно выводить на карту. Купоны — только с закрытием счёта.'),
+        ],
+      ],
     );
   }
 }

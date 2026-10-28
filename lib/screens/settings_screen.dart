@@ -25,6 +25,7 @@ import 'widget_constructor_screen.dart';
 import 'broker_import_screen.dart';
 import 'budget_screen.dart';
 import 'home_screen.dart';
+import '../widgets/tax_widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -570,38 +571,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return FadeSlideIn(
                 delay: const Duration(milliseconds: 140),
                 child: _section(
-                  title: 'Налог с продажи (НДФЛ)',
-                  subtitle: 'Ставка и льгота на долгосрочное владение',
+                  title: 'Налоги (НДФЛ)',
+                  subtitle: 'Ставка, порог 2,4 млн и налог с продаж',
                   icon: Icons.receipt_long_rounded,
                   child: ValueListenableBuilder<int>(
                     valueListenable: TaxService.version,
                     builder: (context, _, __) => Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        Text('Ставка НДФЛ', style: TextStyle(fontSize: 12, color: context.dim)),
+                        const SizedBox(height: 6),
+                        SegmentedToggle<double>(
+                          values: const [0.13, 0.15],
+                          selected: TaxService.rate,
+                          labelOf: (r) => '${(r * 100).toStringAsFixed(0)}%',
+                          onChanged: TaxService.setRate,
+                        ),
+                        const SizedBox(height: 6),
                         Text(
-                          'С прибыли от продажи. Бумаги старше 3 лет — без налога (ЛДВ).',
+                          'Одна ставка для всего: дивиденды, купоны, продажи и вычет по ИИС.',
                           style: TextStyle(fontSize: 11.5, height: 1.45, color: context.dim),
                         ),
                         const SizedBox(height: 12),
+                        const TaxThresholdBar(),
+                        const SizedBox(height: 12),
                         _switchRow(
                           title: 'Показывать налог с продаж',
-                          subtitle: 'НДФЛ и ЛДВ в расчётах',
+                          subtitle: 'НДФЛ с прибыли и льгота за 3 года владения',
                           value: TaxService.enabled,
                           onChanged: TaxService.setEnabled,
-                        ),
-                        const SizedBox(height: 12),
-                        AnimatedOpacity(
-                          duration: AppDuration.normal,
-                          opacity: TaxService.enabled ? 1 : 0.4,
-                          child: IgnorePointer(
-                            ignoring: !TaxService.enabled,
-                            child: SegmentedToggle<double>(
-                              values: const [0.13, 0.15],
-                              selected: TaxService.rate,
-                              labelOf: (r) => '${(r * 100).toStringAsFixed(0)}%',
-                              onChanged: TaxService.setRate,
-                            ),
-                          ),
                         ),
                       ],
                     ),
