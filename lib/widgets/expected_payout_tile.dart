@@ -99,13 +99,12 @@ class ExpectedPayoutTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const hidden = false;
     final p = payout;
     final net = p.net(defaultTaxRate(p.isBond));
     final color = confirm ? AppColors.warning : AppColors.info;
     final month = Fmt.dateLong(p.date).split(' ')[1];
     final unit = p.isBond ? 'облигацию' : 'акцию';
-    final amountText = hidden ? '••• ₽' : '≈ ${Fmt.money(net)}';
+    final amountText = '≈ ${Fmt.money(net)}';
 
     final dateBox = Container(
       width: 56,

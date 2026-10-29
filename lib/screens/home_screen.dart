@@ -44,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     MarketScreen(),
     PurchasesScreen(),
     PlansScreen(),
-    SettingsScreen(),
+    SettingsScreen(inPortfolio: true),
   ];
 
   static const _items = [

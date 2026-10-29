@@ -28,7 +28,11 @@ import 'home_screen.dart';
 import '../widgets/tax_widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  /// Настройки открыты внутри портфеля: тогда есть «Портфель» и «Итоги».
+  /// На общей вкладке (список портфелей) их нет — непонятно, какого портфеля.
+  final bool inPortfolio;
+
+  const SettingsScreen({super.key, this.inPortfolio = false});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -53,26 +57,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
-  String get _portfolioName => '«${PortfolioService.active.name}»';
-
   @override
   Widget build(BuildContext context) {
     return PageTour(
-      pageId: 'settings',
-      steps: const [
-        PageTourStep(
+      pageId: widget.inPortfolio ? 'settings' : 'settings_root',
+      steps: [
+        const PageTourStep(
           anchor: 'online',
           title: 'Биржа и котировки',
           text: 'Здесь включается загрузка с Мосбиржи: котировки, курсы валют, отрасли и '
               'логотипы бумаг. Без неё приложение работает полностью офлайн.',
         ),
-        PageTourStep(
-          anchor: 'portfolio',
-          title: 'Портфель',
-          text: 'Здесь создаются свои секторы — по ним строится диаграмма распределения. '
-              'Привязать бумагу к сектору можно в её карточке. Тут же настраивается налог с продаж.',
-        ),
-        PageTourStep(
+        if (widget.inPortfolio)
+          const PageTourStep(
+            anchor: 'portfolio',
+            title: 'Портфель',
+            text: 'Здесь создаются свои секторы — по ним строится диаграмма распределения. '
+                'Привязать бумагу к сектору можно в её карточке.',
+          ),
+        const PageTourStep(
           anchor: 'data',
           title: 'Резервные копии',
           text: 'Данные лежат только на телефоне, поэтому бэкап — единственная страховка. '
@@ -132,23 +135,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             FadeSlideIn.staggered(
               index: 2,
               child: _navGroup([
-                _navRow(
-                  icon: Icons.pie_chart_outline_rounded,
-                  title: 'Портфель',
-                  value: PortfolioService.active.name,
-                  tourId: 'portfolio',
-                  open: () => _openGroup(
-                    'Портфель',
-                    () => [_sectorsSection(), const SizedBox(height: 14), _taxSection()],
+                if (widget.inPortfolio)
+                  _navRow(
+                    icon: Icons.pie_chart_outline_rounded,
+                    title: 'Портфель',
+                    value: PortfolioService.active.name,
+                    tourId: 'portfolio',
+                    open: () => _openGroup('Портфель', () => [_sectorsSection()]),
                   ),
-                ),
-                _navRow(
-                  icon: Icons.summarize_outlined,
-                  title: 'Итоги года',
-                  open: () => Navigator.push(
-                    context,
-                    AppPageRoute(builder: (_) => const AnnualReportScreen()),
+                if (widget.inPortfolio)
+                  _navRow(
+                    icon: Icons.summarize_outlined,
+                    title: 'Итоги',
+                    open: () => Navigator.push(
+                      context,
+                      AppPageRoute(builder: (_) => const AnnualReportScreen()),
+                    ),
                   ),
+                // Налоги — общие для всех портфелей.
+                _navRow(
+                  icon: Icons.receipt_long_rounded,
+                  title: 'Налоги',
+                  value: '${(TaxService.rate * 100).round()}%',
+                  open: () => _openGroup('Налоги', () => [_taxSection()]),
                 ),
                 _navRow(
                   icon: Icons.account_balance_wallet_outlined,
@@ -662,7 +671,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: Icons.file_download_outlined,
                         title: 'Восстановить из бэкапа',
                         subtitle: 'Из сохранённого файла',
-                        onTap: () => _importBackup(context),
+                        onTap: () => importBackupFlow(context, onDone: () => setState(() {})),
                       ),
                       const SizedBox(height: 8),
                       _actionRow(
@@ -711,16 +720,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _choiceTitle(String title, String subtitle) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 2),
-        Text(subtitle, style: TextStyle(fontSize: 11.3, height: 1.35, color: context.dim)),
-      ],
-    );
-  }
 
   Widget _switchRow({
     required String title,
@@ -773,137 +772,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// Спрашивает пароль от зашифрованной копии. Вызывается, только если файл
-  /// действительно зашифрован, а сохранённый пароль не подошёл.
-  Future<String?> _askBackupPassword(BuildContext context) async {
-    final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Файл зашифрован'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Введите пароль, которым была закрыта эта копия. '
-              'Без него прочитать файл невозможно — пароль нигде не хранится, '
-              'кроме устройства, где делался бэкап.',
-              style: TextStyle(fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 14),
-            AppTextField(controller: ctrl, label: 'Пароль', autofocus: true),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('Открыть'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Бюджет в бэкапе старее текущего: заменить или оставить нынешний.
-  Future<bool> _confirmBudgetReplace(BuildContext context, DateTime? backupAt, DateTime? currentAt) async {
-    String when(DateTime? d) => d == null ? 'неизвестно когда' : Fmt.dateTime(d);
-    final ok = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Бюджет в бэкапе старее'),
-        content: Text(
-          'Бюджет в файле сохранён ${when(backupAt)}, а в приложении он менялся ${when(currentAt)}. '
-          'Если заменить, отметки и изменения после даты бэкапа пропадут. Портфели загрузятся в любом случае.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Оставить текущий')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Заменить')),
-        ],
-      ),
-    );
-    return ok == true;
-  }
-
-  Future<void> _importBackup(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Импорт бэкапа'),
-        content: const Text(
-          'Данные из файла будут добавлены к тем, что уже есть в приложении '
-          '(существующие записи не удаляются и не перезаписываются). Продолжить?',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выбрать файл')),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-    );
-    if (picked == null || picked.files.single.path == null) return;
-
-    try {
-      final result = await BackupService.importFromFilePath(
-        picked.files.single.path!,
-        askPassword: () => _askBackupPassword(context),
-        confirmBudget: (backupAt, currentAt) => _confirmBudgetReplace(context, backupAt, currentAt),
-      );
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.portfolios > 0
-                ? 'Загружено портфелей: ${result.portfolios}, записей: ${result.count}'
-                : 'Импортировано записей: ${result.count}',
-          ),
-        ),
-      );
-      setState(() {});
-
-      if (result.missingLogos.isNotEmpty) {
-        if (!context.mounted) return;
-        final wantsManualPick = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Не нашлись иконки бумаг'),
-            content: Text(
-              'Рядом с файлом бэкапа не нашлось ${result.missingLogos.length} '
-              '${Fmt.plural(result.missingLogos.length, "иконка", "иконки", "иконок")} '
-              '(${result.missingLogos.keys.join(", ")}). Часто причина в том, что проводник Android '
-              'открывает временную копию файла, а не саму папку. Выбрать папку с иконками вручную?',
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Пропустить')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выбрать папку')),
-            ],
-          ),
-        );
-        if (wantsManualPick == true) {
-          final folder = await FilePicker.platform.getDirectoryPath();
-          if (folder != null) {
-            final fixed = await BackupService.retryMissingLogos(result.missingLogos, folder);
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(fixed > 0 ? 'Подтянуто иконок: $fixed' : 'В этой папке иконки не нашлись')),
-            );
-            setState(() {});
-          }
-        }
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось прочитать файл: $e')),
-      );
-    }
-  }
 }
 
 /// Управление секторами: создание/удаление и привязка бумаг.
@@ -1416,6 +1284,139 @@ class _BackupCryptoSectionState extends State<_BackupCryptoSection> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Спрашивает пароль от зашифрованной копии. Вызывается, только если файл
+/// действительно зашифрован, а сохранённый пароль не подошёл.
+Future<String?> _askBackupPassword(BuildContext context) async {
+  final ctrl = TextEditingController();
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Файл зашифрован'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Введите пароль, которым была закрыта эта копия. '
+            'Без него прочитать файл невозможно — пароль нигде не хранится, '
+            'кроме устройства, где делался бэкап.',
+            style: TextStyle(fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          AppTextField(controller: ctrl, label: 'Пароль', autofocus: true),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, ctrl.text),
+          child: const Text('Открыть'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Бюджет в бэкапе старее текущего: заменить или оставить нынешний.
+Future<bool> _confirmBudgetReplace(BuildContext context, DateTime? backupAt, DateTime? currentAt) async {
+  String when(DateTime? d) => d == null ? 'неизвестно когда' : Fmt.dateTime(d);
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Бюджет в бэкапе старее'),
+      content: Text(
+        'Бюджет в файле сохранён ${when(backupAt)}, а в приложении он менялся ${when(currentAt)}. '
+        'Если заменить, отметки и изменения после даты бэкапа пропадут. Портфели загрузятся в любом случае.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Оставить текущий')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Заменить')),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
+/// Загрузка бэкапа с выбором файла — из настроек и с пустого списка портфелей.
+Future<void> importBackupFlow(BuildContext context, {VoidCallback? onDone}) async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Импорт бэкапа'),
+      content: const Text(
+        'Данные из файла будут добавлены к тем, что уже есть в приложении '
+        '(существующие записи не удаляются и не перезаписываются). Продолжить?',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выбрать файл')),
+      ],
+    ),
+  );
+  if (confirm != true) return;
+
+  final picked = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['json'],
+  );
+  if (picked == null || picked.files.single.path == null) return;
+
+  try {
+    final result = await BackupService.importFromFilePath(
+      picked.files.single.path!,
+      askPassword: () => _askBackupPassword(context),
+      confirmBudget: (backupAt, currentAt) => _confirmBudgetReplace(context, backupAt, currentAt),
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.portfolios > 0
+              ? 'Загружено портфелей: ${result.portfolios}, записей: ${result.count}'
+              : 'Импортировано записей: ${result.count}',
+        ),
+      ),
+    );
+    onDone?.call();
+
+    if (result.missingLogos.isNotEmpty) {
+      if (!context.mounted) return;
+      final wantsManualPick = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Не нашлись иконки бумаг'),
+          content: Text(
+            'Рядом с файлом бэкапа не нашлось ${result.missingLogos.length} '
+            '${Fmt.plural(result.missingLogos.length, "иконка", "иконки", "иконок")} '
+            '(${result.missingLogos.keys.join(", ")}). Часто причина в том, что проводник Android '
+            'открывает временную копию файла, а не саму папку. Выбрать папку с иконками вручную?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Пропустить')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Выбрать папку')),
+          ],
+        ),
+      );
+      if (wantsManualPick == true) {
+        final folder = await FilePicker.platform.getDirectoryPath();
+        if (folder != null) {
+          final fixed = await BackupService.retryMissingLogos(result.missingLogos, folder);
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(fixed > 0 ? 'Подтянуто иконок: $fixed' : 'В этой папке иконки не нашлись')),
+          );
+          onDone?.call();
+        }
+      }
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Не удалось прочитать файл: $e')),
     );
   }
 }

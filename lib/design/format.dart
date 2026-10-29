@@ -95,6 +95,16 @@ class Fmt {
 
   static String pct(double v, {int decimals = 1}) => '${v >= 0 ? '+' : ''}${v.toStringAsFixed(decimals)}%';
 
+  /// Крупная сумма коротко: «1,52 млн ₽», «12,4 млн ₽»; до миллиона — как
+  /// обычно. Для плиток, где полная сумма не помещается.
+  static String shortMoney(double v) {
+    final abs = v.abs();
+    if (abs < 1000000) return money(v);
+    final mln = v / 1000000;
+    final digits = abs >= 100000000 ? 0 : (abs >= 10000000 ? 1 : 2);
+    return '${mln.toStringAsFixed(digits).replaceAll('.', ',')} млн ₽';
+  }
+
   /// Компактная запись для тесных мест: 1,2 млн вместо 1 200 000.
   static String compact(double v) {
     final abs = v.abs();

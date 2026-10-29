@@ -1,5 +1,9 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'settings_screen.dart' show importBackupFlow;
+import 'broker_import_screen.dart';
 import '../design/charts.dart';
+import '../services/appearance_service.dart';
 import '../design/page_tour.dart';
 import '../design/fields.dart';
 import '../design/format.dart';
@@ -137,10 +141,10 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
       steps: list.isEmpty
           ? const [
               PageTourStep(
-                anchor: 'fab',
+                anchor: 'start',
                 title: 'Начните с портфеля',
-                text: 'Портфель — это отдельный счёт: брокерский или ИИС. Создайте первый, '
-                    'и внутри появятся сделки, выплаты и планы. Можно и загрузить отчёт брокера.',
+                text: 'Портфель — это отдельный счёт: брокерский или ИИС. Создайте новый, '
+                    'загрузите отчёт брокера или восстановите данные из бэкапа.',
               ),
             ]
           : const [
@@ -169,11 +173,7 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
         child: SafeArea(
           bottom: false,
           child: list.isEmpty
-              ? EmptyState(
-                  icon: Icons.folder_off_outlined,
-                  title: 'Портфелей нет',
-                  subtitle: 'Создайте первый портфель кнопкой «Портфель» внизу — в нём будут храниться сделки, выплаты и планы.',
-                )
+              ? _firstRun()
               : RefreshIndicator(
                   onRefresh: _pullToRefresh,
                   child: ListView(
@@ -207,33 +207,9 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                     FadeSlideIn(
                       child: TourSpot(
                         id: 'summary',
-                        child: _summaryCard(totalValue, totalProfit, active.length),
+                        child: _summaryCard(totalValue, totalProfit, active.length, distribution, active),
                       ),
                     ),
-
-                    if (distribution.length > 1) ...[
-                      const SizedBox(height: 14),
-                      FadeSlideIn(
-                        delay: const Duration(milliseconds: 80),
-                        child: AppCard(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                          child: Column(
-                            children: [
-                              const SectionTitle(
-                                title: 'Распределение между портфелями',
-                                padding: EdgeInsets.only(bottom: 12),
-                              ),
-                              DonutChart(
-                                data: distribution,
-                                valueFormatter: (v) => Fmt.money(v),
-                                centerLabel: 'Всего',
-                                size: 190,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
 
                     if (active.isNotEmpty) ...[
                       const SizedBox(height: 22),
@@ -293,7 +269,8 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                 ),
         ),
       ),
-      floatingActionButton: TourSpot(
+      // Пока портфелей нет, создание — в карточках на экране.
+      floatingActionButton: list.isEmpty ? null : TourSpot(
         id: 'fab',
         child: FloatingActionButton.extended(
         // Без heroTag Flutter считает все кнопки действия одной и той же и
@@ -309,7 +286,171 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
     );
   }
 
-  Widget _summaryCard(double value, double profit, int count) {
+  /// Первый запуск: портфелей нет — три понятных способа начать.
+  Widget _firstRun() {
+    Widget choice(IconData icon, String title, String text, Color color, VoidCallback onTap) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Material(
+            color: context.isDark ? AppColors.darkSurface : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: onTap,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: color.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(13)),
+                      child: Icon(icon, color: color, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 2),
+                          Text(text, style: TextStyle(fontSize: 12.5, height: 1.3, color: context.dim)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: context.dim),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+      children: [
+        Text('INVEST TRACKER',
+            style: TextStyle(fontSize: 10, letterSpacing: 1.8, fontWeight: FontWeight.w700, color: context.dim)),
+        const SizedBox(height: 3),
+        Text('Портфели', style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 18),
+        Text('С чего начнём?', style: TextStyle(fontSize: 14, color: context.dim)),
+        const SizedBox(height: 10),
+        TourSpot(
+          id: 'start',
+          child: choice(Icons.add_rounded, 'Новый портфель', 'Внести сделки вручную или загрузить отчёт потом',
+              AppColors.positive, _createDialog),
+        ),
+        choice(Icons.upload_file_rounded, 'Из отчёта брокера', 'Сделки и выплаты сразу — выберите своего брокера',
+            AppColors.info, () async {
+          await Navigator.push(context, AppPageRoute(builder: (_) => const BrokerImportScreen()));
+          if (mounted) _load();
+        }),
+        choice(Icons.restore_rounded, 'Из бэкапа', 'Если переустановили приложение или сменили телефон',
+            AppColors.violet, () => importBackupFlow(context, onDone: () {
+                  if (mounted) _load();
+                })),
+      ],
+    );
+  }
+
+  /// График в сводке: скрыт, пока не нажали стрелку справа от суммы.
+  bool _chartOpen = AppearanceService.ui('portfoliosChart') == 'open';
+  int _chartTab = 0;
+
+  void _toggleChart() {
+    setState(() => _chartOpen = !_chartOpen);
+    AppearanceService.setUi('portfoliosChart', _chartOpen ? 'open' : 'closed');
+  }
+
+  Widget _chartButton() => Material(
+        color: context.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _toggleChart,
+          child: SizedBox(
+            width: 36,
+            height: 36,
+            child: AnimatedRotation(
+              turns: _chartOpen ? 0.5 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: Icon(Icons.expand_more_rounded, size: 22, color: context.dim),
+            ),
+          ),
+        ),
+      );
+
+  /// Распределение между портфелями или их доходность.
+  Widget _summaryChart(Map<String, double> distribution, List<PortfolioMeta> active) {
+    final colors = [AppColors.info, AppColors.violet, AppColors.positive, AppColors.gold, AppColors.cyan, AppColors.negative];
+    final rows = [
+      for (final p in active)
+        if ((_stats[p.id]?.valueRub ?? 0) > 0) p,
+    ];
+    double pctOf(PortfolioMeta p) {
+      final st = _stats[p.id]!;
+      final cost = st.valueRub - st.profitRub;
+      return cost <= 0 ? 0 : st.profitRub / cost * 100;
+    }
+
+    final maxPct = rows.fold(0.0, (m, p) => math.max(m, pctOf(p).abs()));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 14),
+        SegmentedToggle<int>(
+          values: const [0, 1],
+          selected: _chartTab,
+          labelOf: (i) => i == 0 ? 'Распределение' : 'Доходность',
+          onChanged: (i) => setState(() => _chartTab = i),
+          height: 38,
+        ),
+        const SizedBox(height: 12),
+        if (_chartTab == 0)
+          DonutChart(data: distribution, valueFormatter: (v) => Fmt.money(v), centerLabel: 'Всего', size: 170)
+        else
+          for (int i = 0; i < rows.length; i++) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(rows[i].name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
+                  ),
+                  Text(
+                    Fmt.pct(pctOf(rows[i])),
+                    style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.pnl(pctOf(rows[i]))),
+                  ),
+                ],
+              ),
+            ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(5),
+              child: LinearProgressIndicator(
+                value: maxPct <= 0 ? 0 : (pctOf(rows[i]).abs() / maxPct).clamp(0.0, 1.0).toDouble(),
+                minHeight: 9,
+                backgroundColor: context.hairline,
+                valueColor: AlwaysStoppedAnimation(
+                    pctOf(rows[i]) >= 0 ? colors[i % colors.length] : AppColors.negative),
+              ),
+            ),
+          ],
+        if (_chartTab == 1) ...[
+          const SizedBox(height: 8),
+          Text('Прибыль за всё время к вложенному в бумаги.',
+              style: TextStyle(fontSize: 11, color: context.dim)),
+        ],
+      ],
+    );
+  }
+
+  Widget _summaryCard(double value, double profit, int count, Map<String, double> distribution,
+      List<PortfolioMeta> active) {
     final accent = context.accent;
     return GlassCard(
       glow: accent,
@@ -328,14 +469,28 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
               child: Shimmer(width: 200, height: 38, radius: 10),
             )
           else
-            HiddenAmount.forText(active: true, toggles: true,
-              Fmt.money(value),
-              fontSize: 34,
-              child: RollingNumber(
-                value: value,
-                formatter: (v) => Fmt.money(v),
-                style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -1.4),
-              ),
+            Row(
+              children: [
+                Flexible(
+                  child: HiddenAmount.forText(active: true, toggles: true,
+                    Fmt.money(value),
+                    fontSize: 34,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: RollingNumber(
+                        value: value,
+                        formatter: (v) => Fmt.money(v),
+                        style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -1.4),
+                      ),
+                    ),
+                  ),
+                ),
+                if (distribution.length > 1) ...[
+                  const SizedBox(width: 8),
+                  _chartButton(),
+                ],
+              ],
             ),
           const SizedBox(height: 10),
           if (_loading)
@@ -373,6 +528,14 @@ class _PortfoliosScreenState extends State<PortfoliosScreen> {
                 Text('суммарной прибыли', style: TextStyle(fontSize: 11.5, color: context.dim)),
               ],
             ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _chartOpen && distribution.length > 1
+                ? _summaryChart(distribution, active)
+                : const SizedBox(width: double.infinity),
+          ),
         ],
       ),
     );

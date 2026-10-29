@@ -30,6 +30,12 @@ class AnnualReportScreen extends StatefulWidget {
 class _AnnualReportScreenState extends State<AnnualReportScreen> {
   late int _year;
   late List<int> _years;
+
+  /// Выбраны итоги за всё время.
+  bool get _all => _year == AnnualReportService.allTime;
+
+  /// «за 2025 год» / «за всё время».
+  String get _period => _all ? 'за всё время' : 'за $_year год';
   bool _exporting = false;
 
   /// Фильтр карточек бумаг: все, новые, раньше, закрытые.
@@ -85,6 +91,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
   ];
 
   Future<void> _loadImoex(int year) async {
+    if (year == AnnualReportService.allTime) return;
     if (_imoex.containsKey(year)) return;
     _imoex[year] = null;
     try {
@@ -125,7 +132,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _title('Налоги за $_year'),
+        _title('Налоги $_period'),
         if (t.dividends > 0.5) _line('С дивидендов — удержано', Fmt.money(t.dividends)),
         if (t.coupons > 0.5)
           _line(
@@ -136,12 +143,12 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
         if (t.sales > 0.5)
           _line(t.deferred ? 'С продаж — при закрытии ИИС' : 'С продаж', '≈ ${Fmt.money(t.sales)}',
               color: t.deferred ? context.dim : null),
-        _line('Итого за год', '≈ ${Fmt.money(t.total)}', color: AppColors.negative, bold: true, divider: true),
+        _line(_all ? 'Итого' : 'Итого за год', '≈ ${Fmt.money(t.total)}', color: AppColors.negative, bold: true, divider: true),
         if (t.saved > 0.5) ...[
           const SizedBox(height: 8),
           TaxNote(
             color: AppColors.positive,
-            text: 'ИИС сэкономил ≈ ${Fmt.money(t.saved)} налога в этом году — если закрыть счёт после минимального срока.',
+            text: 'ИИС сэкономил ≈ ${Fmt.money(t.saved)} налога ${_all ? 'за всё время' : 'в этом году'} — если закрыть счёт после минимального срока.',
           ),
         ],
         const SizedBox(height: 6),
@@ -198,12 +205,23 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
   /// Линия по 12 месяцам: по месяцам или нарастающим итогом.
   Widget _monthLine(String title, Map<int, double> byMonth, Color color, bool cumulative, VoidCallback onSwitch) {
     final total = byMonth.values.fold(0.0, (a, b) => a + b);
-    final lastMonth = _year == DateTime.now().year ? DateTime.now().month : 12;
+    // За всё время — по годам: ключи вида 202403 складываются в 2024.
+    final byYear = <int, double>{};
+    if (_all) {
+      for (final e in byMonth.entries) {
+        byYear[e.key ~/ 100] = (byYear[e.key ~/ 100] ?? 0) + e.value;
+      }
+    }
+    final firstYear = _years.isEmpty ? DateTime.now().year : _years.reduce((a, b) => a < b ? a : b);
+    final keys = _all
+        ? [for (var y = firstYear; y <= DateTime.now().year; y++) y]
+        : [for (var m = 1; m <= (_year == DateTime.now().year ? DateTime.now().month : 12); m++) m];
+    final source = _all ? byYear : byMonth;
     final values = <double>[];
     var acc = 0.0;
-    for (var m = 1; m <= lastMonth; m++) {
-      acc += byMonth[m] ?? 0;
-      values.add(cumulative ? acc : (byMonth[m] ?? 0));
+    for (final k in keys) {
+      acc += source[k] ?? 0;
+      values.add(cumulative ? acc : (source[k] ?? 0));
     }
     return _card(
       child: Column(
@@ -214,22 +232,26 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color))),
           if (values.length >= 2)
             Sparkline(
+              // Ключ меняется при переключении — график перерисовывается сразу.
+              key: ValueKey('$title|$_year|$cumulative'),
               values: values,
               color: color,
               height: 110,
-              tooltipBuilder: (i, v) => '${_monthsNom[i]}\n${Fmt.money(v)}',
+              tooltipBuilder: (i, v) => '${_all ? '${keys[i]}' : _monthsNom[keys[i] - 1]}\n${Fmt.money(v)}',
             )
           else
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text('Пока мало месяцев для графика', style: TextStyle(fontSize: 12, color: context.dim)),
+              child: Text(_all ? 'Пока мало лет для графика' : 'Пока мало месяцев для графика',
+                  style: TextStyle(fontSize: 12, color: context.dim)),
             ),
           const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              for (var m = 1; m <= lastMonth; m++)
-                Text(_monthsShort[m - 1][0].toUpperCase(), style: TextStyle(fontSize: 10, color: context.dim)),
+              for (final k in keys)
+                Text(_all ? "'${k % 100}" : _monthsShort[k - 1][0].toUpperCase(),
+                    style: TextStyle(fontSize: 10, color: context.dim)),
             ],
           ),
           const SizedBox(height: 8),
@@ -244,7 +266,9 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  cumulative ? 'нарастающим итогом ⇄ по месяцам' : 'по месяцам ⇄ нарастающим итогом',
+                  cumulative
+                      ? 'нарастающим итогом ⇄ по ${_all ? 'годам' : 'месяцам'}'
+                      : 'по ${_all ? 'годам' : 'месяцам'} ⇄ нарастающим итогом',
                   style: TextStyle(fontSize: 11.5, color: context.dim),
                 ),
               ),
@@ -284,8 +308,10 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
     final report = AnnualReportService.build(_year);
     _loadImoex(_year);
     final result = report.totalResultRub;
-    final from = DateTime(_year);
-    final to = _year == DateTime.now().year ? DateTime.now() : DateTime(_year, 12, 31);
+    final now = DateTime.now();
+    final firstYear = _years.isEmpty ? now.year : _years.reduce((a, b) => a < b ? a : b);
+    final from = _all ? DateTime(firstYear) : DateTime(_year);
+    final to = _all || _year == now.year ? now : DateTime(_year, 12, 31);
 
     // Бумаги по результату за год.
     final ranked = report.rows.where((r) => r.valueStartRub + r.boughtSumRub > 0).toList()
@@ -295,8 +321,10 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
     final topPayouts = report.payoutEvents.toList()..sort((a, b) => b.rub.compareTo(a.rub));
 
     // Пассивный доход.
-    final months = _year == DateTime.now().year ? DateTime.now().month : 12;
-    final prev = AnnualReportService.availableYears().contains(_year - 1) ? AnnualReportService.build(_year - 1) : null;
+    final months = _all ? (now.year - firstYear) * 12 + now.month : (_year == now.year ? now.month : 12);
+    final prev = !_all && AnnualReportService.availableYears().contains(_year - 1)
+        ? AnnualReportService.build(_year - 1)
+        : null;
     final payoutGrowth = prev == null || prev.payoutsRub <= 0 ? null : (report.payoutsRub / prev.payoutsRub - 1) * 100;
     final byTickerPayouts = <String, double>{};
     for (final e in report.payoutEvents) {
@@ -334,7 +362,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
     String? bestMonth;
     {
       double bestPct = -1e9;
-      for (var m = 1; m <= months; m++) {
+      for (var m = 1; m <= (_all ? 0 : months); m++) {
         final inM = report.valueSeries.where((p) => p.key.month == m).toList();
         final before = report.valueSeries.where((p) => p.key.month < m).toList();
         if (inM.isEmpty) continue;
@@ -353,12 +381,13 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
 
     // Планы.
     final yearPlans = StorageService.plans
-        .where((p) => p.targetDate != null && p.targetDate!.year == _year)
+        .where((p) => p.targetDate != null && (_all || p.targetDate!.year == _year))
         .toList();
     final donePlans = yearPlans.where((p) => p.status == PlanStatus.done).length;
     final monthsWithDeposit = report.depositsByMonth.values.where((v) => v > 0).length;
 
-    final inflation = CbrService.inflationIn(DateTime(_year, 12)) ?? CbrService.inflationIn(DateTime(_year, months));
+    final inflation =
+        _all ? null : (CbrService.inflationIn(DateTime(_year, 12)) ?? CbrService.inflationIn(DateTime(_year, months)));
     final keyRate = CbrService.averageKeyRate(from, to);
     final imoex = _imoex[_year];
 
@@ -372,14 +401,15 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Итоги года'),
+        title: const Text('Итоги'),
         actions: [
           IconButton(
             icon: _exporting
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.picture_as_pdf_outlined),
             tooltip: 'Сохранить PDF',
-            onPressed: _exporting ? null : () => _exportPdf(report),
+            // PDF — только за год: в нём сравнение с индексом и инфляцией за год.
+            onPressed: _exporting || _all ? null : () => _exportPdf(report),
           ),
         ],
       ),
@@ -388,9 +418,9 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         children: [
           PillTabs<int>(
-            values: _years,
+            values: [..._years, AnnualReportService.allTime],
             selected: _year,
-            labelOf: (y) => '$y',
+            labelOf: (y) => y == AnnualReportService.allTime ? 'Всё время' : '$y',
             onChanged: (y) => setState(() {
               _year = y;
               _rowsFilter = 0;
@@ -402,7 +432,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
               padding: EdgeInsets.only(top: 40),
               child: EmptyState(
                 icon: Icons.event_busy_rounded,
-                title: 'За этот год данных нет',
+                title: 'Здесь данных нет',
                 subtitle: 'Выберите другой год — в списке только те, где были сделки или выплаты.',
               ),
             )
@@ -413,7 +443,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Портфель за $_year год', style: TextStyle(fontSize: 12.5, color: context.dim)),
+                  Text('Портфель $_period', style: TextStyle(fontSize: 12.5, color: context.dim)),
                   const SizedBox(height: 4),
                   FittedBox(
                     fit: BoxFit.scaleDown,
@@ -450,7 +480,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _title('Стоимость за год'),
+                    _title(_all ? 'Стоимость' : 'Стоимость за год'),
                     Sparkline(
                       values: report.valueSeries.map((e) => e.value).toList(),
                       color: AppColors.pnl(result),
@@ -471,7 +501,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _title('Из чего сложился год'),
+                  _title(_all ? 'Из чего сложился результат' : 'Из чего сложился год'),
                   _line('На 1 января', Fmt.money(report.valueStartRub)),
                   _line('Куплено бумаг', '+${Fmt.money(report.boughtRub)}'),
                   _line('Продано бумаг', '−${Fmt.money(report.soldRub)}'),
@@ -479,7 +509,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                       color: AppColors.pnl(report.valueEndRub - report.valueStartRub - report.boughtRub + report.soldRub)),
                   _line('Выплаты', '+${Fmt.money(report.payoutsRub)}', color: AppColors.positive),
                   _line('Налоги и комиссии', '−${Fmt.money(report.taxPaidRub + report.feesRub)}', color: AppColors.negative),
-                  _line('На ${_year == DateTime.now().year ? 'сегодня' : '31 декабря'}', Fmt.money(report.valueEndRub),
+                  _line('На ${_all || _year == DateTime.now().year ? 'сегодня' : '31 декабря'}', Fmt.money(report.valueEndRub),
                       bold: true, divider: true),
                 ],
               ),
@@ -494,9 +524,9 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _title('Доходность за год'),
+                  _title(_all ? 'Доходность за всё время' : 'Доходность за год'),
                   _line('Мой портфель', Fmt.pct(report.yieldPct), color: AppColors.pnl(report.yieldPct), bold: true),
-                  _line('Индекс Мосбиржи', imoex == null ? 'загружается…' : Fmt.pct(imoex)),
+                  _line('Индекс Мосбиржи', imoex == null ? (_all ? '—' : 'загружается…') : Fmt.pct(imoex)),
                   if (inflation != null) _line('Инфляция', Fmt.pct(inflation)),
                   if (keyRate != null) _line('Вклад под ключевую ставку', '≈ ${Fmt.pct(keyRate * months / 12)}'),
                 ],
@@ -561,7 +591,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _title('Сделки года'),
+                    _title(_all ? 'Сделки' : 'Сделки года'),
                     _line('Куплено', Fmt.money(report.boughtRub)),
                     _line('Продано', Fmt.money(report.soldRub)),
                     _line('Сделок', '${report.trades.length}'),
@@ -579,7 +609,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _title('Рекорды года'),
+                    _title(_all ? 'Рекорды' : 'Рекорды года'),
                     if (maxPoint != null)
                       _line('Максимум портфеля', '${Fmt.money(maxPoint.value)} · ${Fmt.dayShort(maxPoint.key)}'),
                     if (bestMonth != null) _line('Самый доходный месяц', bestMonth),
@@ -683,7 +713,7 @@ class _AnnualReportScreenState extends State<AnnualReportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _title('Секторы на конец года'),
+          _title(_all ? 'Секторы сейчас' : 'Секторы на конец года'),
           ClipRRect(
             borderRadius: BorderRadius.circular(5),
             child: SizedBox(

@@ -6,6 +6,7 @@ import 'moex_sync_service.dart';
 import 'payout_forecast_service.dart';
 import 'price_history_cache.dart';
 import 'online_settings_service.dart';
+import 'portfolio_service.dart';
 import 'storage_service.dart';
 import '../models/purchase.dart';
 
@@ -152,10 +153,35 @@ class PortfolioHistoryService {
     }
   }
 
+  /// Чей график сейчас в [timeline] и для какого портфеля идёт загрузка.
+  /// У каждого портфеля график свой: при переключении старый сбрасывается,
+  /// а загрузка, закончившаяся уже после переключения, отбрасывается.
+  static String? _owner;
+  static String? _loadingFor;
+
+  static String? _activeId() {
+    try {
+      return PortfolioService.activeId;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> refresh() async {
-    if (loading.value || StorageService.purchases.isEmpty) {
+    final id = _activeId();
+    if (_owner != id) {
+      _owner = id;
+      timeline.value = const [];
+      error.value = null;
+    }
+    if (StorageService.purchases.isEmpty) {
+      if (timeline.value.isNotEmpty) timeline.value = const [];
       return;
     }
+    if (loading.value && _loadingFor == id) {
+      return;
+    }
+    _loadingFor = id;
     if (!OnlineSettingsService.enabled) {
       error.value = 'Онлайн-история выключена — показаны локальные данные';
       return;
@@ -164,6 +190,8 @@ class PortfolioHistoryService {
     error.value = null;
     try {
       final result = await valueHistory(StorageService.purchases, remember: true);
+      // Пока грузилось, переключили портфель — этот график уже не нужен.
+      if (_activeId() != id) return;
       if (result == null) {
         error.value = 'История MOEX недоступна — показаны локальные данные';
         return;
@@ -180,7 +208,10 @@ class PortfolioHistoryService {
     } catch (_) {
       error.value = 'Нет связи с MOEX — показаны локальные данные';
     } finally {
-      loading.value = false;
+      if (_loadingFor == id) {
+        _loadingFor = null;
+        loading.value = false;
+      }
     }
   }
 

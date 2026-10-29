@@ -623,25 +623,6 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
 
   String? _taxLabel(SaleTaxResult r) => saleTaxLabel(r);
 
-  Future<bool> _confirmDelete(BuildContext context) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Удалить сделку?'),
-            content: const Text('Запись будет удалена без возможности восстановления.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: AppColors.negative),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Удалить'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
   /// Если для позиции-покупки отмечена галка «Учитывать в ближайшем плане
   /// этого месяца» — находит ближайший (по дате) активный план ЭТОГО
   /// календарного месяца на этот тикер и записывает в него накопленное

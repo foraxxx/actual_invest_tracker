@@ -216,17 +216,30 @@ class AnnualReportService {
     return list;
   }
 
-  static AnnualReport build(int year) {
-    final from = DateTime(year);
-    final to = DateTime(year + 1);
+  /// Особый «год» — итоги за всё время.
+  static const allTime = 0;
 
+  /// Ключ месяца в картах «по месяцам»: для года — номер месяца 1–12, для
+  /// всего времени — год·100 + месяц (202403).
+  static int monthKey(DateTime d, bool all) => all ? d.year * 100 + d.month : d.month;
+
+  static AnnualReport build(int year) {
+    final all = year == allTime;
     final purchases = StorageService.purchases.toList()..sort(AnalyticsService.compareTrades);
     final incomes = StorageService.incomes;
     final now = DateTime.now();
-    final isCurrentYear = year == now.year;
+    var first = now;
+    for (final p in purchases) {
+      if (p.date.isBefore(first)) first = p.date;
+    }
+    for (final i in incomes) {
+      if (i.date.isBefore(first)) first = i.date;
+    }
+    final from = all ? DateTime(first.year, first.month, first.day) : DateTime(year);
+    final to = all ? now.add(const Duration(days: 1)) : DateTime(year + 1);
+    final isCurrentYear = all || year == now.year;
     final periodEnd = isCurrentYear ? now : to;
-    final valuationDate =
-        isCurrentYear ? now : DateTime(year, 12, 31, 23, 59, 59, 999);
+    final valuationDate = isCurrentYear ? now : DateTime(year, 12, 31, 23, 59, 59, 999);
     // Для текущего года отчёт должен сходиться с главным экраном и потому
     // использует те же актуальные онлайн/ручные котировки. Исторические годы
     // по-прежнему оцениваются строго на 31 декабря.
@@ -282,11 +295,11 @@ class AnnualReportService {
       if (p.isSell) {
         sold[p.ticker] = (sold[p.ticker] ?? 0) + p.quantity;
         soldSum[p.ticker] = (soldSum[p.ticker] ?? 0) + sumRub;
-        soldByMonth[p.date.month] = (soldByMonth[p.date.month] ?? 0) + sumRub;
+        soldByMonth[monthKey(p.date, all)] = (soldByMonth[monthKey(p.date, all)] ?? 0) + sumRub;
       } else {
         bought[p.ticker] = (bought[p.ticker] ?? 0) + p.quantity;
         boughtSum[p.ticker] = (boughtSum[p.ticker] ?? 0) + sumRub;
-        boughtByMonth[p.date.month] = (boughtByMonth[p.date.month] ?? 0) + sumRub;
+        boughtByMonth[monthKey(p.date, all)] = (boughtByMonth[monthKey(p.date, all)] ?? 0) + sumRub;
       }
     }
 
@@ -298,7 +311,7 @@ class AnnualReportService {
       if (i.date.isBefore(from) || i.date.isAfter(periodEnd)) continue;
       final rub = CurrencyService.toRub(i.amountNet, i.currency, date: i.date);
       payouts[i.ticker] = (payouts[i.ticker] ?? 0) + rub;
-      payoutsByMonth[i.date.month] = (payoutsByMonth[i.date.month] ?? 0) + rub;
+      payoutsByMonth[monthKey(i.date, all)] = (payoutsByMonth[monthKey(i.date, all)] ?? 0) + rub;
       taxPaid += CurrencyService.toRub(i.taxPaid, i.currency, date: i.date);
       names[i.ticker] ??= i.name.isNotEmpty ? i.name : i.ticker;
       payoutEvents.add(ReportEvent(date: i.date, ticker: i.ticker, name: names[i.ticker]!, rub: rub));
@@ -319,7 +332,7 @@ class AnnualReportService {
       // (например, облигацию погасили, а продажа не записана).
       ...qtyStart.keys.where((t) => (qtyStart[t] ?? 0) > 1e-9),
     };
-    final types = <String, AssetType>{for (final p in purchases) p.ticker as String: p.type as AssetType};
+    final types = <String, AssetType>{for (final p in purchases) p.ticker: p.type};
     final snapshot = MoexSyncService.marketSnapshot.value;
 
     final rows = <ReportRow>[];
@@ -372,7 +385,7 @@ class AnnualReportService {
     for (final m in cash.moves) {
       if (m.date.isBefore(from) || m.date.isAfter(periodEnd)) continue;
       if (m.kind == CashMoveKind.autoDeposit || m.kind == CashMoveKind.deposit) {
-        depositsByMonth[m.date.month] = (depositsByMonth[m.date.month] ?? 0) + m.amountRub;
+        depositsByMonth[monthKey(m.date, all)] = (depositsByMonth[monthKey(m.date, all)] ?? 0) + m.amountRub;
       } else if (m.kind == CashMoveKind.withdrawal) {
         withdrawn += m.amountRub.abs();
       }
@@ -380,7 +393,7 @@ class AnnualReportService {
     double fees = 0;
     for (final p in purchases) {
       if (p.date.isBefore(from) || p.date.isAfter(periodEnd)) continue;
-      fees += CurrencyService.toRub(p.fee as double, p.currency as String, date: p.date as DateTime);
+      fees += CurrencyService.toRub(p.fee, p.currency, date: p.date);
     }
     final valueSeries = PortfolioHistoryService.timeline.value
         .where((e) => !e.key.isBefore(from) && !e.key.isAfter(periodEnd))
@@ -414,7 +427,19 @@ class AnnualReportService {
 
   static YearTaxes? _taxes(int year) {
     try {
-      return TaxService.yearTaxes(year);
+      if (year != allTime) return TaxService.yearTaxes(year);
+      // За всё время — сумма по годам.
+      double d = 0, c = 0, sl = 0, sv = 0;
+      var deferred = false;
+      for (final y in availableYears()) {
+        final t = TaxService.yearTaxes(y);
+        d += t.dividends;
+        c += t.coupons;
+        sl += t.sales;
+        sv += t.saved;
+        deferred = t.deferred;
+      }
+      return YearTaxes(dividends: d, coupons: c, sales: sl, saved: sv, deferred: deferred);
     } catch (_) {
       return null;
     }

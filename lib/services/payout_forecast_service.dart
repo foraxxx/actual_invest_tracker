@@ -223,7 +223,6 @@ class PayoutForecastService {
 
   /// Тот же расчёт, что используется внутри, но доступный тестам: логика
   /// денежная, и проверять её хочется без Hive, сети и позиции в портфеле.
-  @visibleForTesting
   static ({double value, String source}) dividendPerUnit(List<MoexPayout> dividends) =>
       _sharePerUnit(dividends);
 

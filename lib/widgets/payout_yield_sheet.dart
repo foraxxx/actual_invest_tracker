@@ -29,7 +29,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
   bool _all = false;
 
   static const _labels = {
-    PayoutKind.all: 'Все бумаги',
+    PayoutKind.all: 'Все',
     PayoutKind.dividends: 'Дивиденды',
     PayoutKind.coupons: 'Купоны',
   };
@@ -55,8 +55,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
     final now = DateTime.now().year;
     final rows = _all ? s.rows : s.rows.take(6).toList();
     final maxYield = s.rows.isEmpty ? 1.0 : s.rows.first.toCost;
-    const hidden = false;
-    String money(double v) => hidden ? '••• ₽' : Fmt.money(v);
+    String money(double v) => Fmt.money(v);
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -70,7 +69,42 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
               subtitle: 'Сколько процентов в год приносят ваши деньги',
               trailing: IconButton(icon: const Icon(Icons.info_outline_rounded), onPressed: _info),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
+            // Главное — сколько денег пришло; проценты — плитками ниже.
+            AppCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Пришло за 12 месяцев', style: TextStyle(fontSize: 12.5, color: context.dim)),
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      s.income <= 0 ? 'Выплат не было' : money(s.income),
+                      style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: AppColors.positive),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _mini(context, 'к цене покупки', s.toCost == null ? '—' : yieldPct(s.toCost!),
+                            color: AppColors.positive),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: _mini(context, 'к текущей', s.toValue == null ? '—' : yieldPct(s.toValue!))),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _mini(context, 'за ${s.lastYearNumber}', s.lastYear == null ? '—' : yieldPct(s.lastYear!)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             SegmentedToggle<PayoutKind>(
               values: PayoutKind.values,
               selected: _kind,
@@ -80,45 +114,8 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
                 _all = false;
               }),
             ),
-            const SizedBox(height: 14),
-            AppCard(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('К средней цене, за 12 месяцев', style: TextStyle(fontSize: 12, color: context.dim)),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.toCost == null ? '—' : yieldPct(s.toCost!),
-                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, color: AppColors.positive),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    s.income <= 0
-                        ? 'За 12 месяцев выплат не было'
-                        : '${money(s.income)} выплат на ${money(s.cost)} вложенных',
-                    style: TextStyle(fontSize: 12.5, color: context.dim),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(child: _mini(context, 'К текущей цене', s.toValue == null ? '—' : yieldPct(s.toValue!))),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _mini(
-                          context,
-                          'За ${s.lastYearNumber} год',
-                          s.lastYear == null ? '—' : yieldPct(s.lastYear!),
-                          color: AppColors.positive,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
             if (years.isNotEmpty) ...[
-              _caption(context, 'ВЫПЛАТЫ ПО ГОДАМ, ₽'),
+              _caption(context, 'ПО ГОДАМ, ₽'),
               AppCard(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
                 child: Column(
@@ -126,7 +123,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
                   children: [
                     YearBars(
                       color: AppColors.positive,
-                      format: (v) => hidden ? '•••' : Fmt.group(v),
+                      format: (v) => Fmt.group(v),
                       bars: [
                         for (int i = 0; i < years.length; i++)
                           YearBar(
@@ -146,7 +143,7 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
                 ),
               ),
             ],
-            _caption(context, 'ПО БУМАГАМ — К СРЕДНЕЙ ЦЕНЕ'),
+            _caption(context, 'ПО БУМАГАМ — К ЦЕНЕ ПОКУПКИ'),
             AppCard(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
               child: Column(
@@ -217,9 +214,13 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(fontSize: 11, color: context.dim)),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: context.dim)),
             const SizedBox(height: 2),
-            Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: color)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: color)),
+            ),
           ],
         ),
       );
@@ -236,22 +237,28 @@ class _PayoutYieldSheetState extends State<_PayoutYieldSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(r.ticker, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                 Text(
                   PayoutCalendarService.nameOf(r.ticker),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: context.dim),
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 5),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
                     value: maxYield <= 0 ? 0 : (r.toCost / maxYield).clamp(0.0, 1.0),
-                    minHeight: 4,
+                    minHeight: 5,
                     backgroundColor: context.dim.withOpacity(0.15),
                     color: AppColors.positive,
                   ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${Fmt.money(r.income)} из ${Fmt.money(r.cost)} вложенных',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: context.dim),
                 ),
               ],
             ),

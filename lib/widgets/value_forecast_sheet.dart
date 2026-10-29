@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -260,7 +259,6 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
     );
   }
 
-  static String _pct(double? v) => v == null ? '—' : '${(v * 100).round()}%';
 
   Widget _row(BuildContext context, String label, String value) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -289,107 +287,5 @@ class _ValueForecastBodyState extends State<ValueForecastBody> {
         ),
       );
 
-  /// Подпись под галкой: что будет учтено, если её включить.
-  static String _plansSubtitle(PlanCoverage c, double spent) {
-    if (c.included == 0) return 'В пределах выбранного срока покупок по планам нет';
-    final n = c.included;
-    final word = Fmt.purchases(n);
-    final until = c.lastDate == null ? '' : ' до ${Fmt.monthShort(c.lastDate!.month)} ${c.lastDate!.year}';
-    return '$n $word, ≈${Fmt.money(spent)}$until';
-  }
-
-  /// Что из планов не попало в расчёт и почему.
-  static String _skippedText(PlanCoverage c) {
-    final parts = <String>[
-      if (c.undated > 0) '${c.undated} без срока',
-      if (c.beyond > 0) '${c.beyond} позже срока прогноза',
-      if (c.noData > 0) '${c.noData} без данных по бумаге',
-    ];
-    return 'Не учтены: ${parts.join(', ')}.';
-  }
 }
 
-class _ForecastChartPainter extends CustomPainter {
-  final Map<ForecastScenario, List<ForecastPoint>> series;
-  final ForecastScenario selected;
-  final List<DateTime> maturities;
-  final Color grid;
-  final Color dotColor;
-
-  _ForecastChartPainter({
-    required this.series,
-    required this.selected,
-    required this.maturities,
-    required this.grid,
-    required this.dotColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final all = series.values.expand((s) => s).toList();
-    if (all.length < 2) return;
-
-    var minV = all.map((p) => p.value).reduce(math.min);
-    var maxV = all.map((p) => p.value).reduce(math.max);
-    final pad = (maxV - minV).abs() * 0.06 + 1;
-    minV -= pad;
-    maxV += pad;
-
-    final first = all.map((p) => p.date).reduce((a, b) => a.isBefore(b) ? a : b);
-    final last = all.map((p) => p.date).reduce((a, b) => a.isAfter(b) ? a : b);
-    final span = last.difference(first).inDays.toDouble();
-    if (span <= 0) return;
-
-    double x(DateTime d) => d.difference(first).inDays / span * size.width;
-    double y(double v) => size.height - (v - minV) / (maxV - minV) * size.height;
-
-    final gridPaint = Paint()
-      ..color = grid
-      ..strokeWidth = 1;
-    canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height), gridPaint);
-
-    // Пунктир на датах погашения облигаций.
-    final dash = Paint()
-      ..color = grid
-      ..strokeWidth = 1;
-    for (final m in maturities) {
-      final mx = x(m);
-      for (double yy = 0; yy < size.height; yy += 7) {
-        canvas.drawLine(Offset(mx, yy), Offset(mx, math.min(yy + 3.5, size.height)), dash);
-      }
-    }
-
-    // Невыбранные сценарии — приглушённо, выбранный — поверх и толще.
-    final order = [
-      ...ForecastScenario.values.where((s) => s != selected),
-      selected,
-    ];
-    for (final s in order) {
-      final points = series[s];
-      if (points == null || points.length < 2) continue;
-      final path = Path()..moveTo(x(points.first.date), y(points.first.value));
-      for (final p in points.skip(1)) {
-        path.lineTo(x(p.date), y(p.value));
-      }
-      final isSel = s == selected;
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = _scenarioColor(s).withOpacity(isSel ? 1 : 0.35)
-          ..strokeWidth = isSel ? 2.6 : 1.5
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round,
-      );
-    }
-
-    final start = series[selected]?.first;
-    if (start != null) {
-      canvas.drawCircle(Offset(x(start.date), y(start.value)), 3.5, Paint()..color = dotColor);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ForecastChartPainter old) =>
-      old.selected != selected || old.series != series || old.maturities != maturities || old.grid != grid;
-}

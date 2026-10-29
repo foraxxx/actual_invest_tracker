@@ -295,7 +295,6 @@ class GoalService {
 
   /// Сколько вносить в месяц, чтобы из [current] за [months] месяцев при
   /// месячном росте [rate] получилось [target]. Взнос — в конце месяца.
-  @visibleForTesting
   static double requiredMonthly({
     required double current,
     required double target,

@@ -651,7 +651,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: 'Выплаты',
         subtitle: yearTotal <= 0
             ? 'Выплат за $_incomeYear год нет'
-            : 'Получено за $_incomeYear${_incomeYear == DateTime.now().year ? ' · по сегодня' : ''}',
+            : 'Получено за $_incomeYear',
         trailing: yearTotal <= 0 ? null : _moneyText(Fmt.money(yearTotal), color: AppColors.positive),
         collapsed: payCollapsed,
         preview: () => _monthsPreview(context, cells),
@@ -847,15 +847,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       items: [
                         ChoiceCard(
                           label: 'XIRR',
-                          value: '${Fmt.pct(xirrValue!)} год.',
+                          value: '${Fmt.pct(xirrValue)} год.',
                           sub: 'Ваши деньги',
-                          color: AppColors.pnl(xirrValue!),
+                          color: AppColors.pnl(xirrValue),
                         ),
                         ChoiceCard(
                           label: 'TWR',
-                          value: Fmt.pct(twrValue!),
+                          value: Fmt.pct(twrValue),
                           sub: 'сам портфель',
-                          color: AppColors.pnl(twrValue!),
+                          color: AppColors.pnl(twrValue),
                         ),
                       ],
                     ),
@@ -1658,35 +1658,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final s = PayoutYieldService.summary(PayoutKind.all);
     final toCost = s.toCost;
     if (toCost == null) return const SizedBox.shrink();
+    final now = DateTime.now().year;
+    final years = s.byYear.keys.toList()..sort();
+    final shown = years.length > 4 ? years.sublist(years.length - 4) : years;
+    final maxV = shown.fold(0.0, (m, y) => math.max(m, s.byYear[y] ?? 0));
+    // Сколько полных лет подряд выплаты росли.
+    int streak = 0;
+    for (int i = years.length - 1; i > 0; i--) {
+      if (years[i] >= now) continue;
+      if (years[i - 1] != years[i] - 1) break;
+      if ((s.byYear[years[i]] ?? 0) > (s.byYear[years[i - 1]] ?? 0)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    final sub = streak >= 2
+        ? 'к цене покупки · растут $streak ${Fmt.plural(streak, 'год', 'года', 'лет')} подряд'
+        : (s.toValue != null ? 'к цене покупки · к текущей ${yieldPct(s.toValue!)}' : 'к цене покупки');
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Pressable(
         onTap: () => showPayoutYieldSheet(context),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
           decoration: BoxDecoration(
-            color: AppColors.positive.withOpacity(0.07),
+            color: context.isDark ? Colors.white.withOpacity(0.03) : AppColors.lightSurfaceHigh,
             borderRadius: AppRadius.all(AppRadius.sm),
-            border: Border.all(color: AppColors.positive.withOpacity(0.22)),
+            border: Border.all(color: context.hairline),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Доходность выплат', style: TextStyle(fontSize: 12, color: context.dim)),
+                    Text('Доходность выплат', style: TextStyle(fontSize: 12.5, color: context.dim)),
                     const SizedBox(height: 2),
-                    Text(
-                      '${yieldPct(toCost)} в год',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.positive),
-                    ),
+                    Text(yieldPct(toCost),
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.positive)),
+                    const SizedBox(height: 1),
+                    Text(sub, maxLines: 2, style: TextStyle(fontSize: 11.5, height: 1.3, color: context.dim)),
                   ],
                 ),
               ),
-              if (s.toValue != null)
-                Text('к текущей цене ${yieldPct(s.toValue!)}', style: TextStyle(fontSize: 11.5, color: context.dim)),
-              const SizedBox(width: 4),
+              if (shown.length >= 2 && maxV > 0) ...[
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 118,
+                  height: 60,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (final y in shown)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Container(
+                                  height: math.max(3, 40 * (s.byYear[y] ?? 0) / maxV),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.positive.withOpacity(y == shown.last ? 1 : 0.45),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text('$y', style: TextStyle(fontSize: 9.5, color: context.dim)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(width: 2),
               Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
             ],
           ),
@@ -1736,7 +1785,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       label: 'Прогноз стоимости',
       icon: Icons.stacked_line_chart_rounded,
       color: AppColors.info,
-      value: '~${Fmt.money(forecast.result.breakdown.end)}',
+      value: '~${Fmt.shortMoney(forecast.result.breakdown.end)}',
       money: true,
       sub: 'через ${ValueForecastService.defaultHorizon} года · '
           '${forecast.plansApplied ? 'с учётом планов' : 'обычный сценарий'}',

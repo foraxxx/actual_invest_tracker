@@ -1018,7 +1018,6 @@ class _PlansScreenState extends State<PlansScreen> {
   /// Группа по сроку. Открытая — заголовок и карточка с покупками;
   /// свёрнутая — одна карточка со сводкой.
   Widget _monthGroup(_PlanGroup g) {
-    const hidden = false;
     final foldKey = _foldKey('a', g);
     final open = _isOpen(foldKey);
     final title = _titleOf(g);
@@ -1036,7 +1035,7 @@ class _PlansScreenState extends State<PlansScreen> {
       final shown = tickers.take(3).toList();
       final n = g.plans.length;
       final caption = '$n ${Fmt.purchases(n)} · '
-          '${bought <= 0 ? 'ничего не куплено' : hidden ? 'куплено •••' : 'куплено на ${Fmt.money(bought)}'}';
+          '${bought <= 0 ? 'ничего не куплено' : 'куплено на ${Fmt.money(bought)}'}';
       return Padding(
         padding: const EdgeInsets.only(top: 14),
         child: Material(
@@ -1090,7 +1089,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         const SizedBox(width: 8),
                         if (sum > 0)
                           Text(
-                            hidden ? '•••' : '≈ ${Fmt.money(sum)}',
+                            '≈ ${Fmt.money(sum)}',
                             maxLines: 1,
                             softWrap: false,
                             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
@@ -1132,7 +1131,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                   Text(
-                    '${g.plans.length}${sum > 0 ? ' · ${hidden ? '•••' : '≈ ${Fmt.money(sum)}'}' : ''}',
+                    '${g.plans.length}${sum > 0 ? ' · ${'≈ ${Fmt.money(sum)}'}' : ''}',
                     style: TextStyle(fontSize: 12.5, color: context.dim),
                   ),
                   const SizedBox(width: 4),
@@ -1154,7 +1153,6 @@ class _PlansScreenState extends State<PlansScreen> {
   /// «Просрочено» и «Выполнено» (с отменёнными) — внизу, свёрнутым блоком.
   /// Внутри — те же группы по срокам, каждая сворачивается.
   Widget _foldSection(String section, List<_PlanGroup> groups) {
-    const hidden = false;
     final overdue = section == _overdueKey;
     final uiKey = 'plansFold$section';
     final open = _isOpen(uiKey, byDefault: false);
@@ -1186,7 +1184,7 @@ class _PlansScreenState extends State<PlansScreen> {
                         ),
                       ),
                       if (sum > 0)
-                        Text(hidden ? '•••' : '≈ ${Fmt.money(sum)}', style: TextStyle(fontSize: 13, color: context.dim)),
+                        Text('≈ ${Fmt.money(sum)}', style: TextStyle(fontSize: 13, color: context.dim)),
                       const SizedBox(width: 6),
                       FoldArrow(open: open),
                     ],
@@ -1207,7 +1205,6 @@ class _PlansScreenState extends State<PlansScreen> {
 
   /// Группа по сроку внутри «Просрочено» или «Выполнено».
   Widget _subGroup(String section, _PlanGroup g) {
-    const hidden = false;
     final foldKey = _foldKey(section, g);
     final open = _isOpen(foldKey);
     final sum = g.totalEstimated;
@@ -1227,7 +1224,7 @@ class _PlansScreenState extends State<PlansScreen> {
                   ),
                 ),
                 Text(
-                  '${g.plans.length}${sum > 0 ? ' · ${hidden ? '•••' : '≈ ${Fmt.money(sum)}'}' : ''}',
+                  '${g.plans.length}${sum > 0 ? ' · ${'≈ ${Fmt.money(sum)}'}' : ''}',
                   style: TextStyle(fontSize: 12, color: context.dim),
                 ),
                 const SizedBox(width: 4),
@@ -1383,7 +1380,7 @@ class _PlansScreenState extends State<PlansScreen> {
                 if (cantAffordMore) ...[
                   const SizedBox(height: 6),
                   Text(
-                    'На остаток плана лот по ${Fmt.price(currentPrice!, type: p.type)} уже не купить — '
+                    'На остаток плана лот по ${Fmt.price(currentPrice, type: p.type)} уже не купить — '
                     'можно отметить выполненным',
                     style: const TextStyle(fontSize: 11.5, color: AppColors.warning),
                   ),
