@@ -1954,40 +1954,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return m.money ? HiddenAmount.forText(active: true, m.value, fontSize: fontSize, child: text) : text;
   }
 
-    if (compact) {
-      return Pressable(
-        onTap: m.onSwitch,
-        child: Container(
-          width: 24,
-          height: 20,
-          decoration: BoxDecoration(
-            color: context.accent.withOpacity(0.14),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Icon(Icons.swap_horiz_rounded, size: 14, color: context.accent),
-        ),
-      );
-    }
-    return Pressable(
-      onTap: m.onSwitch,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: context.accent.withOpacity(0.14),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(m.switchLabel!, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: context.accent)),
-            const SizedBox(width: 2),
-            Icon(Icons.swap_horiz_rounded, size: 11, color: context.accent),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// Точки под показателем с двумя вариантами: какой сейчас показан.
   Widget _switchDots(_Metric m) => Padding(
         padding: const EdgeInsets.only(top: 6),
