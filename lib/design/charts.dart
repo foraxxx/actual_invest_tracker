@@ -2306,11 +2306,41 @@ class _MultiLinePainter extends CustomPainter {
 /// Вертикальный жест графика: забирает движение пальца, только пока на
 /// графике идёт замер (удержание или два пальца). Иначе уступает прокрутке
 /// страницы — листать страницу через график по-прежнему можно.
-class _ChartVerticalLock extends VerticalDragGestureRecognizer {
+class _ChartVerticalLock extends OneSequenceGestureRecognizer {
   bool Function() active;
+  GestureDragUpdateCallback? onUpdate;
   _ChartVerticalLock(this.active);
 
+  Offset? _start;
+  bool _accepted = false;
+
   @override
-  bool hasSufficientGlobalDistanceToAccept(PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) =>
-      active() && super.hasSufficientGlobalDistanceToAccept(pointerDeviceKind, deviceTouchSlop);
+  void addAllowedPointer(PointerDownEvent event) {
+    startTrackingPointer(event.pointer, event.transform);
+    _start ??= event.position;
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerMoveEvent && !_accepted && _start != null) {
+      // Порог меньше, чем у прокрутки страницы, — график решает первым.
+      if (active() && (event.position.dy - _start!.dy).abs() > 8) {
+        _accepted = true;
+        resolve(GestureDisposition.accepted);
+      }
+    }
+    if (event is PointerUpEvent || event is PointerCancelEvent) {
+      stopTrackingPointer(event.pointer);
+    }
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    if (!_accepted) resolve(GestureDisposition.rejected);
+    _accepted = false;
+    _start = null;
+  }
+
+  @override
+  String get debugDescription => 'chart vertical lock';
 }
