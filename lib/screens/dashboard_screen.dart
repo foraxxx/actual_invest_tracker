@@ -1776,6 +1776,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         money: true,
         sub: payoutYield > 0 ? 'за 12 месяцев · ${Fmt.pct(payoutYield)} годовых' : 'по выплатам прошлых лет',
         switchLabel: 'Выплаты',
+        switchIndex: 0,
         onSwitch: () => _onForecastSegment(1),
         onTap: () => showForecastSheet(context, initial: 0, onChanged: _onForecastSegment),
       );
@@ -1790,6 +1791,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       sub: 'через ${ValueForecastService.defaultHorizon} года · '
           '${forecast.plansApplied ? 'с учётом планов' : 'обычный сценарий'}',
       switchLabel: hasPayouts ? 'Стоимость' : null,
+      switchIndex: 1,
       onSwitch: hasPayouts ? () => _onForecastSegment(0) : null,
       onTap: () => hasPayouts
           ? showForecastSheet(context, initial: 1, onChanged: _onForecastSegment)
@@ -1893,19 +1895,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                               child: Text(m.listLabel ?? m.label,
                                                   style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
                                             ),
-                                            if (m.onSwitch != null) ...[
-                                              const SizedBox(width: 6),
-                                              GestureDetector(
-                                                behavior: HitTestBehavior.opaque,
-                                                onTap: () {
-                                                  m.onSwitch!();
-                                                  Future.microtask(() {
-                                                    if (ctx.mounted) setSheet(() {});
-                                                  });
-                                                },
-                                                child: Icon(Icons.swap_horiz_rounded, size: 18, color: context.dim),
-                                              ),
-                                            ],
+
                                           ],
                                         ),
                                         const SizedBox(height: 1),
@@ -1964,9 +1954,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return m.money ? HiddenAmount.forText(active: true, m.value, fontSize: fontSize, child: text) : text;
   }
 
-  /// [compact] — только значок ⇄: в строке списка рядом с длинным
-  /// названием («Прогноз выплат») подпись на кнопке не помещается.
-  Widget _switchChip(_Metric m, {bool compact = false}) {
     if (compact) {
       return Pressable(
         onTap: m.onSwitch,
@@ -2001,6 +1988,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// Точки под показателем с двумя вариантами: какой сейчас показан.
+  Widget _switchDots(_Metric m) => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < 2; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.only(right: 4),
+                width: i == m.switchIndex ? 14 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: i == m.switchIndex ? (context.isDark ? Colors.white : Colors.black87) : context.hairline,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+          ],
+        ),
+      );
+
+  /// Смахивание влево-вправо меняет вариант показателя (выплаты ⇄ стоимость).
+  Widget _swipeable(_Metric m, Widget child) => m.onSwitch == null
+      ? child
+      : GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragEnd: (d) {
+            if ((d.primaryVelocity ?? 0).abs() > 150) m.onSwitch!();
+          },
+          child: child,
+        );
+
   Widget _metricsBlock(BuildContext context, List<_Metric> metrics) {
     Widget spot(_Metric m, Widget child) => m.tourId == null ? child : TourSpot(id: m.tourId!, child: child);
 
@@ -2011,7 +2030,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (i > 0) rows.add(Container(height: 1, color: context.hairline));
         rows.add(spot(
           m,
-          Pressable(
+          _swipeable(m, Pressable(
             onTap: m.onTap,
             scale: 0.99,
             child: Padding(
@@ -2032,16 +2051,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(m.listLabel ?? m.label,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
-                            ),
-                            if (m.switchLabel != null) ...[const SizedBox(width: 6), _switchChip(m, compact: true)],
-                          ],
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(m.listLabel ?? m.label,
+                              maxLines: 1, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                         ),
                         const SizedBox(height: 1),
                         _metricSub(
@@ -2050,6 +2064,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(fontSize: 11, color: context.dim))),
+                        if (m.onSwitch != null) _switchDots(m),
                       ],
                     ),
                   ),
@@ -2059,7 +2074,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
-          ),
+          )),
         ));
       }
       return AppCard(
@@ -2073,39 +2088,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // переключателем способа расчёта рядом с подписью маленький значок ⇄.
     Widget tile(_Metric m) => spot(
           m,
-          AppCard(
+          _swipeable(m, AppCard(
             padding: const EdgeInsets.fromLTRB(12, 10, 10, 11),
             radius: AppRadius.sm,
             onTap: m.onTap,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        m.listLabel ?? m.label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12.5, color: context.dim),
-                      ),
-                    ),
-                    if (m.onSwitch != null)
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: m.onSwitch,
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 2),
-                          child: Icon(Icons.swap_horiz_rounded, size: 14, color: context.dim),
-                        ),
-                      ),
-                  ],
+                // Название всегда в одну строку: если не влезает — чуть мельче.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(m.listLabel ?? m.label,
+                      maxLines: 1, style: TextStyle(fontSize: 12.5, color: context.dim)),
                 ),
                 const SizedBox(height: 3),
                 FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: _metricValue(m, 17)),
+                if (m.onSwitch != null) _switchDots(m),
               ],
             ),
-          ),
+          )),
         );
 
     final rows = <Widget>[];
@@ -2556,6 +2558,9 @@ class _Metric {
   /// способ расчёта приходится писать в названии: «Доходность XIRR».
   final String? listLabel;
 
+  /// Какой из двух вариантов показан (0 или 1) — для точек под плиткой.
+  final int switchIndex;
+
   const _Metric({
     required this.label,
     required this.icon,
@@ -2569,5 +2574,6 @@ class _Metric {
     this.onSwitch,
     this.tourId,
     this.listLabel,
+    this.switchIndex = 0,
   });
 }

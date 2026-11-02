@@ -851,40 +851,46 @@ class _PlansScreenState extends State<PlansScreen> {
         AssetType.other => ('П', AppColors.neutral),
       };
 
-  Widget _summaryRow(_TickerPlanSummary t) {
-    final (letter, color) = _typeMark(t.type);
-    final left = math.max(0.0, t.totalEstimated - t.purchasedMoney);
+  /// Логотип с буквой типа в углу: А — акция, О — облигация, Ф — фонд.
+  Widget _avatarWithType(String ticker, AssetType type, double size) {
+    final (letter, color) = _typeMark(type);
     final surface = context.isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final badge = size >= 34 ? 17.0 : 16.0;
+    return SizedBox(
+      width: size + 4,
+      height: size + 4,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          TickerAvatar(ticker: ticker, size: size, glow: false),
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: Container(
+              width: badge,
+              height: badge,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: surface, width: 2),
+              ),
+              child: Text(letter,
+                  style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white, height: 1)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(_TickerPlanSummary t) {
+    final left = math.max(0.0, t.totalEstimated - t.purchasedMoney);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
-          SizedBox(
-            width: 34,
-            height: 34,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                TickerAvatar(ticker: t.ticker, size: 30, glow: false),
-                Positioned(
-                  right: -1,
-                  bottom: -1,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(color: surface, width: 2),
-                    ),
-                    child: Text(letter,
-                        style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white, height: 1)),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _avatarWithType(t.ticker, t.type, 30),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1310,7 +1316,7 @@ class _PlansScreenState extends State<PlansScreen> {
               children: [
                 Row(
                   children: [
-                    TickerAvatar(ticker: p.ticker, size: 36, glow: false),
+                    _avatarWithType(p.ticker, p.type, 36),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(

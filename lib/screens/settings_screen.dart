@@ -256,18 +256,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Icon(icon, size: 17),
             ),
             const SizedBox(width: 12),
+            // Название — одной строкой (если тесно, чуть мельче), значение —
+            // прижато вправо к стрелке, у всех строк на одной линии.
             Expanded(
-              child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(title, maxLines: 1, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+              ),
             ),
-            if (value.isNotEmpty)
-              Flexible(
-                child: Text(
-                  value,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: context.dim),
+            if (value.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 110),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(value, maxLines: 1, style: TextStyle(fontSize: 12, color: context.dim)),
                 ),
               ),
+            ],
             const SizedBox(width: 4),
             Icon(Icons.chevron_right_rounded, size: 20, color: context.dim),
           ],

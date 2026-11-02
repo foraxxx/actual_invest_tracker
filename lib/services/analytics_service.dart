@@ -500,8 +500,16 @@ class AnalyticsService {
     for (final p in StorageService.purchases) {
       dates.add(DateTime(p.date.year, p.date.month, p.date.day, 23, 59, 59));
     }
-    for (final history in ManualPriceService.allHistory.values) {
-      for (final point in history) {
+    // Точки ручных цен — только по бумагам этого портфеля и не раньше его
+    // первой сделки: ручные цены общие для всех портфелей, и без этого график
+    // нового портфеля начинался с даты чужой старой цены.
+    final tickers = {for (final p in StorageService.purchases) p.ticker.toUpperCase()};
+    final first = dates.reduce((a, b) => a.isBefore(b) ? a : b);
+    final firstDay = DateTime(first.year, first.month, first.day);
+    for (final entry in ManualPriceService.allHistory.entries) {
+      if (!tickers.contains(entry.key.toUpperCase())) continue;
+      for (final point in entry.value) {
+        if (point.date.isBefore(firstDay)) continue;
         dates.add(DateTime(
           point.date.year,
           point.date.month,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'tokens.dart';
 
@@ -606,6 +607,19 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                   }
                 }
               : null,
+          // Пока палец ведёт по графику (удержание или замер двумя пальцами),
+          // вертикальное движение забирает график — страница не прокручивается.
+          child: RawGestureDetector(
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            if (widget.interactive)
+              _ChartVerticalLock: GestureRecognizerFactoryWithHandlers<_ChartVerticalLock>(
+                () => _ChartVerticalLock(() => _trackingTouch || _pointers.length >= 2),
+                (r) => r
+                  ..active = (() => _trackingTouch || _pointers.length >= 2)
+                  ..onUpdate = (_) {},
+              ),
+          },
           child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           // Перетаскивание листает период — но только если экран это разрешил.
@@ -700,6 +714,7 @@ class _SparklineState extends State<Sparkline> with SingleTickerProviderStateMix
                   ..._rangeHints(values, w),
               ],
             ),
+          ),
           ),
           ),
         );
@@ -2286,4 +2301,16 @@ class _MultiLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MultiLinePainter old) => true;
+}
+
+/// Вертикальный жест графика: забирает движение пальца, только пока на
+/// графике идёт замер (удержание или два пальца). Иначе уступает прокрутке
+/// страницы — листать страницу через график по-прежнему можно.
+class _ChartVerticalLock extends VerticalDragGestureRecognizer {
+  bool Function() active;
+  _ChartVerticalLock(this.active);
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) =>
+      active() && super.hasSufficientGlobalDistanceToAccept(pointerDeviceKind, deviceTouchSlop);
 }

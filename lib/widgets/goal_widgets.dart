@@ -632,7 +632,7 @@ String _growthBreakdown(GoalPlan p) {
         : 'Рост ≈${total.toStringAsFixed(0)}% в год — только цены, выплаты не реинвестируются',
   ];
   if (p.withdrawPerYear > 0) parts.add('снимаете ≈${Fmt.money(p.withdrawPerYear)} в год');
-  return '${parts.join(' · ')}. Пересчёт раз в день.';
+  return '${parts.join(' · ')}. Пересчёт раз в неделю.';
 }
 
 Widget _switchRow(

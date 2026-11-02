@@ -446,12 +446,14 @@ class GoalService {
 
   static DateTime? _rateAt;
 
-  /// Темп роста для цели — устойчивый: считается раз в день и только когда
+  /// Темп роста для цели — устойчивый: считается раз в неделю и только когда
   /// загружена история индекса. Пока данных нет, берётся прошлый расчёт —
   /// так нужная сумма не прыгает при каждом запуске.
   static double stableGrowthRate(double current) {
     final today = DateTime.now();
-    final day = '${today.year}-${today.month}-${today.day}';
+    // Ключ недели — дата её понедельника: темп пересчитывается раз в неделю.
+    final monday = DateTime(today.year, today.month, today.day - (today.weekday - 1));
+    final day = '${monday.year}-${monday.month}-${monday.day}';
     Map<String, dynamic>? saved;
     try {
       final raw = meta('growthRate');
